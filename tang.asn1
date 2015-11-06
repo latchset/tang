@@ -1,0 +1,73 @@
+Tang DEFINITIONS EXPLICIT TAGS ::= BEGIN
+
+TangMessage ::= CHOICE {
+  error   [0] TangMessageError,
+  rec-req [1] TangMessageRecoverRequest,
+  rec-rep [2] TangMessageRecoverReply,
+  adv-req [3] TangMessageAdvertiseRequest,
+  adv-rep [4] TangMessageAdvertiseReply,
+  ...
+}
+
+TangMessageError ::= ENUMERATED {
+  internal            (1),
+  invalid-request     (2),
+  notfound-key        (3),
+  ...
+}
+
+TangMessageRecoverRequest ::= SEQUENCE {
+  key    [0] TangKey,
+  x      [1] OCTET STRING,
+  ...
+}
+
+TangMessageRecoverReply ::= SEQUENCE {
+  y      [0] OCTET STRING,
+  ...
+}
+
+TangMessageAdvertiseRequest ::= SEQUENCE {
+  types  [0] SET OF OBJECT IDENTIFIER,
+  body   [1] TangMessageAdvertiseRequestBody,
+  ...
+}
+
+TangMessageAdvertiseRequestBody ::= CHOICE {
+  grps   [0] SET OF OBJECT IDENTIFIER,
+  key    [1] TangKey,
+  ...
+}
+
+TangMessageAdvertiseReply ::= SEQUENCE {
+  body   [0] TangMessageAdvertiseReplyBody,
+  sigs   [1] SET (SIZE(1..MAX)) OF TangSignature,
+  ...
+}
+
+TangMessageAdvertiseReplyBody ::= SEQUENCE {
+  keys   [0] SET (SIZE(1..MAX)) OF TangKey,
+  host   [1] UTF8String OPTIONAL,
+  ...
+}
+
+TangSignature ::= SEQUENCE {
+  type   [0] OBJECT IDENTIFIER,
+  sig    [1] OCTET STRING, -- ECDSA-Sig-Value
+  ...
+}
+
+TangKey ::= SEQUENCE {
+  grp  [0] OBJECT IDENTIFIER,
+  key  [1] OCTET STRING,
+  use  [2] TangKeyUse,
+  ...
+}
+
+TangKeyUse ::= ENUMERATED {
+  signature (1),
+  recovery  (2),
+  ...
+}
+
+END

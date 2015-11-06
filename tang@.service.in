@@ -1,0 +1,6 @@
+[Unit]
+Description=Tang daemon
+ConditionDirectoryNotEmpty=@TANG_DB@
+
+[Service]
+ExecStart=@libexecdir@/tang-serve

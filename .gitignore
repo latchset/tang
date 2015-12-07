@@ -16,6 +16,7 @@
 .project
 .settings
 aclocal.m4
+ar-lib
 autom4te.cache
 build
 compile
@@ -27,7 +28,6 @@ configure
 configure-stamp
 depcomp
 install-sh
-ltmain.sh
 Makefile.in
 Makefile
 missing

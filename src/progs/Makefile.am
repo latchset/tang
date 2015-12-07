@@ -1,5 +1,5 @@
 AM_CFLAGS = @TANG_CFLAGS@ @LIBCRYPTO_CFLAGS@
-LDADD = ../libcommon.la @LIBCRYPTO_LIBS@
+LDADD = ../libcommon.a @LIBCRYPTO_LIBS@
 
 bin_PROGRAMS = tang-gen tang-mod tang-send
 libexec_PROGRAMS = tang-serve

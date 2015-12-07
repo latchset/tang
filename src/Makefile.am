@@ -1,8 +1,8 @@
 SUBDIRS = . progs tests
 
-noinst_LTLIBRARIES = libcommon.la
+noinst_LIBRARIES = libcommon.a
 
-libcommon_la_SOURCES = \
+libcommon_a_SOURCES = \
 	asn1.c asn1.h \
 	conv.c conv.h \
 	pkt.c  pkt.h

@@ -156,8 +156,6 @@ main(int argc, char **argv)
         strcpy(filename, argv[optind]);
 
         file = fopen(filename, "wx");
-        if (!file)
-            error(EXIT_FAILURE, errno, "Unable to create file: %s", filename);
     } else {
         do {
             r = keyfilegen(dbdir, filename);
@@ -165,8 +163,10 @@ main(int argc, char **argv)
                 error(EXIT_FAILURE, r, "Error generating keyfile name");
 
             file = fopen(filename, "wx");
-        } while (!file);
+        } while (!file && errno == EEXIST);
     }
+    if (!file)
+        error(EXIT_FAILURE, errno, "Unable to create file: %s", filename);
 
     r = setxattr(filename, "user.tang.use", use, 3, XATTR_CREATE);
     if (r != 0) {

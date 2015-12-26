@@ -51,6 +51,7 @@ req(int sock, TANG_MSG **req, void *misc)
     struct addr *addr = misc;
     pkt_t pkt = {};
 
+    addr->size = sizeof(addr->addr);
     pkt.size = recvfrom(sock, pkt.data, sizeof(pkt.data), 0,
                         &addr->addr, &addr->size);
     if (pkt.size < 0)

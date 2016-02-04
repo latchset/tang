@@ -51,13 +51,13 @@ conv_point2os(const EC_GROUP *grp, const EC_POINT *p, ASN1_OCTET_STRING *os,
 {
     size_t s;
 
-    s = EC_POINT_point2oct(grp, p, POINT_CONVERSION_UNCOMPRESSED, NULL, 0, ctx);
+    s = EC_POINT_point2oct(grp, p, POINT_CONVERSION_COMPRESSED, NULL, 0, ctx);
     if (s == 0)
         return ENOMEM;
 
     unsigned char buf[s];
 
-    s = EC_POINT_point2oct(grp, p, POINT_CONVERSION_UNCOMPRESSED, buf, s, ctx);
+    s = EC_POINT_point2oct(grp, p, POINT_CONVERSION_COMPRESSED, buf, s, ctx);
     if (s == 0)
         return ENOMEM;
 

@@ -138,7 +138,7 @@ main(int argc, char **argv)
         error(EXIT_FAILURE, 0, "Unsupported group: %s", group);
 
     EC_GROUP_set_asn1_flag(grp, OPENSSL_EC_NAMED_CURVE);
-    EC_GROUP_set_point_conversion_form(grp, POINT_CONVERSION_UNCOMPRESSED);
+    EC_GROUP_set_point_conversion_form(grp, POINT_CONVERSION_COMPRESSED);
 
     key = EC_KEY_new();
     if (!key

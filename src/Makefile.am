@@ -1,8 +1,8 @@
-SUBDIRS = . progs tests
+SUBDIRS = . progs tests clevis
 
-noinst_LIBRARIES = libcommon.a
+noinst_LTLIBRARIES = libcommon.la
 
-libcommon_a_SOURCES = \
+libcommon_la_SOURCES = \
 	asn1.c asn1.h \
 	conv.c conv.h \
 	pkt.c  pkt.h

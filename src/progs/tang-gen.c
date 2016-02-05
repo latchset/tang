@@ -32,6 +32,7 @@
 
 #include <sys/types.h>
 #include <sys/xattr.h>
+#include <sys/stat.h>
 
 /* Generate len random bytes. Convert to null-terminated hex (2 * len + 1). */
 static bool
@@ -108,6 +109,8 @@ main(int argc, char **argv)
     FILE *file = NULL;
     bool adv = false;
     int r;
+
+    umask(S_IRWXG | S_IRWXO);
 
     for (int c; (c = getopt(argc, argv, "haAd:")) != -1; ) {
         switch (c) {

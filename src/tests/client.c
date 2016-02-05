@@ -69,8 +69,8 @@ keygen(const char *dbdir, const char *name,
 
     test(snprintf(fname, sizeof(fname), "%s/%s", dbdir, name) > 0);
     test(snprintf(cmd, sizeof(cmd),
-	          "../progs/tang-gen -%c %s %s %s >/dev/null",
-	          adv ? 'A' : 'a', grpname, use, fname) > 1);
+                  "../progs/tang-gen -%c %s %s %s >/dev/null",
+                  adv ? 'A' : 'a', grpname, use, fname) > 1);
 
     test(system(cmd) == 0);
     test(f = fopen(fname, "r"));
@@ -188,12 +188,21 @@ adv_verify(TANG_MSG *rep, EC_KEY *key, int nkeys, int nsigs,
         int r;
 
         switch (OBJ_obj2nid(sig->type)) {
-	case NID_ecdsa_with_SHA224: test(md = EVP_get_digestbynid(NID_sha224)); break;
-	case NID_ecdsa_with_SHA256: test(md = EVP_get_digestbynid(NID_sha256)); break;
-	case NID_ecdsa_with_SHA384: test(md = EVP_get_digestbynid(NID_sha384)); break;
-	case NID_ecdsa_with_SHA512: test(md = EVP_get_digestbynid(NID_sha512)); break;
-	default: continue;
-	}
+        case NID_ecdsa_with_SHA224:
+            test(md = EVP_get_digestbynid(NID_sha224));
+            break;
+        case NID_ecdsa_with_SHA256:
+            test(md = EVP_get_digestbynid(NID_sha256));
+            break;
+        case NID_ecdsa_with_SHA384:
+            test(md = EVP_get_digestbynid(NID_sha384));
+            break;
+        case NID_ecdsa_with_SHA512:
+            test(md = EVP_get_digestbynid(NID_sha512));
+            break;
+        default:
+            continue;
+        }
 
         test(EVP_Digest(buf, len, hash, &hlen, md, NULL) > 0);
         test(ecdsa = d2i_ECDSA_SIG(NULL, &(const unsigned char *) {
@@ -204,7 +213,7 @@ adv_verify(TANG_MSG *rep, EC_KEY *key, int nkeys, int nsigs,
         ECDSA_SIG_free(ecdsa);
         if (r == 1) {
             OPENSSL_free(buf);
-	    return;
+            return;
         }
     }
 

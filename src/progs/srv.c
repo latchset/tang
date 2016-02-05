@@ -109,14 +109,14 @@ srv_main(const char *dbdir, int epoll, srv_req *req, srv_rep *rep,
             TANG_MSG_free(msg);
 
             if (err != TANG_MSG_ERR_NONE) {
-                r = pkt_encode((ASN1_VALUE *) &(TANG_MSG) {
+                r = pkt_encode(&(TANG_MSG) {
                     .type = TANG_MSG_TYPE_ERR,
                     .val.err = &(ASN1_ENUMERATED) {
                         .data = &(unsigned char) { err },
                         .type = V_ASN1_ENUMERATED,
                         .length = 1,
                     }
-                }, &TANG_MSG_it, &pkt);
+                }, &pkt);
                 if (r != 0)
                     pkt.size = 0;
             }

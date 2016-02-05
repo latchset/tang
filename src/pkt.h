@@ -19,6 +19,7 @@
 #pragma once
 
 #include <openssl/asn1t.h>
+#include "asn1.h"
 
 typedef struct {
     unsigned char data[65535];
@@ -26,4 +27,4 @@ typedef struct {
 } pkt_t;
 
 int
-pkt_encode(const ASN1_VALUE *val, const ASN1_ITEM *it, pkt_t *pkt);
+pkt_encode(const TANG_MSG *msg, pkt_t *pkt);

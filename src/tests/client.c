@@ -49,7 +49,7 @@ request(int sock, const TANG_MSG *req, const char *file, int line)
     pkt_t pkt = {};
     int r = 0;
 
-    test((r = pkt_encode((const ASN1_VALUE *) req, &TANG_MSG_it, &pkt)) == 0);
+    test((r = pkt_encode(req, &pkt)) == 0);
     test((r = send(sock, pkt.data, pkt.size, 0)) == pkt.size);
     test((pkt.size = recv(sock, pkt.data, sizeof(pkt.data), 0)) > 0);
     test(msg = d2i_TANG_MSG(NULL, &(const unsigned char *) { pkt.data }, pkt.size));
@@ -238,7 +238,7 @@ rec_benchmark(int sock, EC_KEY *key, int iter, const char *file, int line)
     test(req.val.rec.req = TANG_MSG_REC_REQ_new());
     test(conv_eckey2gkey(key, TANG_KEY_USE_REC, req.val.rec.req->key, NULL) == 0);
     test(conv_point2os(grp, EC_GROUP_get0_generator(grp), req.val.rec.req->x, NULL) == 0);
-    test(pkt_encode((const ASN1_VALUE *) &req, &TANG_MSG_it, &out) == 0);
+    test(pkt_encode(&req, &out) == 0);
     TANG_MSG_REC_REQ_free(req.val.rec.req);
 
     t = gettime();
@@ -262,7 +262,7 @@ adv_benchmark(int sock, int iter, const char *file, int line)
     test(req.val.adv.req = TANG_MSG_ADV_REQ_new());
     test(req.val.adv.req->body->val.grps = sk_ASN1_OBJECT_new_null());
     req.val.adv.req->body->type = TANG_MSG_ADV_REQ_BDY_TYPE_GRPS;
-    test(pkt_encode((const ASN1_VALUE *) &req, &TANG_MSG_it, &out) == 0);
+    test(pkt_encode(&req, &out) == 0);
     TANG_MSG_ADV_REQ_free(req.val.adv.req);
 
     t = gettime();

@@ -289,10 +289,10 @@ adv_sign(adv_t *adv, const TANG_MSG_ADV_REQ *req, pkt_t *pkt)
         return TANG_MSG_ERR_NOTFOUND_KEY;
 
     /* Encode the output. */
-    r = pkt_encode((ASN1_VALUE *) &(TANG_MSG) {
+    r = pkt_encode(&(TANG_MSG) {
         .type = TANG_MSG_TYPE_ADV_REP,
         .val.adv.rep = adv->rep
-    }, &TANG_MSG_it, pkt);
+    }, pkt);
 
     SKM_sk_zero(TANG_SIG, adv->rep->sigs);
     return r == 0 ? TANG_MSG_ERR_NONE : TANG_MSG_ERR_INTERNAL;

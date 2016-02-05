@@ -23,18 +23,22 @@
 #define WRAP(t, v) &(t *) { (t *) v }
 
 int
-pkt_encode(const ASN1_VALUE *val, const ASN1_ITEM *it, pkt_t *pkt)
+pkt_encode(const TANG_MSG *msg, pkt_t *pkt)
 {
     pkt_t tmp = {};
 
-    tmp.size = ASN1_item_ex_i2d(WRAP(ASN1_VALUE, val), NULL, it, -1, 0);
-    if (tmp.size > (typeof(tmp.size)) sizeof(tmp.data)) return E2BIG;
-    if (tmp.size <= 0) return EINVAL;
+    tmp.size = ASN1_item_ex_i2d(WRAP(ASN1_VALUE, msg),
+                                NULL, &TANG_MSG_it, -1, 0);
+    if (tmp.size > (typeof(tmp.size)) sizeof(tmp.data))
+        return E2BIG;
+    if (tmp.size <= 0)
+        return EINVAL;
 
-    tmp.size = ASN1_item_ex_i2d(WRAP(ASN1_VALUE, val),
+    tmp.size = ASN1_item_ex_i2d(WRAP(ASN1_VALUE, msg),
                                 WRAP(unsigned char, tmp.data),
-                                it, -1, 0);
-    if (tmp.size <= 0) return EINVAL;
+                                &TANG_MSG_it, -1, 0);
+    if (tmp.size <= 0)
+        return EINVAL;
 
     *pkt = tmp;
     return 0;

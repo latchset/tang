@@ -109,12 +109,12 @@ rec_decrypt(const db_t *db, const TANG_MSG_REC_REQ *req, pkt_t *pkt,
     if (r != 0)
         goto error;
 
-    r = pkt_encode((ASN1_VALUE *) &(TANG_MSG) {
+    r = pkt_encode(&(TANG_MSG) {
         .type = TANG_MSG_TYPE_REC_REP,
         .val.rec.rep = &(TANG_MSG_REC_REP) {
             .y = os
         }
-    }, &TANG_MSG_it, pkt);
+    }, pkt);
 
     ASN1_BIT_STRING_free(os);
     EC_POINT_free(x);

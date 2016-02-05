@@ -13,6 +13,7 @@
 .cproject
 .deps
 .dirstamp
+.libs/
 .project
 .settings
 aclocal.m4
@@ -28,6 +29,8 @@ configure
 configure-stamp
 depcomp
 install-sh
+libtool
+ltmain.sh
 Makefile.in
 Makefile
 missing

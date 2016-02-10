@@ -164,13 +164,14 @@ request(const json_t *cfg, TANG_MSG *req)
 
             memcpy(ofds, ifds, sizeof(struct pollfd) * naddr);
             r = poll(ofds, naddr, 1000);
-            for (int j = 0; j < r; j++) {
+            for (int j = 0; r > 0 && j < naddr; j++) {
                 TANG_MSG *rep = NULL;
                 pkt_t in = {};
 
-                if (ofds[j].revents & (POLLIN | POLLPRI) == 0)
+                if ((ofds[j].revents & (POLLIN | POLLPRI)) == 0)
                     continue;
 
+                r--;
                 in.size = recv(ofds[j].fd, &in.data, sizeof(in.data), 0);
                 if (in.size <= 0)
                     continue;

@@ -50,14 +50,14 @@ typedef struct {
 
 typedef enum {
     TANG_MSG_ADV_REQ_BDY_TYPE_GRPS = 0,
-    TANG_MSG_ADV_REQ_BDY_TYPE_KEY = 1,
+    TANG_MSG_ADV_REQ_BDY_TYPE_KEYS = 1,
 } TANG_MSG_ADV_REQ_BDY_TYPE;
 
 typedef struct {
     TANG_MSG_ADV_REQ_BDY_TYPE type;
     union {
         STACK_OF(ASN1_OBJECT) *grps;
-        TANG_KEY *key;
+        STACK_OF(TANG_KEY) *keys;
     } val;
 } TANG_MSG_ADV_REQ_BDY;
 
@@ -121,6 +121,8 @@ DECLARE_ASN1_FUNCTIONS(TANG_MSG_REC_REP)
 
 DECLARE_ASN1_FUNCTIONS(TANG_MSG)
 
+TANG_KEY *
+TANG_KEY_copy(const TANG_KEY *key);
 
 bool
 TANG_KEY_equals(const TANG_KEY *a, const TANG_KEY *b);

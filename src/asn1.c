@@ -44,7 +44,7 @@ ASN1_SEQUENCE(TANG_MSG_ADV_REP) = {
 
 ASN1_CHOICE(TANG_MSG_ADV_REQ_BDY) = {
     ASN1_EXP_SET_OF(TANG_MSG_ADV_REQ_BDY, val.grps, ASN1_OBJECT, TANG_MSG_ADV_REQ_BDY_TYPE_GRPS),
-    ASN1_EXP(TANG_MSG_ADV_REQ_BDY, val.key, TANG_KEY, TANG_MSG_ADV_REQ_BDY_TYPE_KEY),
+    ASN1_EXP_SET_OF(TANG_MSG_ADV_REQ_BDY, val.keys, TANG_KEY, TANG_MSG_ADV_REQ_BDY_TYPE_KEYS),
 } ASN1_CHOICE_END(TANG_MSG_ADV_REQ_BDY)
 
 ASN1_SEQUENCE(TANG_MSG_ADV_REQ) = {
@@ -83,6 +83,21 @@ IMPLEMENT_ASN1_FUNCTIONS(TANG_MSG_REC_REP)
 
 IMPLEMENT_ASN1_FUNCTIONS(TANG_MSG)
 
+TANG_KEY *
+TANG_KEY_copy(const TANG_KEY *key)
+{
+	TANG_KEY *tmp = NULL;
+	uint8_t *buf = NULL;
+	int len = 0;
+
+    len = i2d_TANG_KEY((TANG_KEY *) key, &buf);
+    if (len <= 0)
+        return NULL;
+
+    tmp = d2i_TANG_KEY(NULL, &(const uint8_t *) { buf }, len);
+    OPENSSL_free(buf);
+    return tmp;
+}
 
 bool
 TANG_KEY_equals(const TANG_KEY *a, const TANG_KEY *b)

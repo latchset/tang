@@ -257,6 +257,19 @@ error:
     return r == 0 ? ENOMEM : r;
 }
 
+static TANG_KEY *
+find_key(STACK_OF(TANG_KEY) *keys, TANG_KEY *key)
+{
+	for (int i = 0; i < SKM_sk_num(TANG_KEY, keys); i++) {
+		TANG_KEY *k = SKM_sk_value(TANG_KEY, keys, i);
+
+		if (TANG_KEY_equals(key, k))
+			return k;
+	}
+
+	return NULL;
+}
+
 TANG_MSG_ERR
 adv_sign(adv_t *adv, const TANG_MSG_ADV_REQ *req, pkt_t *pkt)
 {
@@ -264,19 +277,28 @@ adv_sign(adv_t *adv, const TANG_MSG_ADV_REQ *req, pkt_t *pkt)
 
     /* Select the key used for the signature. */
     for (size_t i = 0; adv->sigs[i]; i++) {
-        if (req->body->type == TANG_MSG_ADV_REQ_BDY_TYPE_KEY) {
-            if (!TANG_KEY_equals(req->body->val.key, adv->sigs[i]->key))
-                continue;
-        } else if (!adv->sigs[i]->adv) {
-            continue;
-        }
-
-        if (req->body->type == TANG_MSG_ADV_REQ_BDY_TYPE_GRPS &&
-            !has_object(adv->sigs[i]->key->grp, req->body->val.grps))
-            continue;
-
         if (!has_object(adv->sigs[i]->sig->type, req->types))
             continue;
+
+        switch (req->body->type) {
+        case TANG_MSG_ADV_REQ_BDY_TYPE_KEYS:
+            if (!find_key(req->body->val.keys, adv->sigs[i]->key))
+                continue;
+
+            break;
+
+        case TANG_MSG_ADV_REQ_BDY_TYPE_GRPS:
+            if (!adv->sigs[i]->adv)
+	            continue;
+
+            if (!has_object(adv->sigs[i]->key->grp, req->body->val.grps))
+                continue;
+
+            break;
+
+        default:
+            continue;
+        }
 
         if (SKM_sk_push(TANG_SIG, adv->rep->sigs, adv->sigs[i]->sig) <= 0) {
             SKM_sk_zero(TANG_SIG, adv->rep->sigs);

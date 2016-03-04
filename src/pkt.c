@@ -21,26 +21,27 @@
 
 #include <errno.h>
 
-#define WRAP(t, v) &(t *) { (t *) v }
-
 int
 pkt_encode(const TANG_MSG *msg, pkt_t *pkt)
 {
     pkt_t tmp = {};
 
-    tmp.size = ASN1_item_ex_i2d(WRAP(ASN1_VALUE, msg),
-                                NULL, &TANG_MSG_it, -1, 0);
+    tmp.size = i2d_TANG_MSG((TANG_MSG *) msg, NULL);
     if (tmp.size > (typeof(tmp.size)) sizeof(tmp.data))
         return E2BIG;
     if (tmp.size <= 0)
         return EINVAL;
 
-    tmp.size = ASN1_item_ex_i2d(WRAP(ASN1_VALUE, msg),
-                                WRAP(unsigned char, tmp.data),
-                                &TANG_MSG_it, -1, 0);
+    tmp.size = i2d_TANG_MSG((TANG_MSG *) msg, &(uint8_t *) { tmp.data });
     if (tmp.size <= 0)
         return EINVAL;
 
     *pkt = tmp;
     return 0;
+}
+
+TANG_MSG *
+pkt_decode(const pkt_t *pkt)
+{
+    return d2i_TANG_MSG(NULL, &(const uint8_t *) { pkt->data }, pkt->size);
 }

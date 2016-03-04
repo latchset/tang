@@ -29,3 +29,6 @@ typedef struct {
 
 int
 pkt_encode(const TANG_MSG *msg, pkt_t *pkt);
+
+TANG_MSG *
+pkt_decode(const pkt_t *pkt);

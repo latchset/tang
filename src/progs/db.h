@@ -1,3 +1,4 @@
+/* vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab: */
 /*
  * Copyright (c) 2015 Red Hat, Inc.
  * Author: Nathaniel McCallum <npmccallum@redhat.com>

@@ -23,28 +23,72 @@
 #include <openssl/objects.h>
 
 int
-conv_eckey2gkey(EC_KEY *key, TANG_KEY_USE use, TANG_KEY *gkey, BN_CTX *ctx)
+conv_point2tkey(const EC_GROUP *grp, const EC_POINT *pnt, TANG_KEY_USE use,
+                TANG_KEY *tkey, BN_CTX *ctx)
 {
-    const EC_GROUP *grp = EC_KEY_get0_group(key);
     int r;
 
     if (!grp)
         return EINVAL;
 
-    ASN1_OBJECT_free(gkey->grp);
-    gkey->grp = OBJ_nid2obj(EC_GROUP_get_curve_name(grp));
-    if (!gkey->grp)
+    ASN1_OBJECT_free(tkey->grp);
+    tkey->grp = OBJ_nid2obj(EC_GROUP_get_curve_name(grp));
+    if (!tkey->grp)
         return ENOMEM;
 
-    r = conv_point2os(grp, EC_KEY_get0_public_key(key), gkey->key, ctx);
+    r = conv_point2os(grp, pnt, tkey->key, ctx);
     if (r != 0)
         return ENOMEM;
 
-    if (ASN1_ENUMERATED_set(gkey->use, use) <= 0)
+    if (ASN1_ENUMERATED_set(tkey->use, use) <= 0)
         return ENOMEM;
 
     return 0;
 }
+
+int
+conv_eckey2tkey(const EC_KEY *key, TANG_KEY_USE use, TANG_KEY *tkey,
+                BN_CTX *ctx)
+{
+    return conv_point2tkey(EC_KEY_get0_group(key),
+                           EC_KEY_get0_public_key(key),
+                           use, tkey, ctx);
+}
+
+EC_KEY *
+conv_tkey2eckey(const TANG_KEY *tkey, BN_CTX *ctx)
+{
+    EC_KEY *eckey = NULL;
+    EC_POINT *p = NULL;
+    int nid;
+
+    nid = OBJ_obj2nid(tkey->grp);
+    if (nid == NID_undef)
+        goto error;
+
+    eckey = EC_KEY_new_by_curve_name(nid);
+    if (!eckey)
+        goto error;
+
+    p = EC_POINT_new(EC_KEY_get0_group(eckey));
+    if (!p)
+        goto error; 
+
+    if (conv_os2point(EC_KEY_get0_group(eckey), tkey->key, p, ctx) != 0)
+        goto error;
+
+    if (EC_KEY_set_public_key(eckey, p) <= 0)
+        goto error;
+
+    EC_POINT_free(p);
+    return eckey;
+
+error:
+    EC_POINT_free(p);
+    EC_KEY_free(eckey);
+    return NULL;
+}   
+
 
 int
 conv_point2os(const EC_GROUP *grp, const EC_POINT *p, ASN1_OCTET_STRING *os,

@@ -17,20 +17,20 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "srv/srv.h"
+
 #include <sys/epoll.h>
 #include <sys/socket.h>
-
-#include <errno.h>
-#include <error.h>
+#include <argp.h>
 #include <signal.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
+#include <sysexits.h>
 #include <unistd.h>
 
-#include "srv.h"
-
 #define LISTEN_FD_START 3
+
+struct options {
+    const char *dbdir;
+};
 
 struct addr {
   struct sockaddr addr;
@@ -70,40 +70,64 @@ rep(int sock, const pkt_t *pkt, void *misc)
     return 0;
 }
 
+static error_t
+parser(int key, char* arg, struct argp_state* state)
+{
+    struct options *opts = state->input;
+
+    switch (key) {
+    case 'd':
+        opts->dbdir = arg;
+        return 0;
+
+    case ARGP_KEY_END:
+        if (!opts->dbdir)
+            opts->dbdir = TANG_DB;
+        return 0;
+
+    default:
+        return ARGP_ERR_UNKNOWN;
+    }
+}
+
 int
 main(int argc, char *argv[])
 {
-    const char *dbdir = TANG_DB;
+    struct options opts = {};
+    const struct argp argp = {
+        .options = (const struct argp_option[]) {
+            { "dbdir", 'd', "dir", .doc = "database directory" },
+            {}
+        },
+        .parser = parser,
+    };
     const char *lfds = NULL;
     struct addr addr = {};
     int epoll;
     int r;
 
-    for (int c; (c = getopt(argc, argv, "hd:")) != -1; ) {
-        switch (c) {
-        case 'd':
-            dbdir = optarg;
-            break;
-
-        default:
-            fprintf(stderr, "Usage: %s [-h] [-d DBDIR]\n", argv[0]);
-            return EXIT_FAILURE;
-        }
-    }
+    if (argp_parse(&argp, argc, argv, 0, NULL, &opts) != 0)
+        return EX_OSERR;
 
     epoll = epoll_create(1024);
     if (epoll < 0)
-        error(EXIT_FAILURE, errno, "Error calling epoll_create()");
+        return EX_OSERR;
 
     /* Setup listening sockets. */
     lfds = getenv("LISTEN_FDS");
-    if (!lfds)
-        error(EXIT_FAILURE, 0, "No listening sockets");
+    if (!lfds) {
+        fprintf(stderr, "No listening sockets\n");
+        close(epoll);
+        return EX_CONFIG;
+    }
 
     errno = 0;
     fds = strtol(lfds, NULL, 10);
-    if (errno != 0 || fds == 0)
-        error(EXIT_FAILURE, errno, "Invalid LISTEN_FDS: %s", lfds);
+    if (errno != 0 || fds == 0) {
+        fprintf(stderr, "Invalid LISTEN_FDS: %s\n", lfds);
+        close(epoll);
+        return EX_CONFIG;
+    }
 
     for (int i = 0; i < fds; i++) {
         int fd = i + LISTEN_FD_START;
@@ -111,17 +135,16 @@ main(int argc, char *argv[])
         if (epoll_ctl(epoll, EPOLL_CTL_ADD, fd, &(struct epoll_event) {
             .events = EPOLLIN | EPOLLRDHUP | EPOLLPRI,
             .data.fd = fd
-        }) != 0)
-            error(EXIT_FAILURE, errno, "Error calling epoll_ctl()");
+        }) != 0) {
+            close(epoll);
+            return EX_OSERR;
+        }
     }
 
     signal(SIGTERM, onsig);
     signal(SIGINT, onsig);
 
-    r = srv_main(dbdir, epoll, req, rep, &addr, -1);
-    if (r != 0)
-        error(EXIT_FAILURE, r, "Error calling srv_main()");
-
+    r = srv_main(opts.dbdir, epoll, req, rep, &addr, -1);
     close(epoll);
-    return 0;
+    return r == 0 ? 0 : EX_IOERR;
 }

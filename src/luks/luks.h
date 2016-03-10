@@ -1,6 +1,6 @@
 /* vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80: */
 /*
- * Copyright (c) 2015 Red Hat, Inc.
+ * Copyright (c) 2016 Red Hat, Inc.
  * Author: Nathaniel McCallum <npmccallum@redhat.com>
  *
  * This program is free software: you can redistribute it and/or modify
@@ -17,14 +17,20 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/**
+ * The sole purpose of this file is to encapsulate all code related
+ * to parsing the LUKS v1 header. It is used to calculate the hole
+ * in the LUKS v1 header that arises due to alignment. We will
+ * exploit this hole for metadata storage.
+ */
+
 #pragma once
 
-#include "../asn1.h"
-#include "../pkt.h"
+#include <stdbool.h>
+#include <stdint.h>
 
-typedef int srv_req(int sock, TANG_MSG **req, void *misc);
-typedef int srv_rep(int sock, const pkt_t *pkt, void *misc);
+#define LUKS_ALIGN_KEYSLOTS 4096
+#define LUKS_NUMKEYS 8
 
 int
-srv_main(const char *dbdir, int epoll, srv_req *req, srv_rep *rep,
-         void *misc, int timeout);
+luks_hole(const char *device, bool write, uint32_t *length);

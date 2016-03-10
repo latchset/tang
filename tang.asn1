@@ -35,7 +35,7 @@ TangMessageAdvertiseRequest ::= SEQUENCE {
 
 TangMessageAdvertiseRequestBody ::= CHOICE {
   grps   [0] SET OF OBJECT IDENTIFIER,
-  key    [1] TangKey,
+  keys   [1] SET OF TangKey,
   ...
 }
 

@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "../conv.h"
+#include "../core/conv.h"
 #include "adv.h"
 #include "rec.h"
 
@@ -81,7 +81,7 @@ make_sig(int nid, const db_key_t *key, const unsigned char *hash, size_t hlen,
     if (!sig->key)
         goto error;
 
-    if (conv_eckey2gkey(key->key, key->use, sig->key, ctx) != 0)
+    if (conv_eckey2tkey(key->key, key->use, sig->key, ctx) != 0)
         goto error;
 
     sig->sig = TANG_SIG_new();
@@ -213,7 +213,7 @@ adv_update(adv_t *adv, const db_t *db, BN_CTX *ctx)
             goto error;
         }
 
-        if (conv_eckey2gkey(k->key, k->use, key, ctx) != 0)
+        if (conv_eckey2tkey(k->key, k->use, key, ctx) != 0)
             goto error;
     }
 
@@ -261,14 +261,14 @@ error:
 static TANG_KEY *
 find_key(STACK_OF(TANG_KEY) *keys, TANG_KEY *key)
 {
-	for (int i = 0; i < SKM_sk_num(TANG_KEY, keys); i++) {
-		TANG_KEY *k = SKM_sk_value(TANG_KEY, keys, i);
+    for (int i = 0; i < SKM_sk_num(TANG_KEY, keys); i++) {
+        TANG_KEY *k = SKM_sk_value(TANG_KEY, keys, i);
 
-		if (TANG_KEY_equals(key, k))
-			return k;
-	}
+        if (TANG_KEY_equals(key, k))
+            return k;
+    }
 
-	return NULL;
+    return NULL;
 }
 
 TANG_MSG_ERR

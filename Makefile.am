@@ -1,10 +1,10 @@
 ACLOCAL_AMFLAGS = -I m4
 SUBDIRS = src
 
-systemdsystemunit_DATA = tang.socket tang@.service
+systemdsystemunit_DATA = tang-keyd.socket tang-keyd@.service
 
 CLEANFILES = $(systemdsystemunit_DATA)
-EXTRA_DIST = tang.socket.in tang@.service.in
+EXTRA_DIST = tang-keyd.socket.in tang-keyd@.service.in
 
 %: %.in
 	$(AM_V_GEN)$(SED) \

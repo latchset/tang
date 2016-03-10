@@ -19,18 +19,12 @@
 
 #pragma once
 
-#include "asn1.h"
+#include "../core/asn1.h"
+#include "../core/pkt.h"
 
-/* Converts an EC_KEY into a TANG_KEY. */
-int
-conv_eckey2gkey(EC_KEY *key, TANG_KEY_USE use, TANG_KEY *gkey, BN_CTX *ctx);
+typedef int srv_req(int sock, TANG_MSG **req, void *misc);
+typedef int srv_rep(int sock, const pkt_t *pkt, void *misc);
 
-/* Converts a point to a OCTET STRING. */
 int
-conv_point2os(const EC_GROUP *grp, const EC_POINT *p, ASN1_OCTET_STRING *os,
-              BN_CTX *ctx);
-
-/* Converts a OCTET STRING to a point, verifying curve membership. */
-int
-conv_os2point(const EC_GROUP *grp, const ASN1_OCTET_STRING *os, EC_POINT *p,
-              BN_CTX *ctx);
+srv_main(const char *dbdir, int epoll, srv_req *req, srv_rep *rep,
+         void *misc, int timeout);

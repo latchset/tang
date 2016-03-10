@@ -1,6 +1,6 @@
 /* vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80: */
 /*
- * Copyright (c) 2015 Red Hat, Inc.
+ * Copyright (c) 2016 Red Hat, Inc.
  * Author: Nathaniel McCallum <npmccallum@redhat.com>
  *
  * This program is free software: you can redistribute it and/or modify
@@ -17,21 +17,23 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/**
+ * The sole purpose of this file is to encapsulate all code related
+ * to parsing the LUKS v1 header. It is used to calculate the hole
+ * in the LUKS v1 header that arises due to alignment. We will
+ * exploit this hole for metadata storage.
+ */
+
 #pragma once
 
-#include "../pkt.h"
-#include "db.h"
+#include "../core/asn1.h"
 
-typedef struct adv adv_t;
+typedef struct {
+    TANG_MSG_REC_REQ *rec;
+    ASN1_UTF8STRING *host;
+    ASN1_UTF8STRING *service;
+    ASN1_BOOLEAN listen;
+} TANG_LUKS;
 
-int
-adv_init(adv_t **adv);
+DECLARE_ASN1_FUNCTIONS(TANG_LUKS)
 
-void
-adv_free(adv_t *adv);
-
-int
-adv_update(adv_t *adv, const db_t *db, BN_CTX *ctx);
-
-TANG_MSG_ERR
-adv_sign(adv_t *adv, const TANG_MSG_ADV_REQ *req, pkt_t *pkt);

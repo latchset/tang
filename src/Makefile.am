@@ -1,8 +1,29 @@
-SUBDIRS = . progs tests clevis
+SUBDIRS = . tests
 
-noinst_LTLIBRARIES = libcommon.la
+AM_CFLAGS = @LIBCRYPTO_CFLAGS@ @CRYPTSETUP_CFLAGS@ -fPIC
+AM_LDFLAGS = @LIBCRYPTO_LIBS@
+LIBS = libcore.a
 
-libcommon_la_SOURCES = \
-	asn1.c asn1.h \
-	conv.c conv.h \
-	pkt.c  pkt.h
+noinst_LIBRARIES = libcore.a libclt.a libluks.a libsrv.a
+libcore_a_SOURCES = core/asn1.c core/asn1.h core/conv.c core/conv.h core/pkt.c core/pkt.h
+libclt_a_SOURCES = clt/adv.c clt/adv.h clt/rec.c clt/rec.h clt/msg.c clt/msg.h clt/skey.c clt/skey.h
+libluks_a_SOURCES = luks/luks.c luks/luks.h luks/meta.c luks/meta.h luks/asn1.c luks/asn1.h
+libsrv_a_SOURCES = srv/adv.c srv/adv.h srv/db.c srv/db.h srv/list.c srv/list.h srv/rec.c srv/rec.h srv/srv.c srv/srv.h
+
+clevispin_PROGRAMS = tang.so
+tang_so_SOURCES = clevis.c
+tang_so_LDADD = libclt.a @CLEVIS_LIBS@
+tang_so_LDFLAGS = -shared -Wl,--version-script=clevis.sym
+
+bin_PROGRAMS = tang tang-luks-bind tang-luks-list tang-luks-unbind tang-key-gen tang-key-mod tang-key-send tang-key-groups
+tang_luks_bind_LDADD = libclt.a libluks.a
+tang_luks_bind_LDFLAGS = @CRYPTSETUP_LIBS@ $(AM_LDFLAGS)
+tang_luks_list_LDADD = libluks.a
+tang_luks_list_LDFLAGS = @CRYPTSETUP_LIBS@ $(AM_LDFLAGS)
+tang_luks_unbind_LDADD = libluks.a
+tang_luks_unbind_LDFLAGS = @CRYPTSETUP_LIBS@ $(AM_LDFLAGS)
+tang_key_send_LDADD = libsrv.a
+
+libexec_PROGRAMS = tang-keyd
+tang_keyd_LDADD = libsrv.a
+

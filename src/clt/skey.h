@@ -1,6 +1,6 @@
 /* vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80: */
 /*
- * Copyright (c) 2015 Red Hat, Inc.
+ * Copyright (c) 2016 Red Hat, Inc.
  * Author: Nathaniel McCallum <npmccallum@redhat.com>
  *
  * This program is free software: you can redistribute it and/or modify
@@ -19,9 +19,21 @@
 
 #pragma once
 
-#include "../pkt.h"
-#include "db.h"
+#include <stddef.h>
+#include <stdint.h>
 
-TANG_MSG_ERR
-rec_decrypt(const db_t *db, const TANG_MSG_REC_REQ *req, pkt_t *pkt,
-            BN_CTX *ctx);
+#include <openssl/ec.h>
+
+typedef struct {
+    size_t size;
+    uint8_t data[];
+} skey_t;
+
+skey_t *
+skey_new(size_t size);
+
+skey_t *
+skey_from_point(const EC_GROUP *g, const EC_POINT *p, BN_CTX *ctx);
+
+void
+skey_free(skey_t *skey);

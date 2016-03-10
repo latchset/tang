@@ -1,0 +1,4 @@
+{
+global: clevis_pin;
+local: *;
+};

@@ -34,7 +34,7 @@
 
 #include <openssl/evp.h>
 
-#define BIN "../progs/tang-send"
+#define BIN "../tang-key-send"
 #define _str(x) # x
 #define str(x) _str(x)
 
@@ -65,7 +65,7 @@ main(int argc, char *argv[])
     struct sockaddr sa = {};
     socklen_t slen = sizeof(sa);
     uint16_t port = 0;
-    char host[64];
+    char svc[64];
     int lsock;
     int asock;
 
@@ -73,7 +73,7 @@ main(int argc, char *argv[])
 
     srand(time(NULL));
     port = 1024 + rand() % (UINT16_MAX - 1024);
-    snprintf(host, sizeof(host), "localhost:%u", port);
+    snprintf(svc, sizeof(svc), "%u", port);
 
     lsock = socket(AF_INET, SOCK_STREAM, 0);
     if (lsock < 0)
@@ -99,7 +99,7 @@ main(int argc, char *argv[])
 
     if (pid == 0) {
         close(lsock);
-        execlp(BIN, BIN, "-d", tempdir, host, NULL);
+        execlp(BIN, BIN, "-d", tempdir, "localhost", svc, NULL);
         exit(EXIT_FAILURE);
     }
 

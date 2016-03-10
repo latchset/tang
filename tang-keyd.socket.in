@@ -1,5 +1,5 @@
 [Unit]
-Description=Tang daemon socket
+Description=Tang key daemon socket
 ConditionDirectoryNotEmpty=@TANG_DB@
 
 [Socket]

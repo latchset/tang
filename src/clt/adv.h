@@ -18,33 +18,12 @@
  */
 
 #pragma once
-#include <stdbool.h>
-#include <limits.h>
 
-#include "../asn1.h"
-#include "list.h"
+#include "skey.h"
+#include "../core/asn1.h"
 
-#include <openssl/ec.h>
+TANG_MSG_ADV_REQ *
+adv_req(STACK_OF(TANG_KEY) *keys);
 
-typedef struct {
-    char path[PATH_MAX];
-    list_t keys;
-    int fd;
-} db_t;
-
-typedef struct {
-    char name[NAME_MAX];
-    list_t list;
-    EC_KEY *key;
-    TANG_KEY_USE use;
-    bool adv;
-} db_key_t;
-
-int
-db_open(const char *dbdir, db_t **db);
-
-void
-db_free(db_t *db);
-
-int
-db_event(db_t *db);
+TANG_MSG_REC_REQ *
+adv_rep(const TANG_MSG_ADV_REP *adv, size_t min, skey_t **key, BN_CTX *ctx);

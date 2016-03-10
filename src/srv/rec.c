@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "../conv.h"
+#include "../core/conv.h"
 #include "rec.h"
 
 #include <openssl/objects.h>

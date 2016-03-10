@@ -1,6 +1,6 @@
 /* vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80: */
 /*
- * Copyright (c) 2015 Red Hat, Inc.
+ * Copyright (c) 2016 Red Hat, Inc.
  * Author: Nathaniel McCallum <npmccallum@redhat.com>
  *
  * This program is free software: you can redistribute it and/or modify
@@ -19,32 +19,15 @@
 
 #pragma once
 
-#include <clevis.h>
-#include "../asn1.h"
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include <openssl/evp.h>
+uint8_t *
+meta_read(const char *device, uint8_t slot, size_t *size);
 
-EC_KEY *
-tkey2eckey(const TANG_KEY *tkey, BN_CTX *ctx);
+bool
+meta_write(const char *device, uint8_t slot, const uint8_t *buf, size_t size);
 
-clevis_buf_t *
-point2key(const EC_GROUP *grp, const EC_POINT *pnt, BN_CTX *ctx);
-
-EC_KEY *
-random_key(int nid);
-
-TANG_MSG *
-request(const json_t *cfg, TANG_MSG *req);
-
-TANG_MSG *
-adv_rqst(const json_t *cfg);
-
-TANG_MSG *
-adv_load(const json_t *cfg);
-
-json_t *
-provision(const clevis_provision_f *funcs,
-          const json_t *cfg, const clevis_buf_t *key);
-
-clevis_buf_t *
-acquire(const clevis_acquire_f *funcs, const json_t *data);
+bool
+meta_erase(const char *device, uint8_t slot);

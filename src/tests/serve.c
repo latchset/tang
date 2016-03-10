@@ -32,7 +32,7 @@
 
 #include <openssl/evp.h>
 
-#define BIN "../progs/tang-serve"
+#define BIN "../tang-keyd"
 
 void
 client_checks(int sock, const char *dbdir);

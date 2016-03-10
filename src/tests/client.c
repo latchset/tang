@@ -17,9 +17,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "../asn1.h"
-#include "../conv.h"
-#include "../pkt.h"
+#include "../core/asn1.h"
+#include "../core/conv.h"
+#include "../core/pkt.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -70,7 +70,7 @@ keygen(const char *dbdir, const char *name,
 
     test(snprintf(fname, sizeof(fname), "%s/%s", dbdir, name) > 0);
     test(snprintf(cmd, sizeof(cmd),
-                  "../progs/tang-gen -%c %s %s %s >/dev/null",
+                  "../tang-key-gen -%c %s %s -f %s >/dev/null",
                   adv ? 'A' : 'a', grpname, use, fname) > 1);
 
     test(system(cmd) == 0);
@@ -97,7 +97,7 @@ rec(int sock, EC_KEY *key, const char *file, int line)
 
     test(grp = EC_KEY_get0_group(key));
     test(req = TANG_MSG_REC_REQ_new());
-    test(conv_eckey2gkey(key, TANG_KEY_USE_REC, req->key, NULL) == 0);
+    test(conv_eckey2tkey(key, TANG_KEY_USE_REC, req->key, NULL) == 0);
     test(conv_point2os(grp, EC_GROUP_get0_generator(grp), req->x, NULL) == 0);
     test(rep = request(sock, &(TANG_MSG) {
         .type = TANG_MSG_TYPE_REC_REQ,
@@ -123,9 +123,11 @@ adv(int sock, int type, int grp, EC_KEY *key, TANG_KEY_USE use,
         test(sk_ASN1_OBJECT_push(req->types, OBJ_nid2obj(type)) > 0);
 
     if (key) {
-        req->body->type = TANG_MSG_ADV_REQ_BDY_TYPE_KEY;
-        test(req->body->val.key = TANG_KEY_new());
-        test(conv_eckey2gkey(key, use, req->body->val.key, NULL) == 0);
+        TANG_KEY *tkey = TANG_KEY_new();
+        test(conv_eckey2tkey(key, use, tkey, NULL) == 0);
+        req->body->type = TANG_MSG_ADV_REQ_BDY_TYPE_KEYS;
+        test(req->body->val.keys = SKM_sk_new_null(TANG_KEY));
+        test(SKM_sk_push(TANG_KEY, req->body->val.keys, tkey) > 0);
     } else {
         req->body->type = TANG_MSG_ADV_REQ_BDY_TYPE_GRPS;
         test(req->body->val.grps = sk_ASN1_OBJECT_new_null());
@@ -246,7 +248,7 @@ rec_benchmark(int sock, EC_KEY *key, int iter, const char *file, int line)
 
     test(grp = EC_KEY_get0_group(key));
     test(req.val.rec.req = TANG_MSG_REC_REQ_new());
-    test(conv_eckey2gkey(key, TANG_KEY_USE_REC, req.val.rec.req->key, NULL) == 0);
+    test(conv_eckey2tkey(key, TANG_KEY_USE_REC, req.val.rec.req->key, NULL) == 0);
     test(conv_point2os(grp, EC_GROUP_get0_generator(grp), req.val.rec.req->x, NULL) == 0);
     test(pkt_encode(&req, &out) == 0);
     TANG_MSG_REC_REQ_free(req.val.rec.req);

@@ -94,14 +94,18 @@ rqst(const TANG_MSG *req, const struct addrinfo *ais, time_t to)
 }
 
 STACK_OF(TANG_MSG) *
-msg_rqst(const TANG_MSG **req, const char *host, const char *port, time_t to)
+msg_rqst_batch(const msg_t *params, const TANG_MSG **reqs)
 {
     const struct addrinfo hint = { .ai_socktype = SOCK_DGRAM };
     STACK_OF(TANG_MSG) *msgs = NULL;
     struct addrinfo *res = NULL;
-    int r = 0;
 
-    while ((r = getaddrinfo(host, port, &hint, &res)) != 0) {
+    /* TODO: add support for listening. */
+    if (params->listen)
+        return NULL;
+
+    for (int r = 1; r != 0; ) {
+        r = getaddrinfo(params->hostname, params->service, &hint, &res);
         if (r != EAI_AGAIN)
             return NULL;
     }
@@ -109,11 +113,11 @@ msg_rqst(const TANG_MSG **req, const char *host, const char *port, time_t to)
     msgs = SKM_sk_new_null(TANG_MSG);
     if (!msgs)
         goto error;
-    
-    for (size_t i = 0; req[i]; i++) {
+
+    for (size_t i = 0; reqs[i]; i++) {
         TANG_MSG *msg = NULL;
 
-        msg = rqst(req[i], res, to);
+        msg = rqst(reqs[i], res, params->timeout);
         if (!msg)
             goto error;
 
@@ -128,12 +132,25 @@ error:
     SKM_sk_pop_free(TANG_MSG, msgs, TANG_MSG_free);
     freeaddrinfo(res);
     return NULL;
+
 }
 
-STACK_OF(TANG_MSG) *
-msg_wait(const TANG_MSG **req, const char *host, const char *port, time_t to)
+TANG_MSG *
+msg_rqst(const msg_t *params, const TANG_MSG *req)
 {
-    return NULL;
+    const TANG_MSG *reqs[] = { req, NULL };
+    STACK_OF(TANG_MSG) *msgs = NULL;
+    TANG_MSG *msg = NULL;
+
+    msgs = msg_rqst_batch(params, reqs);
+    if (!msgs)
+        return NULL;
+
+    if (SKM_sk_num(TANG_MSG, msgs) == 1)
+        msg = SKM_sk_pop(TANG_MSG, msgs);
+
+    SKM_sk_pop_free(TANG_MSG, msgs, TANG_MSG_free);
+    return msg;
 }
 
 int

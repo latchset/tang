@@ -31,10 +31,8 @@
 
 struct options {
     const char *device;
-    const char *host;
-    const char *svc;
     const char *file;
-    bool listen;
+    msg_t params;
 };
 
 static TANG_MSG_ADV_REP *
@@ -47,24 +45,13 @@ get_adv(const struct options *opts)
         msg = msg_read(opts->file);
     } else {
         TANG_MSG req = { .type = TANG_MSG_TYPE_ADV_REQ };
-        const TANG_MSG *reqs[] = { &req, NULL };
-        STACK_OF(TANG_MSG) *reps = NULL;
 
         req.val.adv.req = adv_req(NULL);
         if (!req.val.adv.req)
             return NULL;
 
-        if (opts->listen)
-            reps = msg_wait(reqs, opts->host, opts->svc, 10);
-        else
-            reps = msg_rqst(reqs, opts->host, opts->svc, 10);
-
+        msg = msg_rqst(&opts->params, &req);
         TANG_MSG_ADV_REQ_free(req.val.adv.req);
-
-        if (reps && SKM_sk_num(TANG_MSG, reps) == 1)
-            msg = SKM_sk_pop(TANG_MSG, reps);
-
-        SKM_sk_pop_free(TANG_MSG, reps, TANG_MSG_free);
     }
 
     if (msg && msg->type == TANG_MSG_TYPE_ADV_REP) {
@@ -116,6 +103,36 @@ error:
 }
 
 /* Steals rec */
+static TANG_LUKS *
+TANG_LUKS_make(const msg_t *params, TANG_MSG_REC_REQ *rec)
+{
+    TANG_LUKS *tl = NULL;
+
+    tl = TANG_LUKS_new();
+    if (!tl) {
+        TANG_MSG_REC_REQ_free(rec);
+        return NULL;
+    }
+
+    tl->listen = params->listen;
+    tl->rec = rec;
+
+    if (ASN1_STRING_set(tl->hostname, params->hostname,
+                        strlen(params->hostname)) <= 0)
+        goto error;
+
+    if (ASN1_STRING_set(tl->service, params->service,
+                        strlen(params->service)) <= 0)
+        goto error;
+
+    return tl;
+
+error:
+    TANG_LUKS_free(tl);
+    return NULL;
+}
+
+/* Steals rec */
 static bool
 store(const struct options *opts, TANG_MSG_REC_REQ *rec, int slot)
 {
@@ -124,20 +141,8 @@ store(const struct options *opts, TANG_MSG_REC_REQ *rec, int slot)
     uint8_t *buf = NULL;
     int len = 0;
 
-    tl = TANG_LUKS_new();
-    if (!tl) {
-        TANG_MSG_REC_REQ_free(rec);
-        goto egress;
-    }
-
-    TANG_MSG_REC_REQ_free(tl->rec);
-    tl->listen = opts->listen;
-    tl->rec = rec;
-
-    if (ASN1_STRING_set(tl->host, opts->host, strlen(opts->host)) <= 0)
-        goto egress;
-
-    if (ASN1_STRING_set(tl->service, opts->svc, strlen(opts->svc)) <= 0)
+    tl = TANG_LUKS_make(&opts->params, rec);
+    if (!tl)
         goto egress;
 
     len = i2d_TANG_LUKS(tl, &buf);
@@ -182,7 +187,7 @@ add(const struct options *opts)
 
     adv = get_adv(opts);
     if (!adv)
-        goto egress; 
+        goto egress;
 
     rec = adv_rep(adv, keysize, &key, ctx);
     TANG_MSG_ADV_REP_free(adv);
@@ -236,7 +241,7 @@ parser(int key, char* arg, struct argp_state* state)
         return 0;
 
     case 'l':
-        opts->listen = true;
+        opts->params.listen = true;
         return 0;
 
     case ARGP_KEY_END:
@@ -245,27 +250,38 @@ parser(int key, char* arg, struct argp_state* state)
             argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
             return EINVAL;
         }
-            
-        if (!opts->host && !opts->listen) {
+
+        if (strlen(opts->params.hostname) == 0 && !opts->params.listen) {
             fprintf(stderr, "Host MUST be specified when not listening!\n");
             argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
             return EINVAL;
         }
 
-        if (!opts->svc)
-            opts->svc = STR(TANG_PORT);
+        if (strlen(opts->params.service) == 0)
+            strcpy(opts->params.service, STR(TANG_PORT));
 
         return 0;
 
     case ARGP_KEY_ARG:
-        if (!opts->device)
+        if (!opts->device) {
             opts->device = arg;
-        else if (!opts->host)
-            opts->host = arg;
-        else if (!opts->svc)
-            opts->svc = arg;
-        else
+        } else if (strlen(opts->params.hostname) == 0) {
+            if (strlen(arg) >= sizeof(opts->params.hostname)) {
+                fprintf(stderr, "Hostname is too long!\n");
+                return EINVAL;
+            }
+
+            strncpy(opts->params.hostname, arg, sizeof(opts->params.hostname));
+        } else if (strlen(opts->params.service) == 0) {
+            if (strlen(arg) >= sizeof(opts->params.service)) {
+                fprintf(stderr, "Service is too long!\n");
+                return EINVAL;
+            }
+
+            strncpy(opts->params.service, arg, sizeof(opts->params.service));
+        } else {
             return ARGP_ERR_UNKNOWN;
+        }
 
         return 0;
 
@@ -279,7 +295,7 @@ const char *argp_program_version = VERSION;
 int
 main(int argc, char *argv[])
 {
-    struct options options = {};
+    struct options options = { .params.timeout = 10 };
     const struct argp argp = {
         .options = (const struct argp_option[]) {
             { "adv",    'a', "file", .doc = "Advertisement file" },
@@ -288,7 +304,7 @@ main(int argc, char *argv[])
             {}
         },
         .parser = parser,
-        .args_doc = "DEVICE [HOST [PORT]]"
+        .args_doc = "DEVICE [HOSTNAME [SERVICE]]"
     };
 
     if (argp_parse(&argp, argc, argv, 0, NULL, &options) != 0)

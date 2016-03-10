@@ -20,14 +20,20 @@
 #pragma once
 
 #include "../core/asn1.h"
+#include <unistd.h>
 
-/** Sends the reqs to host:port using UDP and returns the replies. */
-STACK_OF(TANG_MSG) *
-msg_rqst(const TANG_MSG **reqs, const char *host, const char *port, time_t to);
+typedef struct {
+    char hostname[HOST_NAME_MAX];
+    char service[HOST_NAME_MAX];
+    time_t timeout;
+    bool listen;
+} msg_t;
 
-/** Listens to host:port (TCP). On connect, send reqs and return replies. */
 STACK_OF(TANG_MSG) *
-msg_wait(const TANG_MSG **reqs, const char *host, const char *port, time_t to);
+msg_rqst_batch(const msg_t *params, const TANG_MSG **reqs);
+
+TANG_MSG *
+msg_rqst(const msg_t *params, const TANG_MSG *req);
 
 /** Saves msg to filename. */
 int

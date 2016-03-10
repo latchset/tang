@@ -1,6 +1,6 @@
 /* vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80: */
 /*
- * Copyright (c) 2016 Red Hat, Inc.
+ * Copyright (c) 2015 Red Hat, Inc.
  * Author: Nathaniel McCallum <npmccallum@redhat.com>
  *
  * This program is free software: you can redistribute it and/or modify
@@ -17,22 +17,31 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/**
- * The sole purpose of this file is to encapsulate all code related
- * to parsing the LUKS v1 header. It is used to calculate the hole
- * in the LUKS v1 header that arises due to alignment. We will
- * exploit this hole for metadata storage.
- */
+#pragma once
 
-#include "asn1.h"
-#include "../clt/msg.h"
+#include "../core/list.h"
+#include "../clt/skey.h"
 
-ASN1_SEQUENCE(TANG_LUKS) = {
-    ASN1_EXP(TANG_LUKS, rec, TANG_MSG_REC_REQ, 0),
-    ASN1_EXP(TANG_LUKS, hostname, ASN1_UTF8STRING, 1),
-    ASN1_EXP(TANG_LUKS, service, ASN1_UTF8STRING, 2),
-    ASN1_EXP(TANG_LUKS, listen, ASN1_BOOLEAN, 3),
-} ASN1_SEQUENCE_END(TANG_LUKS)
+#include <limits.h>
+#include <stdbool.h>
 
-IMPLEMENT_ASN1_FUNCTIONS(TANG_LUKS)
+typedef struct {
+    struct list list;
+    char device[PATH_MAX];
+} question_t;
+
+question_t *
+question_new(const char *dir, const char *name);
+
+void
+question_free(question_t *q);
+
+bool
+question_named(const question_t *q, const char *name);
+
+bool
+question_expired(const question_t *q);
+
+void
+question_answer(const question_t *q, const skey_t *skey);
 

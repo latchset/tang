@@ -95,7 +95,7 @@ list(const struct options *opts)
 
             fprintf(stderr, "%c %*s:%*s\n",
                     tluks->listen ? 'L' : 'S',
-                    tluks->host->length, tluks->host->data,
+                    tluks->hostname->length, tluks->hostname->data,
                     tluks->service->length, tluks->service->data);
             break;
 
@@ -139,7 +139,7 @@ parser(int key, char* arg, struct argp_state* state)
     case ARGP_KEY_ARG:
         if (opts->device)
             return ARGP_ERR_UNKNOWN;
-        
+
         opts->device = arg;
         return 0;
 

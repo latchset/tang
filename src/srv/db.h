@@ -22,7 +22,7 @@
 #include <limits.h>
 
 #include "../core/asn1.h"
-#include "list.h"
+#include "../core/list.h"
 
 #include <openssl/ec.h>
 

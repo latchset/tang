@@ -19,7 +19,9 @@
 
 #pragma once
 
-#define LIST_UNWRAP(p, t, m) ({ (t *) ((void *) (p) - offsetof(t, m)); })
+#include <stddef.h>
+
+#define LIST_UNWRAP(p, t, m) ({ (t *) ((char *) (p) - offsetof(t, m)); })
 
 typedef struct list list_t;
 

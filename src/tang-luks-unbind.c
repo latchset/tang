@@ -19,6 +19,7 @@
 
 #include "luks/asn1.h"
 #include "luks/meta.h"
+#include "clt/msg.h"
 
 #include <libcryptsetup.h>
 
@@ -28,25 +29,8 @@
 
 struct options {
     const char *device;
-    const char *host;
-    const char *svc;
-    bool listen;
+    msg_t params;
 };
-
-static bool
-ASN1_UTF8STRING_equals(ASN1_UTF8STRING *a, const char *b)
-{
-    uint8_t *tmp = NULL;
-    int r = 0;
-
-    r = ASN1_STRING_to_UTF8(&tmp, a);
-    if (r <= 0)
-        return false;
-
-    r = strncmp((char *) tmp, b, r);
-    OPENSSL_free(tmp);
-    return r == 0;
-} 
 
 static int
 del(const struct options *opts)
@@ -96,17 +80,19 @@ del(const struct options *opts)
             if (!tluks)
                 continue;
 
-            if ((tluks->listen != 0) != (opts->listen != false)) {
+            if ((tluks->listen != 0) != (opts->params.listen != false)) {
                 TANG_LUKS_free(tluks);
                 continue;
             }
 
-            if (!ASN1_UTF8STRING_equals(tluks->host, opts->host)) {
+            if (strncmp((char *) tluks->hostname->data, opts->params.hostname,
+                        tluks->hostname->length) == 0) {
                 TANG_LUKS_free(tluks);
                 continue;
             }
 
-            if (!ASN1_UTF8STRING_equals(tluks->service, opts->svc)) {
+            if (strncmp((char *) tluks->service->data, opts->params.service,
+                        tluks->service->length) == 0) {
                 TANG_LUKS_free(tluks);
                 continue;
             }
@@ -145,7 +131,7 @@ parser(int key, char* arg, struct argp_state* state)
         return EINVAL;
 
     case 'l':
-        opts->listen = true;
+        opts->params.listen = true;
         return 0;
 
     case ARGP_KEY_END:
@@ -154,27 +140,38 @@ parser(int key, char* arg, struct argp_state* state)
             argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
             return EINVAL;
         }
-            
-        if (!opts->host && !opts->listen) {
+
+        if (strlen(opts->params.hostname) == 0 && !opts->params.listen) {
             fprintf(stderr, "Host MUST be specified when not listening!\n");
             argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
             return EINVAL;
         }
 
-        if (!opts->svc)
-            opts->svc = STR(TANG_PORT);
+        if (strlen(opts->params.service) == 0)
+            strcpy(opts->params.service, STR(TANG_PORT));
 
         return 0;
 
     case ARGP_KEY_ARG:
-        if (!opts->device)
+        if (!opts->device) {
             opts->device = arg;
-        else if (!opts->host)
-            opts->host = arg;
-        else if (!opts->svc)
-            opts->svc = arg;
-        else
+        } else if (strlen(opts->params.hostname) == 0) {
+            if (strlen(arg) >= sizeof(opts->params.hostname)) {
+                fprintf(stderr, "Hostname is too long!\n");
+                return EINVAL;
+            }
+
+            strncpy(opts->params.hostname, arg, sizeof(opts->params.hostname));
+        } else if (strlen(opts->params.service) == 0) {
+            if (strlen(arg) >= sizeof(opts->params.service)) {
+                fprintf(stderr, "Service is too long!\n");
+                return EINVAL;
+            }
+
+            strncpy(opts->params.service, arg, sizeof(opts->params.service));
+        } else {
             return ARGP_ERR_UNKNOWN;
+        }
 
         return 0;
 
@@ -196,7 +193,7 @@ main(int argc, char *argv[])
             {}
         },
         .parser = parser,
-        .args_doc = "DEVICE [HOST [PORT]]"
+        .args_doc = "DEVICE [HOSTNAME [SERVICE]]"
     };
 
     if (argp_parse(&argp, argc, argv, 0, NULL, &options) != 0)

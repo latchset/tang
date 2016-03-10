@@ -161,7 +161,7 @@ main(int argc, char *argv[])
             {}
         },
         .parser = parser,
-        .args_doc = "HOST [SERVICE]"
+        .args_doc = "HOSTNAME [SERVICE]"
     };
     struct addrinfo *infos = NULL;
     pkt_t pkt = {};

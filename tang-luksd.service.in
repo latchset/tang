@@ -1,0 +1,6 @@
+[Unit]
+Description=Tang LUKS askpass daemon
+DefaultDependencies=false
+
+[Service]
+ExecStart=@libexecdir@/tang-luksd

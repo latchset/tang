@@ -30,7 +30,7 @@
 
 typedef struct {
     TANG_MSG_REC_REQ *rec;
-    ASN1_UTF8STRING *host;
+    ASN1_UTF8STRING *hostname;
     ASN1_UTF8STRING *service;
     ASN1_BOOLEAN listen;
 } TANG_LUKS;

@@ -21,12 +21,13 @@
 #include "clt/adv.h"
 #include "clt/rec.h"
 #include "clt/msg.h"
+#include <string.h>
 
 #define _STR(x) # x
 #define STR(x) _STR(x)
 
 static TANG_MSG_ADV_REP *
-get_adv(const char *host, const char *svc, bool listen, const char *file)
+get_adv(const msg_t *params, const char *file)
 {
     TANG_MSG_ADV_REP *rep = NULL;
     TANG_MSG *msg = NULL;
@@ -35,24 +36,13 @@ get_adv(const char *host, const char *svc, bool listen, const char *file)
         msg = msg_read(file);
     } else {
         TANG_MSG req = { .type = TANG_MSG_TYPE_ADV_REQ };
-        const TANG_MSG *reqs[] = { &req, NULL };
-        STACK_OF(TANG_MSG) *reps = NULL;
 
         req.val.adv.req = adv_req(NULL);
         if (!req.val.adv.req)
             return NULL;
 
-        if (listen)
-            reps = msg_wait(reqs, host, svc, 10);
-        else
-            reps = msg_rqst(reqs, host, svc, 10);
-
+        msg = msg_rqst(params, &req);
         TANG_MSG_ADV_REQ_free(req.val.adv.req);
-
-        if (reps && SKM_sk_num(TANG_MSG, reps) == 1)
-            msg = SKM_sk_pop(TANG_MSG, reps);
-
-        SKM_sk_pop_free(TANG_MSG, reps, TANG_MSG_free);
     }
 
     if (msg && msg->type == TANG_MSG_TYPE_ADV_REP) {
@@ -74,18 +64,18 @@ copy_config(const json_t *cfg)
     if (!data)
         return NULL;
 
-    tmp = json_object_get(cfg, "host");
+    tmp = json_object_get(cfg, "hostname");
     if (!json_is_string(tmp)) {
-        fprintf(stderr, "Missing host parameter!\n");
+        fprintf(stderr, "Missing hostname parameter!\n");
         goto error;
     }
-    if (json_object_set(data, "host", tmp) < 0)
+    if (json_object_set(data, "hostname", tmp) < 0)
         goto error;
 
-    tmp = json_incref(json_object_get(cfg, "svc"));
+    tmp = json_incref(json_object_get(cfg, "service"));
     if (!json_is_string(tmp))
         tmp = json_string(STR(TANG_PORT));
-    if (json_object_set_new(data, "svc", tmp) < 0)
+    if (json_object_set_new(data, "service", tmp) < 0)
         goto error;
 
     tmp = json_incref(json_object_get(data, "listen"));
@@ -143,7 +133,7 @@ decode_rec(const json_t *val)
 {
     TANG_MSG_REC_REQ *rec = NULL;
     clevis_buf_t *tmp = NULL;
-    
+
     if (!json_is_string(val))
         return NULL;
 
@@ -157,6 +147,25 @@ decode_rec(const json_t *val)
     return rec;
 }
 
+static bool
+make_params(const json_t *data, msg_t *params)
+{
+    const char *tmp = NULL;
+
+    tmp = json_string_value(json_object_get(data, "hostname"));
+    if (!tmp || strlen(tmp) >= sizeof(params->hostname))
+        return false;
+    strcpy(params->hostname, tmp);
+
+    tmp = json_string_value(json_object_get(data, "service"));
+    if (!tmp || strlen(tmp) >= sizeof(params->service))
+        return false;
+    strcpy(params->service, tmp);
+
+    params->listen = json_boolean_value(json_object_get(data, "listen"));
+    return true;
+}
+
 static json_t *
 provision(const clevis_provision_f *funcs,
           const json_t *cfg, const clevis_buf_t *key)
@@ -167,6 +176,7 @@ provision(const clevis_provision_f *funcs,
     json_t *data = NULL;
     skey_t *tmp = NULL;
     BN_CTX *ctx = NULL;
+    msg_t params = {};
 
     ctx = BN_CTX_new();
     if (!ctx)
@@ -176,14 +186,14 @@ provision(const clevis_provision_f *funcs,
     if (!data)
         goto error;
 
-    adv = get_adv(json_string_value(json_object_get(data, "host")),
-                  json_string_value(json_object_get(data, "svc")),
-                  json_boolean_value(json_object_get(data, "listen")),
-                  get_file(cfg));
+    if (!make_params(data, &params))
+        goto error;
+
+    adv = get_adv(&params, get_file(cfg));
     if (!adv)
         goto error;
 
-    rec = adv_rep(adv, key->len, &tmp, ctx); 
+    rec = adv_rep(adv, key->len, &tmp, ctx);
     if (!rec)
         goto error;
 
@@ -218,16 +228,14 @@ static clevis_buf_t *
 acquire(const clevis_acquire_f *funcs, const json_t *data)
 {
     TANG_MSG req = { .type = TANG_MSG_TYPE_REC_REQ };
-    const TANG_MSG *reqs[] = { &req, NULL };
     const TANG_MSG_REC_REP *rep = NULL;
-    STACK_OF(TANG_MSG) *msgs = NULL;
     clevis_buf_t *okey = NULL;
     clevis_buf_t *out = NULL;
-    const char *host = NULL;
-    const char *svc = NULL;
+    TANG_MSG *msg = NULL;
     EC_KEY *eckey = NULL;
     skey_t *skey = NULL;
     BN_CTX *ctx = NULL;
+    msg_t params = {};
 
     ctx = BN_CTX_new();
     if (!ctx)
@@ -241,18 +249,17 @@ acquire(const clevis_acquire_f *funcs, const json_t *data)
     if (!eckey)
         goto egress;
 
-    host = json_string_value(json_object_get(data, "host"));
-    svc = json_string_value(json_object_get(data, "svc"));
-    if (json_boolean_value(json_object_get(data, "listen")))
-        msgs = msg_wait(reqs, host, svc, 10);
-    else
-        msgs = msg_rqst(reqs, host, svc, 10);
+    if (!make_params(data, &params))
+        goto egress;
 
-    if (msgs && SKM_sk_num(TANG_MSG, msgs) == 1) {
-        TANG_MSG *msg = SKM_sk_value(TANG_MSG, msgs, 0);
-        if (msg->type == TANG_MSG_TYPE_REC_REP)
-            rep = msg->val.rec.rep;
-    }
+    msg = msg_rqst(&params, &req);
+    if (!msg)
+        goto egress;
+
+    if (msg->type != TANG_MSG_TYPE_REC_REP)
+        rep = msg->val.rec.rep;
+
+    TANG_MSG_free(msg);
     if (!rep)
         goto egress;
 
@@ -267,7 +274,6 @@ acquire(const clevis_acquire_f *funcs, const json_t *data)
     out = funcs->decrypt(okey, json_object_get(data, "ct"));
 
 egress:
-    SKM_sk_pop_free(TANG_MSG, msgs, TANG_MSG_free);
     TANG_MSG_REC_REQ_free(req.val.rec.req);
     clevis_buf_free(okey);
     EC_KEY_free(eckey);
@@ -276,8 +282,8 @@ egress:
     return out;
 }
 
-clevis_pin_f CLEVIS_PIN = {                                                     
-    .provision = provision,                                                       
-    .acquire = acquire                                                           
+clevis_pin_f CLEVIS_PIN = {
+    .provision = provision,
+    .acquire = acquire
 };
 

@@ -1,0 +1,9 @@
+[Unit]
+Description=Tang LUKS askpass daemon path
+DefaultDependencies=false
+
+[Path]
+DirectoryNotEmpty=/run/systemd/ask-password
+
+[Install]
+WantedBy=basic.target

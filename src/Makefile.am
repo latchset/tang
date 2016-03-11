@@ -11,10 +11,12 @@ libluks_a_SOURCES = luks/luks.c luks/luks.h luks/meta.c luks/meta.h luks/asn1.c 
 libsrv_a_SOURCES = srv/adv.c srv/adv.h srv/db.c srv/db.h srv/rec.c srv/rec.h srv/srv.c srv/srv.h
 libaskpass_a_SOURCES = askpass/question.c askpass/question.h askpass/iface.c askpass/iface.h askpass/askp.c askpass/askp.h
 
+if USE_CLEVIS
 clevispin_PROGRAMS = tang.so
 tang_so_SOURCES = clevis.c
-tang_so_LDADD = libclt.a @CLEVIS_LIBS@
+tang_so_LDADD = libclt.a @clevis_LIBS@
 tang_so_LDFLAGS = -shared -Wl,--version-script=clevis.sym
+endif
 
 bin_PROGRAMS = tang tang-luks-bind tang-luks-list tang-luks-unbind tang-key-gen tang-key-mod tang-key-send tang-key-groups
 tang_luks_bind_LDADD = libclt.a libluks.a

@@ -52,17 +52,29 @@ AC_ARG_WITH(
 )
 AC_SUBST([systemdsystemunitdir], [$with_systemdsystemunitdir])
 
-PKG_CHECK_MODULES([CLEVIS], [clevis])
 AC_ARG_WITH(
-    [clevispindir],
-    AS_HELP_STRING(
-        [--with-clevispindir=DIR],
-        [Directory for clevis pins]
-    ),
+    [clevis],
+    [AS_HELP_STRING([--with-clevis], [build clevis pin @<:@default=check@:>@])],
     [],
-    [with_clevispindir=$($PKG_CONFIG --variable=pindir clevis)]
+    [with_clevis=check]
 )
-AC_SUBST([clevispindir], [$with_clevispindir])
+AS_CASE(
+    ["$with_clevis"],
+    [yes],
+    [PKG_CHECK_MODULES(
+        [clevis],
+	[clevis],
+	[HAVE_CLEVIS=1 && AC_SUBST([clevispindir], [$($PKG_CONFIG --variable=pindir clevis)])]
+    )],
+    [no], [],
+    [PKG_CHECK_MODULES(
+        [clevis],
+        [clevis],
+        [HAVE_CLEVIS=1 && AC_SUBST([clevispindir], [$($PKG_CONFIG --variable=pindir clevis)])],
+        [HAVE_CLEVIS=0]
+    )]
+)
+AM_CONDITIONAL([USE_CLEVIS], [test "$with_clevis" != no -a "$HAVE_CLEVIS" -eq 1])
 
 TANG_CFLAGS="\
 -Wall \

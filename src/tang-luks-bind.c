@@ -29,6 +29,10 @@
 #include <string.h>
 #include <sysexits.h>
 
+#define _STR(x) # x
+#define STR(x) _STR(x)
+#define SUMMARY 192
+
 struct options {
     const char *device;
     const char *file;
@@ -157,77 +161,8 @@ egress:
     return status;
 }
 
-static int
-add(const struct options *opts)
-{
-    struct crypt_device *cd = NULL;
-    TANG_MSG_ADV_REP *adv = NULL;
-    TANG_MSG_REC_REQ *rec = NULL;
-    int status = EX_IOERR;
-    BN_CTX *ctx = NULL;
-    skey_t *key = NULL;
-    skey_t *hex = NULL;
-    int keysize = 0;
-    int slot = 0;
-
-    ctx = BN_CTX_new();
-    if (!ctx)
-        goto egress;
-
-    cd = open_device(opts->device);
-    if (!cd)
-        goto egress;
-
-    keysize = crypt_get_volume_key_size(cd);
-    if (keysize < 16) { /* Less than 128-bits. */
-        fprintf(stderr, "Key size (%d) is too small", keysize);
-        status = EX_CONFIG;
-        goto egress;
-    }
-
-    adv = get_adv(opts);
-    if (!adv)
-        goto egress;
-
-    rec = adv_rep(adv, keysize, &key, ctx);
-    TANG_MSG_ADV_REP_free(adv);
-    if (!rec)
-        goto egress;
-
-    hex = skey_new(key->size * 2 + 1);
-    for (size_t i = 0; i < key->size; i++)
-        snprintf((char *) &hex->data[i * 2], 2, "%02X", key->data[i]);
-
-    slot = crypt_keyslot_add_by_passphrase(cd, CRYPT_ANY_SLOT, NULL,
-                                           0, (char *) hex->data,
-                                           hex->size - 1);
-    OPENSSL_free(key);
-    if (slot < 0) {
-        TANG_MSG_REC_REQ_free(rec);
-        goto egress;
-    }
-
-    if (!store(opts, rec, slot)) {
-        crypt_keyslot_destroy(cd, slot);
-        goto egress;
-    }
-
-    status = 0;
-
-egress:
-    BN_CTX_free(ctx);
-    skey_free(key);
-    skey_free(hex);
-    crypt_free(cd);
-    return status;
-}
-
-#define _STR(x) # x
-#define STR(x) _STR(x)
-#define SUMMARY 192
-
 static error_t
-parser(int key, char* arg, struct argp_state* state)
+argp_parser(int key, char* arg, struct argp_state* state)
 {
     struct options *opts = state->input;
 
@@ -292,24 +227,85 @@ parser(int key, char* arg, struct argp_state* state)
 
 const char *argp_program_version = VERSION;
 
+static const struct argp_option argp_options[] = {
+    { "adv",    'a', "file", .doc = "Advertisement file" },
+    { "listen", 'l', .doc = "Listen for an incoming connection" },
+    { "summary", SUMMARY, .flags = OPTION_HIDDEN },
+    {}
+};
+
+static const struct argp argp = {
+    .options = argp_options,
+    .parser = argp_parser,
+    .args_doc = "DEVICE [HOSTNAME [SERVICE]]"
+};
+
 int
 main(int argc, char *argv[])
 {
-    struct options options = { .params.timeout = 10 };
-    const struct argp argp = {
-        .options = (const struct argp_option[]) {
-            { "adv",    'a', "file", .doc = "Advertisement file" },
-            { "listen", 'l', .doc = "Listen for an incoming connection" },
-            { "summary", SUMMARY, .flags = OPTION_HIDDEN },
-            {}
-        },
-        .parser = parser,
-        .args_doc = "DEVICE [HOSTNAME [SERVICE]]"
-    };
+    struct options opts = { .params.timeout = 10 };
+    struct crypt_device *cd = NULL;
+    TANG_MSG_ADV_REP *adv = NULL;
+    TANG_MSG_REC_REQ *rec = NULL;
+    int status = EX_IOERR;
+    BN_CTX *ctx = NULL;
+    skey_t *key = NULL;
+    skey_t *hex = NULL;
+    int keysize = 0;
+    int slot = 0;
 
-    if (argp_parse(&argp, argc, argv, 0, NULL, &options) != 0)
+    if (argp_parse(&argp, argc, argv, 0, NULL, &opts) != 0)
         return EX_OSERR;
 
-    return add(&options);
+    ctx = BN_CTX_new();
+    if (!ctx)
+        goto egress;
+
+    cd = open_device(opts.device);
+    if (!cd)
+        goto egress;
+
+    keysize = crypt_get_volume_key_size(cd);
+    if (keysize < 16) { /* Less than 128-bits. */
+        fprintf(stderr, "Key size (%d) is too small", keysize);
+        status = EX_CONFIG;
+        goto egress;
+    }
+
+    adv = get_adv(&opts);
+    if (!adv)
+        goto egress;
+
+    rec = adv_rep(adv, keysize, &key, ctx);
+    TANG_MSG_ADV_REP_free(adv);
+    if (!rec)
+        goto egress;
+
+    hex = skey_new(key->size * 2 + 1);
+    for (size_t i = 0; i < key->size; i++)
+        snprintf((char *) &hex->data[i * 2], 3, "%02X", key->data[i]);
+
+    slot = crypt_keyslot_add_by_passphrase(cd, CRYPT_ANY_SLOT, NULL,
+                                           0, (char *) hex->data,
+                                           hex->size - 1);
+    OPENSSL_free(key);
+    if (slot < 0) {
+        TANG_MSG_REC_REQ_free(rec);
+        goto egress;
+    }
+
+    if (!store(&opts, rec, slot)) {
+        crypt_keyslot_destroy(cd, slot);
+        goto egress;
+    }
+
+    status = 0;
+
+egress:
+    BN_CTX_free(ctx);
+    skey_free(key);
+    skey_free(hex);
+    crypt_free(cd);
+    return status;
 }
 

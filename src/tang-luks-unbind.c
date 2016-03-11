@@ -27,101 +27,17 @@
 #include <string.h>
 #include <sysexits.h>
 
+#define _STR(x) # x
+#define STR(x) _STR(x)
+#define SUMMARY 192
+
 struct options {
     const char *device;
     msg_t params;
 };
 
-static int
-del(const struct options *opts)
-{
-    struct crypt_device *cd = NULL;
-    const char *type = NULL;
-    int nerr = 0;
-
-    nerr = crypt_init(&cd, opts->device);
-    if (nerr != 0) {
-        fprintf(stderr, "Unable to open device (%s): %s\n",
-                opts->device, strerror(-nerr));
-        goto error;
-    }
-
-    nerr = crypt_load(cd, NULL, NULL);
-    if (nerr != 0) {
-        fprintf(stderr, "Unable to load device (%s): %s\n",
-                opts->device, strerror(-nerr));
-        goto error;
-    }
-
-    type = crypt_get_type(cd);
-    if (type == NULL) {
-        fprintf(stderr, "Unable to determine device type\n");
-        goto error;
-    }
-    if (strcmp(type, CRYPT_LUKS1) != 0) {
-        fprintf(stderr, "%s (%s) is not a LUKS device\n", opts->device, type);
-        goto error;
-    }
-
-    for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
-        TANG_LUKS *tluks = NULL;
-        uint8_t *data = NULL;
-        size_t size = 0;
-
-        switch (crypt_keyslot_status(cd, slot)) {
-        case CRYPT_SLOT_ACTIVE:
-        case CRYPT_SLOT_ACTIVE_LAST:
-            data = meta_read(opts->device, slot, &size);
-            if (!data)
-                continue;
-
-            tluks = d2i_TANG_LUKS(NULL, &(const uint8_t *) { data }, size);
-            free(data);
-            if (!tluks)
-                continue;
-
-            if ((tluks->listen != 0) != (opts->params.listen != false)) {
-                TANG_LUKS_free(tluks);
-                continue;
-            }
-
-            if (strncmp((char *) tluks->hostname->data, opts->params.hostname,
-                        tluks->hostname->length) == 0) {
-                TANG_LUKS_free(tluks);
-                continue;
-            }
-
-            if (strncmp((char *) tluks->service->data, opts->params.service,
-                        tluks->service->length) == 0) {
-                TANG_LUKS_free(tluks);
-                continue;
-            }
-
-            TANG_LUKS_free(tluks);
-
-            if (crypt_keyslot_destroy(cd, slot) == 0)
-                meta_erase(opts->device, slot);
-            break;
-
-        default:
-            break;
-        }
-    }
-
-    crypt_free(cd);
-    return 0;
-
-error:
-    crypt_free(cd);
-    return EX_IOERR;
-}
-
-#define _STR(x) # x
-#define STR(x) _STR(x)
-#define SUMMARY 192
-
 static error_t
-parser(int key, char* arg, struct argp_state* state)
+argp_parser(int key, char* arg, struct argp_state* state)
 {
     struct options *opts = state->input;
 
@@ -182,23 +98,103 @@ parser(int key, char* arg, struct argp_state* state)
 
 const char *argp_program_version = VERSION;
 
+static const struct argp_option argp_options[] = {
+    { "listen", 'l', .doc = "Listen for an incoming connection" },
+    { "summary", SUMMARY, .flags = OPTION_HIDDEN },
+    {}
+};
+
+static const struct argp argp = {
+    .options = argp_options,
+    .parser = argp_parser,
+    .args_doc = "DEVICE [HOSTNAME [SERVICE]]"
+};
+
 int
 main(int argc, char *argv[])
 {
-    struct options options = {};
-    const struct argp argp = {
-        .options = (const struct argp_option[]) {
-            { "listen", 'l', .doc = "Listen for an incoming connection" },
-            { "summary", SUMMARY, .flags = OPTION_HIDDEN },
-            {}
-        },
-        .parser = parser,
-        .args_doc = "DEVICE [HOSTNAME [SERVICE]]"
-    };
+    struct crypt_device *cd = NULL;
+    struct options opts = {};
+    const char *type = NULL;
+    int nerr = 0;
 
-    if (argp_parse(&argp, argc, argv, 0, NULL, &options) != 0)
+    if (argp_parse(&argp, argc, argv, 0, NULL, &opts) != 0)
         return EX_OSERR;
 
-    return del(&options);
+    nerr = crypt_init(&cd, opts.device);
+    if (nerr != 0) {
+        fprintf(stderr, "Unable to open device (%s): %s\n",
+                opts.device, strerror(-nerr));
+        goto error;
+    }
+
+    nerr = crypt_load(cd, NULL, NULL);
+    if (nerr != 0) {
+        fprintf(stderr, "Unable to load device (%s): %s\n",
+                opts.device, strerror(-nerr));
+        goto error;
+    }
+
+    type = crypt_get_type(cd);
+    if (type == NULL) {
+        fprintf(stderr, "Unable to determine device type\n");
+        goto error;
+    }
+    if (strcmp(type, CRYPT_LUKS1) != 0) {
+        fprintf(stderr, "%s (%s) is not a LUKS device\n", opts.device, type);
+        goto error;
+    }
+
+    for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
+        TANG_LUKS *tluks = NULL;
+        uint8_t *data = NULL;
+        size_t size = 0;
+
+        switch (crypt_keyslot_status(cd, slot)) {
+        case CRYPT_SLOT_ACTIVE:
+        case CRYPT_SLOT_ACTIVE_LAST:
+            data = meta_read(opts.device, slot, &size);
+            if (!data)
+                continue;
+
+            tluks = d2i_TANG_LUKS(NULL, &(const uint8_t *) { data }, size);
+            free(data);
+            if (!tluks)
+                continue;
+
+            if ((tluks->listen != 0) != opts.params.listen) {
+                TANG_LUKS_free(tluks);
+                continue;
+            }
+
+            if (strncmp((char *) tluks->hostname->data, opts.params.hostname,
+                        tluks->hostname->length) != 0) {
+                TANG_LUKS_free(tluks);
+                continue;
+            }
+
+            if (strncmp((char *) tluks->service->data, opts.params.service,
+                        tluks->service->length) != 0) {
+                TANG_LUKS_free(tluks);
+                continue;
+            }
+
+            TANG_LUKS_free(tluks);
+
+            if (crypt_keyslot_destroy(cd, slot) == 0)
+                meta_erase(opts.device, slot);
+            break;
+
+        default:
+            break;
+        }
+    }
+
+    crypt_free(cd);
+    return 0;
+
+error:
+    crypt_free(cd);
+    return EX_IOERR;
 }
 

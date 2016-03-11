@@ -14,7 +14,6 @@ AM_PROG_AR
 PKG_PROG_PKG_CONFIG([0.25])
 
 PKG_CHECK_MODULES([LIBCRYPTO], [libcrypto])
-PKG_CHECK_MODULES([CRYPTSETUP], [libcryptsetup])
 
 PKG_CHECK_EXISTS([dracut], [], [AC_MSG_ERROR([dracut not found])])
 AC_ARG_WITH(
@@ -51,6 +50,22 @@ AC_ARG_WITH(
     [with_systemdsystemunitdir=$($PKG_CONFIG --variable=systemdsystemunitdir systemd)]
 )
 AC_SUBST([systemdsystemunitdir], [$with_systemdsystemunitdir])
+
+
+AC_ARG_WITH(
+    [cryptsetup],
+    [AS_HELP_STRING([--with-cryptsetup], [build LUKS utilities @<:@default=check@:>@])],
+    [],
+    [with_cryptsetup=check]
+)
+AS_CASE(
+    ["$with_cryptsetup"],
+    [yes], [PKG_CHECK_MODULES([cryptsetup], [libcryptsetup], [HAVE_CRYPTSETUP=1])],
+    [no], [],
+    [PKG_CHECK_MODULES([cryptsetup], [libcryptsetup], [HAVE_CRYPTSETUP=1], [HAVE_CRYPTSETUP=0])]
+)
+AM_CONDITIONAL([USE_CRYPTSETUP], [test "$with_cryptsetup" != no -a "$HAVE_CRYPTSETUP" -eq 1])
+
 
 AC_ARG_WITH(
     [clevis],

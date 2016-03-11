@@ -1,16 +1,16 @@
 ACLOCAL_AMFLAGS = -I m4
 SUBDIRS = src
 
-dracutmodules_SCRIPTS = module-setup.sh
-systemdsystemunit_DATA = \
-	tang-keyd.socket tang-keyd.service \
-	tang-luksd.path tang-luksd.service
+systemdsystemunit_DATA = tang-keyd.socket tang-keyd.service
+EXTRA_DIST = tang-keyd.socket.in tang-keyd.service.in
+CLEANFILES = $(systemdsystemunit_DATA)
 
-CLEANFILES = $(systemdsystemunit_DATA) $(dracutmodules_SCRIPTS)
-EXTRA_DIST = \
-	tang-keyd.socket.in tang-keyd.service.in \
-	tang-luksd.path.in tang-luksd.service.in \
-	module-setup.sh.in
+if USE_CRYPTSETUP
+dracutmodules_SCRIPTS = module-setup.sh
+systemdsystemunit_DATA += tang-luksd.path tang-luksd.service
+EXTRA_DIST += tang-luksd.path.in tang-luksd.service.in module-setup.sh.in
+CLEANFILES += $(dracutmodules_SCRIPTS)
+endif
 
 %: %.in
 	$(AM_V_GEN)$(SED) \

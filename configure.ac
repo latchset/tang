@@ -15,29 +15,51 @@ PKG_PROG_PKG_CONFIG([0.25])
 
 PKG_CHECK_MODULES([LIBCRYPTO], [libcrypto])
 
-PKG_CHECK_MODULES(
-    [LIBSYSTEMD],
-    [libsystemd],
+
+AC_ARG_WITH(
+    [systemd],
+    [AS_HELP_STRING([--with-systemd], [build systemd utilities @<:@default=check@:>@])],
+    [],
+    [with_systemd=check]
+)
+AS_CASE(
+    ["$with_systemd"],
+    [yes],
+    [PKG_CHECK_MODULES(
+        [libsystemd],
+        [libsystemd libsystemd-daemon],
+        [HAVE_LIBSYSTEMD=1]
+    )],
+    [no],
     [],
     [PKG_CHECK_MODULES(
-        [LIBSYSTEMD],
-        [libsystemd-daemon],
-        [],
-        AC_MSG_ERROR([libsystemd/systemd-devel not found])
+        [libsystemd],
+        [libsystemd libsystemd-daemon],
+        [HAVE_LIBSYSTEMD=1],
+        [HAVE_LIBSYSTEMD=0]
     )]
 )
-
-PKG_CHECK_EXISTS([systemd], [], [AC_MSG_ERROR([systemd not found])])
-AC_ARG_WITH(
-    [systemdsystemunitdir],
-    AS_HELP_STRING(
-        [--with-systemdsystemunitdir=DIR],
-        [Directory for systemd service files]
-    ),
+AS_CASE(
+    ["$with_systemd"],
+    [yes],
+    [PKG_CHECK_MODULES(
+        [systemd],
+        [systemd],
+        [HAVE_SYSTEMD=1 && AC_SUBST([systemdsystemunitdir],
+                                    [$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])],
+    )],
+    [no],
     [],
-    [with_systemdsystemunitdir=$($PKG_CONFIG --variable=systemdsystemunitdir systemd)]
+    [PKG_CHECK_MODULES(
+        [systemd],
+        [systemd],
+        [HAVE_SYSTEMD=1 && AC_SUBST([systemdsystemunitdir],
+                                    [$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])],
+        [HAVE_SYSTEMD=0]
+    )]
 )
-AC_SUBST([systemdsystemunitdir], [$with_systemdsystemunitdir])
+AM_CONDITIONAL([USE_LIBSYSTEMD], [test "$with_systemd" != no -a "$HAVE_LIBSYSTEMD" -eq 1])
+AM_CONDITIONAL([USE_SYSTEMD], [test "$with_systemd" != no -a "$HAVE_SYSTEMD" -eq 1])
 
 
 AC_ARG_WITH(

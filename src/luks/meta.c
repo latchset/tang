@@ -103,6 +103,7 @@ meta_write(const char *device, uint8_t slot, const uint8_t *buf, size_t size)
     uint32_t length = 0;
     uint8_t *tmp = NULL;
     uint32_t slen = 0;
+    off_t offset = 0;
     int fd = -1;
 
     if (slot >= LUKS_NUMKEYS || size > UINT64_MAX)
@@ -120,7 +121,8 @@ meta_write(const char *device, uint8_t slot, const uint8_t *buf, size_t size)
     if (sizeof(meta_t) + size > slen)
         goto error;
 
-    if (slot > 0 && lseek(fd, slot * slen, SEEK_CUR) == -1)
+    offset = lseek(fd, slot * slen, SEEK_CUR);
+    if (offset == -1)
         goto error;
 
     if (write(fd, &meta, sizeof(meta)) != sizeof(meta))
@@ -129,7 +131,7 @@ meta_write(const char *device, uint8_t slot, const uint8_t *buf, size_t size)
     if (write(fd, buf, size) != (ssize_t) size)
         goto error;
 
-    if (lseek(fd, 0 - sizeof(meta) - size, SEEK_CUR) != 0)
+    if (lseek(fd, offset, SEEK_SET) != offset)
         goto error;
 
     tmp = slot_read(fd, slen, &size);

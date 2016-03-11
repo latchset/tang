@@ -2,12 +2,12 @@ ACLOCAL_AMFLAGS = -I m4
 SUBDIRS = src
 
 systemdsystemunit_DATA = \
-	tang-keyd.socket tang-keyd@.service \
+	tang-keyd.socket tang-keyd.service \
 	tang-luksd.path tang-luksd.service
 
 CLEANFILES = $(systemdsystemunit_DATA)
 EXTRA_DIST = \
-	tang-keyd.socket.in tang-keyd@.service.in \
+	tang-keyd.socket.in tang-keyd.service.in \
 	tang-luksd.path.in tang-luksd.service.in
 
 %: %.in

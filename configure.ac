@@ -16,6 +16,18 @@ PKG_PROG_PKG_CONFIG([0.25])
 PKG_CHECK_MODULES([LIBCRYPTO], [libcrypto])
 PKG_CHECK_MODULES([CRYPTSETUP], [libcryptsetup])
 
+PKG_CHECK_EXISTS([dracut], [], [AC_MSG_ERROR([dracut not found])])
+AC_ARG_WITH(
+    [dracutmodulesdir],
+    AS_HELP_STRING(
+        [--with-dracutmodulesdir=DIR],
+        [Directory for dracut module files]
+    ),
+    [],
+    [with_dracutmodulesdir=$($PKG_CONFIG --variable=dracutmodulesdir dracut)]
+)
+AC_SUBST([dracutmodulesdir], [$with_dracutmodulesdir])
+
 PKG_CHECK_MODULES(
     [LIBSYSTEMD],
     [libsystemd],

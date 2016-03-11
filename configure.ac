@@ -15,18 +15,6 @@ PKG_PROG_PKG_CONFIG([0.25])
 
 PKG_CHECK_MODULES([LIBCRYPTO], [libcrypto])
 
-PKG_CHECK_EXISTS([dracut], [], [AC_MSG_ERROR([dracut not found])])
-AC_ARG_WITH(
-    [dracutmodulesdir],
-    AS_HELP_STRING(
-        [--with-dracutmodulesdir=DIR],
-        [Directory for dracut module files]
-    ),
-    [],
-    [with_dracutmodulesdir=$($PKG_CONFIG --variable=dracutmodulesdir dracut)]
-)
-AC_SUBST([dracutmodulesdir], [$with_dracutmodulesdir])
-
 PKG_CHECK_MODULES(
     [LIBSYSTEMD],
     [libsystemd],
@@ -65,6 +53,31 @@ AS_CASE(
     [PKG_CHECK_MODULES([cryptsetup], [libcryptsetup], [HAVE_CRYPTSETUP=1], [HAVE_CRYPTSETUP=0])]
 )
 AM_CONDITIONAL([USE_CRYPTSETUP], [test "$with_cryptsetup" != no -a "$HAVE_CRYPTSETUP" -eq 1])
+
+
+AC_ARG_WITH(
+    [dracut],
+    [AS_HELP_STRING([--with-dracut], [build early boot utility @<:@default=check@:>@])],
+    [],
+    [with_dracut=check]
+)
+AS_CASE(
+    ["$with_dracut"],
+    [yes],
+    [PKG_CHECK_MODULES(
+        [dracut],
+        [dracut],
+        [HAVE_DRACUT=1 && AC_SUBST([dracutmodulesdir], [$($PKG_CONFIG --variable=dracutmodulesdir dracut)])]
+    )],
+    [no], [],
+    [PKG_CHECK_MODULES(
+        [dracut],
+        [dracut],
+        [HAVE_DRACUT=1 && AC_SUBST([dracutmodulesdir], [$($PKG_CONFIG --variable=dracutmodulesdir dracut)])],
+        [HAVE_DRACUT=0]
+    )]
+)
+AM_CONDITIONAL([USE_DRACUT], [test "$with_dracut" != no -a "$HAVE_DRACUT" -eq 1])
 
 
 AC_ARG_WITH(

@@ -98,6 +98,8 @@ askp_new(askp_t **askp, struct pollfd *fd)
             list_add_after(&askpi->askp.questions, &q->list);
     }
 
+    closedir(dir);
+
     fd->events = POLLIN | POLLPRI;
     fd->fd = askpi->ifd;
     *askp = &askpi->askp;
@@ -144,7 +146,7 @@ askp_new_question(askp_t *askp, struct pollfd *fd)
         LIST_FOREACH(&askp->questions, question_t, q, list) {
             if (question_named(q, e->name)) {
                 list_pop(&q->list);
-                free(q);
+                question_free(q);
                 break;
             }
         }

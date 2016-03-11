@@ -90,20 +90,11 @@ valid_sig(TANG_SIG *sig, EC_KEY *key, const uint8_t *body, size_t size)
     int r;
 
     switch (OBJ_obj2nid(sig->type)) {
-    case NID_ecdsa_with_SHA224:
-      md = EVP_get_digestbynid(NID_sha224);
-      break;
-    case NID_ecdsa_with_SHA256:
-      md = EVP_get_digestbynid(NID_sha256);
-      break;
-    case NID_ecdsa_with_SHA384:
-      md = EVP_get_digestbynid(NID_sha384);
-      break;
-    case NID_ecdsa_with_SHA512:
-      md = EVP_get_digestbynid(NID_sha512);
-      break;
-    default:
-      return false;
+    case NID_ecdsa_with_SHA224: md = EVP_sha224(); break;
+    case NID_ecdsa_with_SHA256: md = EVP_sha256(); break;
+    case NID_ecdsa_with_SHA384: md = EVP_sha384(); break;
+    case NID_ecdsa_with_SHA512: md = EVP_sha512(); break;
+    default: return false;
     }
 
     if (EVP_Digest(body, size, hash, &hlen, md, NULL) <= 0)

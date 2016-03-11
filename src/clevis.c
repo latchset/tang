@@ -84,6 +84,12 @@ copy_config(const json_t *cfg)
     if (json_object_set_new(data, "listen", tmp) < 0)
         goto error;
 
+    tmp = json_incref(json_object_get(cfg, "timeout"));
+    if (!json_is_integer(tmp))
+        tmp = json_integer(10);
+    if (json_object_set_new(data, "timeout", tmp) < 0)
+        goto error;
+
     return data;
 
 error:
@@ -163,6 +169,7 @@ make_params(const json_t *data, msg_t *params)
     strcpy(params->service, tmp);
 
     params->listen = json_boolean_value(json_object_get(data, "listen"));
+    params->timeout = json_integer_value(json_object_get(data, "timeout"));
     return true;
 }
 

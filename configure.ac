@@ -12,8 +12,7 @@ AM_PROG_CC_C_O
 AM_PROG_AR
 
 PKG_PROG_PKG_CONFIG([0.25])
-
-PKG_CHECK_MODULES([LIBCRYPTO], [libcrypto])
+PKG_CHECK_MODULES([libcrypto], [libcrypto])
 
 
 AC_ARG_WITH(

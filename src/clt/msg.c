@@ -106,7 +106,7 @@ msg_rqst_batch(const msg_t *params, const TANG_MSG **reqs)
 
     for (int r = 1; r != 0; ) {
         r = getaddrinfo(params->hostname, params->service, &hint, &res);
-        if (r != EAI_AGAIN)
+        if (r != 0 && r != EAI_AGAIN)
             return NULL;
     }
 

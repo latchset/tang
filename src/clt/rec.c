@@ -30,6 +30,7 @@ rec_req(TANG_MSG_REC_REQ *rec, BN_CTX *ctx)
     EC_POINT *q = NULL;
     EC_KEY *r = NULL;
     EC_KEY *l = NULL;
+    EC_KEY *o = NULL;
 
     r = conv_tkey2eckey(rec->key, ctx);
     if (!r)
@@ -67,9 +68,10 @@ rec_req(TANG_MSG_REC_REQ *rec, BN_CTX *ctx)
         goto error;
     if (EC_POINT_invert(g, q, ctx) <= 0)
         goto error;
-    if (EC_KEY_set_public_key(l, q) <= 0)
+    o = EC_KEY_new_by_curve_name(EC_GROUP_get_curve_name(g));
+    if (!o)
         goto error;
-    if (EC_KEY_set_private_key(l, NULL) <= 0)
+    if (EC_KEY_set_public_key(o, q) <= 0)
         goto error;
 
     if (conv_point2os(g, p, rec->x, ctx) != 0)
@@ -78,13 +80,15 @@ rec_req(TANG_MSG_REC_REQ *rec, BN_CTX *ctx)
     EC_POINT_clear_free(p);
     EC_POINT_clear_free(q);
     EC_KEY_free(r);
-    return l;
+    EC_KEY_free(l);
+    return o;
 
 error:
     EC_POINT_clear_free(p);
     EC_POINT_clear_free(q);
     EC_KEY_free(r);
     EC_KEY_free(l);
+    EC_KEY_free(o);
     return NULL;
 }
 

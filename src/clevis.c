@@ -263,10 +263,9 @@ acquire(const clevis_acquire_f *funcs, const json_t *data)
     if (!msg)
         goto egress;
 
-    if (msg->type != TANG_MSG_TYPE_REC_REP)
+    if (msg->type == TANG_MSG_TYPE_REC_REP)
         rep = msg->val.rec.rep;
 
-    TANG_MSG_free(msg);
     if (!rep)
         goto egress;
 
@@ -283,6 +282,7 @@ acquire(const clevis_acquire_f *funcs, const json_t *data)
 egress:
     TANG_MSG_REC_REQ_free(req.val.rec.req);
     clevis_buf_free(okey);
+    TANG_MSG_free(msg);
     EC_KEY_free(eckey);
     BN_CTX_free(ctx);
     skey_free(skey);

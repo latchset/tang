@@ -78,7 +78,7 @@ copy_config(const json_t *cfg)
     if (json_object_set_new(data, "service", tmp) < 0)
         goto error;
 
-    tmp = json_incref(json_object_get(data, "listen"));
+    tmp = json_incref(json_object_get(cfg, "listen"));
     if (!json_is_boolean(tmp))
         tmp = json_boolean(false);
     if (json_object_set_new(data, "listen", tmp) < 0)

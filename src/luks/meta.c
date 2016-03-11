@@ -62,7 +62,7 @@ slot_read(int fd, uint32_t slen, size_t *size)
         return NULL;
 
     if (read(fd, buf, *size) == (ssize_t) *size) {
-        if (SHA256(buf, *size, digest) > 0) {
+        if (SHA256(buf, *size, digest)) {
             if (memcmp(meta.digest, digest, sizeof(digest)) == 0)
                 return buf;
         }
@@ -110,7 +110,7 @@ meta_write(const char *device, uint8_t slot, const uint8_t *buf, size_t size)
         return false;
 
     meta.length = htobe64(size);
-    if (SHA256(buf, size, meta.digest) <= 0)
+    if (!SHA256(buf, size, meta.digest))
         return false;
 
     fd = luks_hole(device, true, &length);

@@ -115,7 +115,7 @@ static bool
 valid_adv(const TANG_MSG_ADV_REP *rep, BN_CTX *ctx)
 {
     uint8_t *body = NULL;
-    size_t count = 0;
+    int count = 0;
     int len = 0;
 
     if (SKM_sk_num(TANG_SIG, rep->sigs) < 1 ||
@@ -208,7 +208,7 @@ error:
 }
 
 static EC_KEY *
-select_key(STACK_OF(TANG_KEY) *keys, size_t min, BN_CTX *ctx)
+select_key(STACK_OF(TANG_KEY) *keys, int min, BN_CTX *ctx)
 {
     for (int i = 0; i < SKM_sk_num(TANG_KEY, keys); i++) {
     	TANG_KEY *key = SKM_sk_value(TANG_KEY, keys, i);
@@ -219,11 +219,11 @@ select_key(STACK_OF(TANG_KEY) *keys, size_t min, BN_CTX *ctx)
 
         eckey = conv_tkey2eckey(key, ctx);
         if (!eckey)
-        	continue;
+            continue;
 
         if (EC_GROUP_get_degree(EC_KEY_get0_group(eckey)) < min * 2) {
-			EC_KEY_free(eckey);
-        	continue;
+            EC_KEY_free(eckey);
+            continue;
         }
 
         return eckey;

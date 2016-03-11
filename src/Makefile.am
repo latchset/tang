@@ -1,6 +1,6 @@
 SUBDIRS = . tests
 
-AM_CFLAGS = @libcrypto_CFLAGS@ @cryptsetup_CFLAGS@ -fPIC
+AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ @cryptsetup_CFLAGS@ -fPIC
 AM_LDFLAGS = @libcrypto_LIBS@
 LIBS = libcore.a
 

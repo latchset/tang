@@ -23,35 +23,45 @@
 #include "clt/msg.h"
 #include <string.h>
 
+#include <openssl/sha.h>
+
 #define _STR(x) # x
 #define STR(x) _STR(x)
 
-static TANG_MSG_ADV_REP *
-get_adv(const msg_t *params, const char *file)
+static bool
+adv_trusted(TANG_MSG_ADV_REP *rep)
 {
-    TANG_MSG_ADV_REP *rep = NULL;
-    TANG_MSG *msg = NULL;
+    int nkeys = SKM_sk_num(TANG_KEY, rep->body->keys);
+    int c = 'a';
 
-    if (file) {
-        msg = msg_read(file);
-    } else {
-        TANG_MSG req = { .type = TANG_MSG_TYPE_ADV_REQ };
+    printf("The server advertised the following signing key%s:\n\n",
+           nkeys > 1 ? "s" : "");
 
-        req.val.adv.req = adv_req(NULL);
-        if (!req.val.adv.req)
-            return NULL;
+    for (int i = 0; i < nkeys; i++) {
+        TANG_KEY *key = SKM_sk_value(TANG_KEY, rep->body->keys, i);
+        uint8_t md[SHA256_DIGEST_LENGTH] = {};
 
-        msg = msg_rqst(params, &req);
-        TANG_MSG_ADV_REQ_free(req.val.adv.req);
+        if (ASN1_ENUMERATED_get(key->use) != TANG_KEY_USE_SIG)
+            continue;
+
+        if (!SHA256(key->key->data, key->key->length, md))
+            return false;
+
+        printf("  sha256:");
+        for (size_t j = 0; j < sizeof(md); j++)
+            printf("%02X", md[j]);
+        printf("\n");
     }
 
-    if (msg && msg->type == TANG_MSG_TYPE_ADV_REP) {
-        rep = msg->val.adv.rep;
-        msg->val.adv.rep = NULL;
+    printf("\n");
+
+    while (!strchr("YyNn", c)) {
+        printf("Do you wish to trust %s? [yn] ",
+               nkeys > 1 ? "these keys" : "this key");
+        c = getc(stdin);
     }
 
-    TANG_MSG_free(msg);
-    return rep;
+    return strchr("Yy", c);
 }
 
 static json_t *
@@ -95,18 +105,6 @@ copy_config(const json_t *cfg)
 error:
     json_decref(data);
     return NULL;
-}
-
-static const char *
-get_file(const json_t *cfg)
-{
-    const json_t *tmp = NULL;
-
-    tmp = json_object_get(cfg, "adv");
-    if (!json_is_string(tmp))
-        return NULL;
-
-    return json_string_value(tmp);
 }
 
 static json_t *
@@ -177,9 +175,10 @@ static json_t *
 provision(const clevis_provision_f *funcs,
           const json_t *cfg, const clevis_buf_t *key)
 {
-    TANG_MSG_ADV_REP *adv = NULL;
     TANG_MSG_REC_REQ *rec = NULL;
+    const json_t *adv = NULL;
     clevis_buf_t *okey = NULL;
+    TANG_MSG *msg = NULL;
     json_t *data = NULL;
     skey_t *tmp = NULL;
     BN_CTX *ctx = NULL;
@@ -196,11 +195,26 @@ provision(const clevis_provision_f *funcs,
     if (!make_params(data, &params))
         goto error;
 
-    adv = get_adv(&params, get_file(cfg));
-    if (!adv)
+    adv = json_object_get(cfg, "adv");
+    if (json_is_string(adv)) {
+        msg = msg_read(json_string_value(adv));
+    } else {
+        TANG_MSG req = { .type = TANG_MSG_TYPE_ADV_REQ };
+
+        req.val.adv.req = adv_req(NULL);
+        if (!req.val.adv.req)
+            goto error;
+
+        msg = msg_rqst(&params, &req);
+        TANG_MSG_ADV_REQ_free(req.val.adv.req);
+    }
+    if (!msg || msg->type != TANG_MSG_TYPE_ADV_REP)
         goto error;
 
-    rec = adv_rep(adv, NULL, key->len, &tmp, ctx);
+    if (!json_is_string(adv) && !adv_trusted(msg->val.adv.rep))
+        goto error;
+
+    rec = adv_rep(msg->val.adv.rep, NULL, key->len, &tmp, ctx);
     if (!rec)
         goto error;
 
@@ -214,17 +228,17 @@ provision(const clevis_provision_f *funcs,
     if (json_object_set_new(data, "ct", funcs->encrypt(okey, key)) < 0)
         goto error;
 
-    TANG_MSG_ADV_REP_free(adv);
     TANG_MSG_REC_REQ_free(rec);
     clevis_buf_free(okey);
+    TANG_MSG_free(msg);
     BN_CTX_free(ctx);
     skey_free(tmp);
     return data;
 
 error:
-    TANG_MSG_ADV_REP_free(adv);
     TANG_MSG_REC_REQ_free(rec);
     clevis_buf_free(okey);
+    TANG_MSG_free(msg);
     json_decref(data);
     BN_CTX_free(ctx);
     skey_free(tmp);

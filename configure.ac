@@ -140,6 +140,7 @@ TANG_CFLAGS="\
 -Wsign-compare \
 -Wstrict-prototypes \
 -Wtype-limits \
+-Wunused-function \
 -Wno-missing-field-initializers \
 -Wno-unused-parameter \
 "

@@ -31,39 +31,77 @@ This is precisely what Tang does.
     $ make
     $ sudo make install
 
-##### Enablement
+##### Server Enablement
 Enabling a Tang server is a simple two-step process.
 
 First, generate two keys; one for signing and one for recovery. In this
 example, we will use NIST P-521 as our group. However, you may use any group
 your OpenSSL build supports.
 
-    $ tang-gen -A secp521r1 sig
+    # tang key-gen -A secp521r1 sig
     8278b20d0ca77d56cdf5f782b15dc2df
 
-    $ tang-gen -A secp521r1 rec
+    # tang key-gen -A secp521r1 rec
     9eefd90b72f645b4a2265d168d980765
 
 Second, enable the service using systemd.
 
-    $ systemctl enable tang.socket
-    $ systemctl start tang.socket
+    # systemctl enable tang-keyd.socket
+    # systemctl start tang-keyd.socket
 
-##### Key Rotation
+###### Key Rotation
 It is important to periodically rotate your keys. This is a simple three step
 process.
 
 First, generate new keys just like we did during setup:
 
-    $ tang-gen -A secp521r1 sig
+    # tang key-gen -A secp521r1 sig
     fdf1338907184a940bf0822182099ddc
 
-    $ tang-gen -A secp521r1 rec
+    # tang key-gen -A secp521r1 rec
     ff4d37b07ec821c592caef3176b57f1d
 
 Second, disable advertisement of the previous keys:
 
-    $ tang-mod -a 8278b20d0ca77d56cdf5f782b15dc2df
-    $ tang-mod -a 9eefd90b72f645b4a2265d168d980765
+    # tang key-mod -a 8278b20d0ca77d56cdf5f782b15dc2df
+    # tang key-mod -a 9eefd90b72f645b4a2265d168d980765
 
 Third, after some reasonable period of time you may delete the old keys.
+
+##### Disk Management
+Once you have the Tang server running, you can bind a local disk to your
+Tang server.
+
+First, you want to provision a standard LUKS encrypted disk. You should have
+strong master recovery key in addition to the automatic key described in the
+next steps. Failure to maintain this master recovery key could lead to data
+loss.
+
+Second, once the standard LUKS encrypted disk is previsioned, we simply
+perform the binding step:
+
+    # tang luks-bind /dev/sdc tang-server.example.com
+    The server advertised the following signing keys:
+
+      sha256:C066D185077DC08CBBEBA8190B324EA12360175BF128331EC3587F9E56E2BE0B
+
+    Do you wish to trust these keys? [yn] y
+    Enter any passphrase: <maser_recovery_key>
+
+Third, if you have not rebuilt your initramfs since installing tang, you must
+do so now:
+
+    # dracut -f
+
+That's it! On boot, if the device is properly setup in /etc/crypttab, systemd
+will automatically unlock the disk when the Tang server is reachable.
+
+You can list the bindings for a given LUKS disk with:
+
+    # tang luks-list /dev/sdc
+    tang-server.example.com:5700
+
+You can also unbind a disk by simply issuing the following command:
+
+    # tang luks-unbind /dev/sdc tang-server.example.com
+

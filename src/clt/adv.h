@@ -26,4 +26,5 @@ TANG_MSG_ADV_REQ *
 adv_req(STACK_OF(TANG_KEY) *keys);
 
 TANG_MSG_REC_REQ *
-adv_rep(const TANG_MSG_ADV_REP *adv, size_t min, skey_t **key, BN_CTX *ctx);
+adv_rep(const TANG_MSG_ADV_REP *adv, STACK_OF(TANG_KEY) *keys,
+        size_t min, skey_t **key, BN_CTX *ctx);

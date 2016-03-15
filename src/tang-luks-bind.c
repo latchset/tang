@@ -276,7 +276,7 @@ main(int argc, char *argv[])
     if (!adv)
         goto egress;
 
-    rec = adv_rep(adv, keysize, &key, ctx);
+    rec = adv_rep(adv, NULL, keysize, &key, ctx);
     TANG_MSG_ADV_REP_free(adv);
     if (!rec)
         goto egress;

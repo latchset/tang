@@ -200,7 +200,7 @@ provision(const clevis_provision_f *funcs,
     if (!adv)
         goto error;
 
-    rec = adv_rep(adv, key->len, &tmp, ctx);
+    rec = adv_rep(adv, NULL, key->len, &tmp, ctx);
     if (!rec)
         goto error;
 

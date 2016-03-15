@@ -23,6 +23,7 @@
 #include "luks/meta.h"
 
 #include <libcryptsetup.h>
+#include <openssl/sha.h>
 
 #include <argp.h>
 #include <stdbool.h>
@@ -38,34 +39,6 @@ struct options {
     const char *file;
     msg_t params;
 };
-
-static TANG_MSG_ADV_REP *
-get_adv(const struct options *opts)
-{
-    TANG_MSG_ADV_REP *rep = NULL;
-    TANG_MSG *msg = NULL;
-
-    if (opts->file) {
-        msg = msg_read(opts->file);
-    } else {
-        TANG_MSG req = { .type = TANG_MSG_TYPE_ADV_REQ };
-
-        req.val.adv.req = adv_req(NULL);
-        if (!req.val.adv.req)
-            return NULL;
-
-        msg = msg_rqst(&opts->params, &req);
-        TANG_MSG_ADV_REQ_free(req.val.adv.req);
-    }
-
-    if (msg && msg->type == TANG_MSG_TYPE_ADV_REP) {
-        rep = msg->val.adv.rep;
-        msg->val.adv.rep = NULL;
-    }
-
-    TANG_MSG_free(msg);
-    return rep;
-}
 
 static struct crypt_device *
 open_device(const char *device)
@@ -104,6 +77,42 @@ open_device(const char *device)
 error:
     crypt_free(cd);
     return NULL;
+}
+
+static bool
+adv_trusted(TANG_MSG_ADV_REP *rep)
+{
+    int nkeys = SKM_sk_num(TANG_KEY, rep->body->keys);
+    int c = 'a';
+
+    printf("The server advertised the following signing key%s:\n\n",
+           nkeys > 1 ? "s" : "");
+
+    for (int i = 0; i < nkeys; i++) {
+        TANG_KEY *key = SKM_sk_value(TANG_KEY, rep->body->keys, i);
+        uint8_t md[SHA256_DIGEST_LENGTH] = {};
+
+        if (ASN1_ENUMERATED_get(key->use) != TANG_KEY_USE_SIG)
+            continue;
+
+        if (!SHA256(key->key->data, key->key->length, md))
+            return false;
+
+        printf("  sha256:");
+        for (size_t j = 0; j < sizeof(md); j++)
+            printf("%02X", md[j]);
+        printf("\n");
+    }
+
+    printf("\n");
+
+    while (!strchr("YyNn", c)) {
+        printf("Do you wish to trust %s? [yn] ",
+               nkeys > 1 ? "these keys" : "this key");
+        c = getc(stdin);
+    }
+
+    return strchr("Yy", c);
 }
 
 /* Steals rec */
@@ -245,9 +254,9 @@ main(int argc, char *argv[])
 {
     struct options opts = { .params.timeout = 10 };
     struct crypt_device *cd = NULL;
-    TANG_MSG_ADV_REP *adv = NULL;
     TANG_MSG_REC_REQ *rec = NULL;
     int status = EX_IOERR;
+    TANG_MSG *msg = NULL;
     BN_CTX *ctx = NULL;
     skey_t *key = NULL;
     skey_t *hex = NULL;
@@ -272,12 +281,25 @@ main(int argc, char *argv[])
         goto egress;
     }
 
-    adv = get_adv(&opts);
-    if (!adv)
+    if (opts.file) {
+        msg = msg_read(opts.file);
+    } else {
+        TANG_MSG req = { .type = TANG_MSG_TYPE_ADV_REQ };
+
+        req.val.adv.req = adv_req(NULL);
+        if (!req.val.adv.req)
+            goto egress;
+
+        msg = msg_rqst(&opts.params, &req);
+        TANG_MSG_ADV_REQ_free(req.val.adv.req);
+    }
+    if (!msg || msg->type != TANG_MSG_TYPE_ADV_REP)
         goto egress;
 
-    rec = adv_rep(adv, NULL, keysize, &key, ctx);
-    TANG_MSG_ADV_REP_free(adv);
+    if (!opts.file && !adv_trusted(msg->val.adv.rep))
+        goto egress;
+
+    rec = adv_rep(msg->val.adv.rep, NULL, keysize, &key, ctx);
     if (!rec)
         goto egress;
 
@@ -302,6 +324,7 @@ main(int argc, char *argv[])
     status = 0;
 
 egress:
+    TANG_MSG_free(msg);
     BN_CTX_free(ctx);
     skey_free(key);
     skey_free(hex);

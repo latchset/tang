@@ -114,27 +114,6 @@ error:
     return NULL;
 }
 
-static bool
-has_object(ASN1_OBJECT *obj, STACK_OF(ASN1_OBJECT) *set)
-{
-    int nid = OBJ_obj2nid(obj);
-
-    if (sk_ASN1_OBJECT_num(set) == 0)
-        return true;
-
-    if (nid == NID_undef)
-        return false;
-
-    for (int i = 0; i < sk_ASN1_OBJECT_num(set); i++) {
-        int n = OBJ_obj2nid(sk_ASN1_OBJECT_value(set, i));
-
-        if (n != NID_undef && nid == n)
-            return true;
-    }
-
-    return false;
-}
-
 int
 adv_init(adv_t **adv)
 {
@@ -278,28 +257,8 @@ adv_sign(adv_t *adv, const TANG_MSG_ADV_REQ *req, pkt_t *pkt)
 
     /* Select the key used for the signature. */
     for (size_t i = 0; adv->sigs[i]; i++) {
-        if (!has_object(adv->sigs[i]->sig->type, req->types))
+        if (!adv->sigs[i]->adv && !find_key(req->keys, adv->sigs[i]->key))
             continue;
-
-        switch (req->body->type) {
-        case TANG_MSG_ADV_REQ_BDY_TYPE_KEYS:
-            if (!find_key(req->body->val.keys, adv->sigs[i]->key))
-                continue;
-
-            break;
-
-        case TANG_MSG_ADV_REQ_BDY_TYPE_GRPS:
-            if (!adv->sigs[i]->adv)
-	            continue;
-
-            if (!has_object(adv->sigs[i]->key->grp, req->body->val.grps))
-                continue;
-
-            break;
-
-        default:
-            continue;
-        }
 
         if (SKM_sk_push(TANG_SIG, adv->rep->sigs, adv->sigs[i]->sig) <= 0) {
             SKM_sk_zero(TANG_SIG, adv->rep->sigs);

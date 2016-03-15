@@ -25,62 +25,6 @@
 #include <openssl/objects.h>
 
 static bool
-add_supported_sigtypes(STACK_OF(ASN1_OBJECT) *types)
-{
-  static const int methods[] = {
-    NID_ecdsa_with_SHA224,
-    NID_ecdsa_with_SHA256,
-    NID_ecdsa_with_SHA384,
-    NID_ecdsa_with_SHA512,
-    NID_undef
-  };
-
-  for (int i = 0; methods[i] != NID_undef; i++) {
-    ASN1_OBJECT *obj = NULL;
-
-    obj = OBJ_nid2obj(methods[i]);
-    if (!obj)
-      continue;
-
-    if (sk_ASN1_OBJECT_push(types, obj) <= 0)
-      return false;
-  }
-
-  return true;
-}
-
-static bool
-add_supported_groups(STACK_OF(ASN1_OBJECT) *grps)
-{
-  EC_builtin_curve *curves = NULL;
-  size_t ncurves = 0;
-
-  ncurves = EC_get_builtin_curves(NULL, 0);
-  if (ncurves == 0)
-    return false;
-
-  curves = alloca(sizeof(*curves) * ncurves);
-  if (!curves)
-    return false;
-
-  if (EC_get_builtin_curves(curves, ncurves) != ncurves)
-    return false;
-
-  for (size_t i = 0; i < ncurves; i++) {
-    ASN1_OBJECT *obj = NULL;
-
-    obj = OBJ_nid2obj(curves[i].nid);
-    if (!obj)
-      continue;
-
-    if (sk_ASN1_OBJECT_push(grps, obj) <= 0)
-      return false;
-  }
-
-  return true;
-}
-
-static bool
 valid_sig(TANG_SIG *sig, EC_KEY *key, const uint8_t *body, size_t size)
 {
     unsigned char hash[EVP_MAX_MD_SIZE] = {};
@@ -167,37 +111,20 @@ adv_req(STACK_OF(TANG_KEY) *keys)
     if (!adv)
         return NULL;
 
-    if (keys) {
-        adv->body->type = TANG_MSG_ADV_REQ_BDY_TYPE_KEYS;
-        adv->body->val.keys = SKM_sk_new(TANG_KEY, NULL);
-        if (!adv->body->val.keys)
+    if (!keys)
+        return adv;
+
+    for (int i = 0; i < SKM_sk_num(TANG_KEY, keys); i++) {
+        TANG_KEY *key;
+
+        key = TANG_KEY_copy(SKM_sk_value(TANG_KEY, keys, i));
+        if (!key)
             goto error;
 
-        for (int i = 0; i < SKM_sk_num(TANG_KEY, adv->body->val.keys); i++) {
-            TANG_KEY *key;
-
-            key = SKM_sk_value(TANG_KEY, adv->body->val.keys, i);
-            if (!key)
-                continue;
-
-            key = TANG_KEY_copy(key);
-            if (!key)
-                goto error;
-
-            if (SKM_sk_push(TANG_KEY, adv->body->val.keys, key) <= 0) {
-                TANG_KEY_free(key);
-                goto error;
-            }
+        if (SKM_sk_push(TANG_KEY, adv->keys, key) <= 0) {
+            TANG_KEY_free(key);
+            goto error;
         }
-    } else {
-        adv->body->type = TANG_MSG_ADV_REQ_BDY_TYPE_GRPS;
-        adv->body->val.grps = sk_ASN1_OBJECT_new_null();
-        if (!adv->body->val.grps)
-            goto error;
-
-        if (!add_supported_sigtypes(adv->types) ||
-            !add_supported_groups(adv->body->val.grps))
-            goto error;
     }
 
     return adv;

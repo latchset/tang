@@ -1,0 +1,10 @@
+[Unit]
+Description=Tang UDisks2 Unlocking daemon
+Requires=udisks2.service
+After=udisks2.service
+
+[Service]
+ExecStart=@libexecdir@/tang-luks-udisks2d
+
+[Install]
+WantedBy=multi-user.target

@@ -64,6 +64,15 @@ CLEANFILES += tang-luksd.path tang-luksd.service
 libexec_PROGRAMS += tang-luksd
 tang_luksd_LDADD = libaskpass.a libluks.a libclt.a
 tang_luksd_LDFLAGS = @cryptsetup_LIBS@ $(AM_LDFLAGS)
+
+if USE_LIBSYSTEMD
+systemdsystemunit_DATA += tang-luks-udisks2d.service
+EXTRA_DIST += tang-luks-udisks2d.service.in
+CLEANFILES += tang-luks-udisks2d.service
+libexec_PROGRAMS += tang-luks-udisks2d
+tang_luks_udisks2d_LDADD = libluks.a libclt.a
+tang_luks_udisks2d_LDFLAGS = @cryptsetup_LIBS@ @libsystemd_LIBS@ $(AM_LDFLAGS)
+endif
 endif
 endif
 

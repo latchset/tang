@@ -1,10 +1,15 @@
 SUBDIRS = . tests
 
-AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ @cryptsetup_CFLAGS@ -fPIC
-AM_LDFLAGS = @libcrypto_LIBS@
-LIBS = libcore.a
+tangdir = @TANG_DB@
+tang_DATA =
 
+systemdsystemunit_DATA =
 libexec_PROGRAMS =
+EXTRA_DIST =
+CLEANFILES =
+AM_LDFLAGS = @libcrypto_LIBS@
+AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ @cryptsetup_CFLAGS@ -fPIC
+LIBS = libcore.a
 
 noinst_LIBRARIES = libcore.a libclt.a libsrv.a
 libcore_a_SOURCES = core/asn1.c core/asn1.h core/conv.c core/conv.h core/pkt.c core/pkt.h core/list.c core/list.h
@@ -16,6 +21,9 @@ tang_key_send_LDADD = libsrv.a
 
 if USE_SYSTEMD
 if USE_LIBSYSTEMD
+systemdsystemunit_DATA += tang-keyd.socket tang-keyd.service
+EXTRA_DIST += tang-keyd.socket.in tang-keyd.service.in
+CLEANFILES += tang-keyd.socket tang-keyd.service
 libexec_PROGRAMS += tang-keyd
 tang_keyd_LDADD = libsrv.a
 endif
@@ -41,12 +49,28 @@ tang_luks_unbind_LDADD = libluks.a
 tang_luks_unbind_LDFLAGS = @cryptsetup_LIBS@ $(AM_LDFLAGS)
 
 if USE_SYSTEMD
+if USE_DRACUT
+dracutmodules_SCRIPTS = module-setup.sh
+EXTRA_DIST += module-setup.sh.in
+CLEANFILES += module-setup.sh
+endif
+
 noinst_LIBRARIES += libaskpass.a
 libaskpass_a_SOURCES = askpass/question.c askpass/question.h askpass/iface.c askpass/iface.h askpass/askp.c askpass/askp.h
 
+systemdsystemunit_DATA += tang-luksd.path tang-luksd.service
+EXTRA_DIST += tang-luksd.path.in tang-luksd.service.in
+CLEANFILES += tang-luksd.path tang-luksd.service
 libexec_PROGRAMS += tang-luksd
 tang_luksd_LDADD = libaskpass.a libluks.a libclt.a
 tang_luksd_LDFLAGS = @cryptsetup_LIBS@ $(AM_LDFLAGS)
 endif
 endif
+
+%: %.in
+	$(AM_V_GEN)$(SED) \
+		-e 's,@libexecdir\@,$(libexecdir),g' \
+		-e 's,@TANG_DB\@,$(TANG_DB),g' \
+		-e 's,@TANG_PORT\@,$(TANG_PORT),g' \
+		$(srcdir)/$@.in > $@
 

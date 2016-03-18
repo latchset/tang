@@ -3,4 +3,4 @@ Description=Tang LUKS askpass daemon
 DefaultDependencies=false
 
 [Service]
-ExecStart=@libexecdir@/tang-luksd
+ExecStart=@libexecdir@/tang-luks-askpassd

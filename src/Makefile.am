@@ -58,12 +58,12 @@ endif
 noinst_LIBRARIES += libaskpass.a
 libaskpass_a_SOURCES = askpass/question.c askpass/question.h askpass/iface.c askpass/iface.h askpass/askp.c askpass/askp.h
 
-systemdsystemunit_DATA += tang-luksd.path tang-luksd.service
-EXTRA_DIST += tang-luksd.path.in tang-luksd.service.in
-CLEANFILES += tang-luksd.path tang-luksd.service
-libexec_PROGRAMS += tang-luksd
-tang_luksd_LDADD = libaskpass.a libluks.a libclt.a
-tang_luksd_LDFLAGS = @cryptsetup_LIBS@ $(AM_LDFLAGS)
+systemdsystemunit_DATA += tang-luks-askpassd.path tang-luks-askpassd.service
+EXTRA_DIST += tang-luks-askpassd.path.in tang-luks-askpassd.service.in
+CLEANFILES += tang-luks-askpassd.path tang-luks-askpassd.service
+libexec_PROGRAMS += tang-luks-askpassd
+tang_luks_askpassd_LDADD = libaskpass.a libluks.a libclt.a
+tang_luks_askpassd_LDFLAGS = @cryptsetup_LIBS@ $(AM_LDFLAGS)
 
 if USE_LIBSYSTEMD
 systemdsystemunit_DATA += tang-luks-udisks2d.service

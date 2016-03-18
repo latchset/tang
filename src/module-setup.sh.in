@@ -11,18 +11,18 @@ cmdline() {
 
 install() {
     if ! dracut_module_included "systemd"; then
-        derror "tang-luksd needs systemd in the initramfs"
+        derror "tang-luks-askpassd needs systemd in the initramfs"
         return 1
     fi
 
-    cmdline > "${initdir}/etc/cmdline.d/99tang-luksd.conf"
+    cmdline > "${initdir}/etc/cmdline.d/99tang-luks-askpassd.conf"
 
-    inst_multiple @libexecdir@/tang-luksd \
-        "$systemdsystemunitdir/tang-luksd.service" \
-        "$systemdsystemunitdir/tang-luksd.path"
+    inst_multiple @libexecdir@/tang-luks-askpassd \
+        "$systemdsystemunitdir/tang-luks-askpassd.service" \
+        "$systemdsystemunitdir/tang-luks-askpassd.path"
 
-    ln_r  "$systemdsystemunitdir/tang-luksd.path" \
-        "$systemdsystemunitdir/sysinit.target.wants/tang-luksd.path"
+    ln_r  "$systemdsystemunitdir/tang-luks-askpassd.path" \
+        "$systemdsystemunitdir/sysinit.target.wants/tang-luks-askpassd.path"
 
     dracut_need_initqueue
 }

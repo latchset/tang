@@ -66,7 +66,6 @@ TANG_LUKS_get_params(const TANG_LUKS *tl, msg_t *params)
             tl->hostname->length);
     strncpy(params->service, (char *) tl->service->data,
             tl->service->length);
-    params->listen = tl->listen != 0;
 
     return true;
 }

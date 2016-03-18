@@ -127,7 +127,6 @@ TANG_LUKS_make(const msg_t *params, TANG_MSG_REC_REQ *rec)
         return NULL;
     }
 
-    tl->listen = params->listen;
     tl->rec = rec;
 
     if (ASN1_STRING_set(tl->hostname, params->hostname,
@@ -184,10 +183,6 @@ argp_parser(int key, char* arg, struct argp_state* state)
         opts->file = arg;
         return 0;
 
-    case 'l':
-        opts->params.listen = true;
-        return 0;
-
     case ARGP_KEY_END:
         if (!opts->device) {
             fprintf(stderr, "Device MUST be specified!\n");
@@ -195,8 +190,8 @@ argp_parser(int key, char* arg, struct argp_state* state)
             return EINVAL;
         }
 
-        if (strlen(opts->params.hostname) == 0 && !opts->params.listen) {
-            fprintf(stderr, "Host MUST be specified when not listening!\n");
+        if (strlen(opts->params.hostname) == 0) {
+            fprintf(stderr, "Host MUST be specified!\n");
             argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
             return EINVAL;
         }
@@ -238,7 +233,6 @@ const char *argp_program_version = VERSION;
 
 static const struct argp_option argp_options[] = {
     { "adv",    'a', "file", .doc = "Advertisement file" },
-    { "listen", 'l', .doc = "Listen for an incoming connection" },
     { "summary", SUMMARY, .flags = OPTION_HIDDEN },
     {}
 };
@@ -246,7 +240,7 @@ static const struct argp_option argp_options[] = {
 static const struct argp argp = {
     .options = argp_options,
     .parser = argp_parser,
-    .args_doc = "DEVICE [HOSTNAME [SERVICE]]"
+    .args_doc = "DEVICE HOSTNAME [SERVICE]"
 };
 
 int

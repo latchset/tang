@@ -26,11 +26,7 @@ typedef struct {
     char hostname[HOST_NAME_MAX];
     char service[HOST_NAME_MAX];
     time_t timeout;
-    bool listen;
 } msg_t;
-
-STACK_OF(TANG_MSG) *
-msg_rqst_batch(const msg_t *params, const TANG_MSG **reqs);
 
 TANG_MSG *
 msg_rqst(const msg_t *params, const TANG_MSG *req);

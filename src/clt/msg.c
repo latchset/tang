@@ -30,23 +30,36 @@
 #include <string.h>
 #include <unistd.h>
 
-static TANG_MSG *
-rqst(const TANG_MSG *req, const struct addrinfo *ais, time_t to)
+TANG_MSG *
+msg_rqst(const msg_t *params, const TANG_MSG *req)
 {
+    const struct addrinfo hint = { .ai_socktype = SOCK_DGRAM };
+    struct addrinfo *res = NULL;
+    TANG_MSG *msg = NULL;
     size_t naddr = 0;
     pkt_t out = {};
 
     if (pkt_encode(req, &out) != 0)
         return NULL;
 
-    for (const struct addrinfo *ai = ais; ai; ai = ai->ai_next)
+    for (int r = 1; r != 0; ) {
+        r = getaddrinfo(params->hostname, params->service, &hint, &res);
+        if (r != 0 && r != EAI_AGAIN)
+            return NULL;
+    }
+
+    for (const struct addrinfo *ai = res; ai; ai = ai->ai_next)
         naddr++;
+    if (naddr < 1 || naddr > 99) {
+        freeaddrinfo(res);
+        return NULL;
+    }
 
     struct pollfd ifds[naddr];
-    int timeout = to * 1000 / naddr / 3;
+    int timeout = params->timeout * 1000 / naddr / 3;
 
     naddr = 0;
-    for (const struct addrinfo *ai = ais; ai; ai = ai->ai_next) {
+    for (const struct addrinfo *ai = res; ai; ai = ai->ai_next) {
         ifds[naddr].events = POLLIN | POLLPRI;
         ifds[naddr].fd = socket(ai->ai_family,
                                 ai->ai_socktype,
@@ -67,7 +80,6 @@ rqst(const TANG_MSG *req, const struct addrinfo *ais, time_t to)
             memcpy(ofds, ifds, sizeof(struct pollfd) * naddr);
             r = poll(ofds, naddr, timeout > 5 ? timeout : 5);
             for (int j = 0; j < r; j++) {
-                TANG_MSG *rep = NULL;
                 pkt_t in = {};
 
                 if ((ofds[j].revents & (POLLIN | POLLPRI)) == 0)
@@ -77,79 +89,18 @@ rqst(const TANG_MSG *req, const struct addrinfo *ais, time_t to)
                 if (in.size <= 0)
                     continue;
 
-                rep = pkt_decode(&in);
-                if (rep) {
-                    for (size_t k = 0; k < naddr; k++)
-                        close(ifds[k].fd);
-                    return rep;
-                }
+                msg = pkt_decode(&in);
+                if (msg)
+                    goto egress;
             }
         }
     }
 
+egress:
     for (size_t j = 0; j < naddr; j++)
         close(ifds[j].fd);
 
-    return NULL;
-}
-
-STACK_OF(TANG_MSG) *
-msg_rqst_batch(const msg_t *params, const TANG_MSG **reqs)
-{
-    const struct addrinfo hint = { .ai_socktype = SOCK_DGRAM };
-    STACK_OF(TANG_MSG) *msgs = NULL;
-    struct addrinfo *res = NULL;
-
-    /* TODO: add support for listening. */
-    if (params->listen)
-        return NULL;
-
-    for (int r = 1; r != 0; ) {
-        r = getaddrinfo(params->hostname, params->service, &hint, &res);
-        if (r != 0 && r != EAI_AGAIN)
-            return NULL;
-    }
-
-    msgs = SKM_sk_new_null(TANG_MSG);
-    if (!msgs)
-        goto error;
-
-    for (size_t i = 0; reqs[i]; i++) {
-        TANG_MSG *msg = NULL;
-
-        msg = rqst(reqs[i], res, params->timeout);
-        if (!msg)
-            goto error;
-
-        if (SKM_sk_push(TANG_MSG, msgs, msg) <= 0)
-            goto error;
-    }
-
     freeaddrinfo(res);
-    return msgs;
-
-error:
-    SKM_sk_pop_free(TANG_MSG, msgs, TANG_MSG_free);
-    freeaddrinfo(res);
-    return NULL;
-
-}
-
-TANG_MSG *
-msg_rqst(const msg_t *params, const TANG_MSG *req)
-{
-    const TANG_MSG *reqs[] = { req, NULL };
-    STACK_OF(TANG_MSG) *msgs = NULL;
-    TANG_MSG *msg = NULL;
-
-    msgs = msg_rqst_batch(params, reqs);
-    if (!msgs)
-        return NULL;
-
-    if (SKM_sk_num(TANG_MSG, msgs) == 1)
-        msg = SKM_sk_pop(TANG_MSG, msgs);
-
-    SKM_sk_pop_free(TANG_MSG, msgs, TANG_MSG_free);
     return msg;
 }
 

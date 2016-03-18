@@ -110,29 +110,17 @@ rec(int sock, EC_KEY *key, const char *file, int line)
 #define rec(s, k) rec(s, k, __FILE__, __LINE__)
 
 static TANG_MSG *
-adv(int sock, int type, int grp, EC_KEY *key, TANG_KEY_USE use,
-    const char *file, int line)
+adv(int sock, EC_KEY *key, TANG_KEY_USE use, const char *file, int line)
 {
     TANG_MSG_ADV_REQ *req = NULL;
     TANG_MSG *rep = NULL;
 
-    test(!(grp != NID_undef && key));
     test(req = TANG_MSG_ADV_REQ_new());
-
-    if (type != NID_undef)
-        test(sk_ASN1_OBJECT_push(req->types, OBJ_nid2obj(type)) > 0);
 
     if (key) {
         TANG_KEY *tkey = TANG_KEY_new();
         test(conv_eckey2tkey(key, use, tkey, NULL) == 0);
-        req->body->type = TANG_MSG_ADV_REQ_BDY_TYPE_KEYS;
-        test(req->body->val.keys = SKM_sk_new_null(TANG_KEY));
-        test(SKM_sk_push(TANG_KEY, req->body->val.keys, tkey) > 0);
-    } else {
-        req->body->type = TANG_MSG_ADV_REQ_BDY_TYPE_GRPS;
-        test(req->body->val.grps = sk_ASN1_OBJECT_new_null());
-        if (grp != NID_undef)
-            test(sk_ASN1_OBJECT_push(req->body->val.grps, OBJ_nid2obj(grp)) > 0);
+        test(SKM_sk_push(TANG_KEY, req->keys, tkey) > 0);
     }
 
     test(rep = request(sock, &(TANG_MSG) {
@@ -143,7 +131,7 @@ adv(int sock, int type, int grp, EC_KEY *key, TANG_KEY_USE use,
     TANG_MSG_ADV_REQ_free(req);
     return rep;
 }
-#define adv(s, t, g, k, u) adv(s, t, g, k, u, __FILE__, __LINE__)
+#define adv(s, k, u) adv(s, k, u, __FILE__, __LINE__)
 
 static void
 err_verify(TANG_MSG *rep, TANG_MSG_ERR err, const char *file, int line)
@@ -272,8 +260,6 @@ adv_benchmark(int sock, int iter, const char *file, int line)
     double t;
 
     test(req.val.adv.req = TANG_MSG_ADV_REQ_new());
-    test(req.val.adv.req->body->val.grps = sk_ASN1_OBJECT_new_null());
-    req.val.adv.req->body->type = TANG_MSG_ADV_REQ_BDY_TYPE_GRPS;
     test(pkt_encode(&req, &out) == 0);
     TANG_MSG_ADV_REQ_free(req.val.adv.req);
 
@@ -302,7 +288,7 @@ client_checks(int sock, const char *dbdir)
     EC_KEY *sigB = NULL;
 
     /* Make sure we get TANG_MSG_ERR_NOTFOUND_KEY when no keys exist. */
-    rep = adv(sock, NID_undef, NID_undef, NULL, TANG_KEY_USE_NONE);
+    rep = adv(sock, NULL, TANG_KEY_USE_NONE);
     err_verify(rep, TANG_MSG_ERR_NOTFOUND_KEY);
     TANG_MSG_free(rep);
 
@@ -314,22 +300,22 @@ client_checks(int sock, const char *dbdir)
     usleep(100000); /* Let the daemon have time to pick up the new files. */
 
     /* Make sure the unadvertised keys aren't advertised. */
-    rep = adv(sock, NID_undef, NID_undef, NULL, TANG_KEY_USE_NONE);
+    rep = adv(sock, NULL, TANG_KEY_USE_NONE);
     err_verify(rep, TANG_MSG_ERR_NOTFOUND_KEY);
     TANG_MSG_free(rep);
 
     /* Make sure the server won't sign with recovery keys. */
-    rep = adv(sock, NID_undef, NID_undef, reca, TANG_KEY_USE_REC);
+    rep = adv(sock, reca, TANG_KEY_USE_REC);
     err_verify(rep, TANG_MSG_ERR_NOTFOUND_KEY);
     TANG_MSG_free(rep);
 
     /* Make sure changing the key use won't expose it. */
-    rep = adv(sock, NID_undef, NID_undef, reca, TANG_KEY_USE_SIG);
+    rep = adv(sock, reca, TANG_KEY_USE_SIG);
     err_verify(rep, TANG_MSG_ERR_NOTFOUND_KEY);
     TANG_MSG_free(rep);
 
     /* Request signature with a valid, but unadvertised key. */
-    rep = adv(sock, NID_undef, NID_undef, siga, TANG_KEY_USE_SIG);
+    rep = adv(sock, siga, TANG_KEY_USE_SIG);
     adv_verify(rep, siga, 0, 4);
     TANG_MSG_free(rep);
 
@@ -351,28 +337,18 @@ client_checks(int sock, const char *dbdir)
     usleep(100000); /* Let the daemon have time to pick up the new files. */
 
     /* Request signature with a valid, but unadvertised key. */
-    rep = adv(sock, NID_undef, NID_undef, siga, TANG_KEY_USE_SIG);
-    adv_verify(rep, siga, 2, 4);
+    rep = adv(sock, siga, TANG_KEY_USE_SIG);
+    adv_verify(rep, siga, 2, 8);
     TANG_MSG_free(rep);
 
     /* Request signature with a valid, advertised key. */
-    rep = adv(sock, NID_undef, NID_undef, sigA, TANG_KEY_USE_SIG);
+    rep = adv(sock, sigA, TANG_KEY_USE_SIG);
     adv_verify(rep, sigA, 2, 4);
     TANG_MSG_free(rep);
 
     /* Don't request a key. Make sure it uses the advertised key. */
-    rep = adv(sock, NID_undef, NID_undef, NULL, TANG_KEY_USE_SIG);
+    rep = adv(sock, NULL, TANG_KEY_USE_SIG);
     adv_verify(rep, sigA, 2, 4);
-    TANG_MSG_free(rep);
-
-    /* Test for a limit on the signing method. */
-    rep = adv(sock, NID_ecdsa_with_SHA224, NID_undef, NULL, TANG_KEY_USE_SIG);
-    adv_verify(rep, sigA, 2, 1);
-    TANG_MSG_free(rep);
-
-    /* Test for a limit on the signing method with a specified key. */
-    rep = adv(sock, NID_ecdsa_with_SHA224, NID_undef, siga, TANG_KEY_USE_SIG);
-    adv_verify(rep, siga, 2, 1);
     TANG_MSG_free(rep);
 
     /* Test recovery of an advertised key. */
@@ -393,19 +369,9 @@ client_checks(int sock, const char *dbdir)
     usleep(100000); /* Let the daemon have time to pick up the new files. */
 
     /* Ensure that both keys are used to sign in the default case. */
-    rep = adv(sock, NID_ecdsa_with_SHA224, NID_undef, NULL, TANG_KEY_USE_SIG);
-    adv_verify(rep, sigA, 4, 2);
-    adv_verify(rep, sigB, 4, 2);
-    TANG_MSG_free(rep);
-
-    /* Filter by group: secp384r1. */
-    rep = adv(sock, NID_ecdsa_with_SHA224, NID_secp384r1, NULL, TANG_KEY_USE_SIG);
-    adv_verify(rep, sigA, 4, 1);
-    TANG_MSG_free(rep);
-
-    /* Filter by group: secp521r1. */
-    rep = adv(sock, NID_ecdsa_with_SHA224, NID_secp521r1, NULL, TANG_KEY_USE_SIG);
-    adv_verify(rep, sigB, 4, 1);
+    rep = adv(sock, NULL, TANG_KEY_USE_SIG);
+    adv_verify(rep, sigA, 4, 8);
+    adv_verify(rep, sigB, 4, 8);
     TANG_MSG_free(rep);
 
     /* Test recovery of an advertised key. */

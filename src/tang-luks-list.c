@@ -134,8 +134,6 @@ main(int argc, char *argv[])
             fwrite(tluks->hostname->data, tluks->hostname->length, 1, stderr);
             fwrite(":", 1, 1, stderr);
             fwrite(tluks->service->data, tluks->service->length, 1, stderr);
-            if (tluks->listen)
-                fwrite(" L", 2, 1, stderr);
             fwrite("\n", 1, 1, stderr);
             break;
 

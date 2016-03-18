@@ -16,8 +16,7 @@ libcore_a_SOURCES = core/asn1.c core/asn1.h core/conv.c core/conv.h core/pkt.c c
 libclt_a_SOURCES = clt/adv.c clt/adv.h clt/rec.c clt/rec.h clt/msg.c clt/msg.h clt/skey.c clt/skey.h
 libsrv_a_SOURCES = srv/adv.c srv/adv.h srv/db.c srv/db.h srv/rec.c srv/rec.h srv/srv.c srv/srv.h
 
-bin_PROGRAMS = tang tang-key-gen tang-key-mod tang-key-send tang-key-groups
-tang_key_send_LDADD = libsrv.a
+bin_PROGRAMS = tang tang-key-gen tang-key-mod tang-key-groups
 
 if USE_SYSTEMD
 if USE_LIBSYSTEMD

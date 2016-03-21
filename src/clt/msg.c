@@ -115,7 +115,7 @@ msg_save(const TANG_MSG *msg, const char *filename)
     if (r != 0)
         return r;
 
-    fd = open(filename, O_WRONLY | O_CREAT);
+    fd = open(filename, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
     if (fd < 0)
         return errno;
 

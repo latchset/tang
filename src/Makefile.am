@@ -7,9 +7,8 @@ systemdsystemunit_DATA =
 libexec_PROGRAMS =
 EXTRA_DIST =
 CLEANFILES =
-AM_LDFLAGS = @libcrypto_LIBS@
 AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ @cryptsetup_CFLAGS@ -fPIC -DTANG_DB=\"$(tangdir)\"
-LIBS = libcore.a
+LIBS = libcore.a @libcrypto_LIBS@
 
 noinst_LIBRARIES = libcore.a libclt.a libsrv.a
 libcore_a_SOURCES = core/asn1.c core/asn1.h core/conv.c core/conv.h core/pkt.c core/pkt.h core/list.c core/list.h
@@ -24,14 +23,14 @@ systemdsystemunit_DATA += tang-keyd.socket tang-keyd.service
 EXTRA_DIST += tang-keyd.socket.in tang-keyd.service.in
 CLEANFILES += tang-keyd.socket tang-keyd.service
 libexec_PROGRAMS += tang-keyd
-tang_keyd_LDADD = libsrv.a
+tang_keyd_LDADD = libsrv.a $(LIBS)
 endif
 endif
 
 if USE_CLEVIS
 clevispin_PROGRAMS = tang.so
 tang_so_SOURCES = clevis.c
-tang_so_LDADD = libclt.a @clevis_LIBS@
+tang_so_LDADD = libclt.a @clevis_LIBS@ $(LIBS)
 tang_so_LDFLAGS = -shared -Wl,--version-script=clevis.sym
 endif
 
@@ -40,12 +39,9 @@ noinst_LIBRARIES += libluks.a
 libluks_a_SOURCES = luks/luks.c luks/luks.h luks/meta.c luks/meta.h luks/asn1.c luks/asn1.h
 
 bin_PROGRAMS += tang-luks-bind tang-luks-list tang-luks-unbind
-tang_luks_bind_LDADD = libclt.a libluks.a
-tang_luks_bind_LDFLAGS = @cryptsetup_LIBS@ $(AM_LDFLAGS)
-tang_luks_list_LDADD = libluks.a
-tang_luks_list_LDFLAGS = @cryptsetup_LIBS@ $(AM_LDFLAGS)
-tang_luks_unbind_LDADD = libluks.a
-tang_luks_unbind_LDFLAGS = @cryptsetup_LIBS@ $(AM_LDFLAGS)
+tang_luks_bind_LDADD = libclt.a libluks.a @cryptsetup_LIBS@ $(LIBS)
+tang_luks_list_LDADD = libluks.a @cryptsetup_LIBS@ $(LIBS)
+tang_luks_unbind_LDADD = libluks.a @cryptsetup_LIBS@ $(LIBS)
 
 if USE_SYSTEMD
 if USE_DRACUT
@@ -61,16 +57,14 @@ systemdsystemunit_DATA += tang-luks-askpassd.path tang-luks-askpassd.service
 EXTRA_DIST += tang-luks-askpassd.path.in tang-luks-askpassd.service.in
 CLEANFILES += tang-luks-askpassd.path tang-luks-askpassd.service
 libexec_PROGRAMS += tang-luks-askpassd
-tang_luks_askpassd_LDADD = libaskpass.a libluks.a libclt.a
-tang_luks_askpassd_LDFLAGS = @cryptsetup_LIBS@ $(AM_LDFLAGS)
+tang_luks_askpassd_LDADD = libaskpass.a libluks.a libclt.a @cryptsetup_LIBS@ $(LIBS)
 
 if USE_LIBSYSTEMD
 systemdsystemunit_DATA += tang-luks-udisks2d.service
 EXTRA_DIST += tang-luks-udisks2d.service.in
 CLEANFILES += tang-luks-udisks2d.service
 libexec_PROGRAMS += tang-luks-udisks2d
-tang_luks_udisks2d_LDADD = libluks.a libclt.a
-tang_luks_udisks2d_LDFLAGS = @cryptsetup_LIBS@ @libsystemd_LIBS@ $(AM_LDFLAGS)
+tang_luks_udisks2d_LDADD = libluks.a libclt.a @cryptsetup_LIBS@ @libsystemd_LIBS@ $(LIBS)
 endif
 endif
 endif

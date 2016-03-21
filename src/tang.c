@@ -52,15 +52,16 @@ valid(const char *str)
 }
 
 static bool
-summary(const char *dirname, const char *prfx)
+summary(const char *dname, const char *prfx)
 {
+    bool status = true;
     DIR *dir = NULL;
 
-    dir = opendir(dirname);
+    dir = opendir(dname);
     if (!dir)
         return false;
 
-    for (struct dirent *de  = readdir(dir); de; de = readdir(dir)) {
+    for (struct dirent *de  = readdir(dir); de && status; de = readdir(dir)) {
         char cmd[PATH_MAX] = {};
 
         if (strncmp(de->d_name, prfx, strlen(prfx)) != 0)
@@ -70,13 +71,13 @@ summary(const char *dirname, const char *prfx)
             continue;
 
         fprintf(stderr, "%-16s ", &de->d_name[strlen(prfx)]);
-        snprintf(cmd, sizeof(cmd), "%s/%s --summary", dirname, de->d_name);
-        system(cmd);
+        snprintf(cmd, sizeof(cmd), "%s/%s --summary", dname, de->d_name);
+        status = system(cmd) == 0;
         fprintf(stderr, "\n");
     }
 
     closedir(dir);
-    return true;
+    return status;
 }
 
 static char *

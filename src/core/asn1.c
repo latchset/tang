@@ -18,10 +18,10 @@
  */
 
 #include "asn1.h"
-
-#include <errno.h>
-
 #include <openssl/objects.h>
+#include <errno.h>
+#include <stdint.h>
+
 
 ASN1_SEQUENCE(TANG_KEY) = {
     ASN1_EXP(TANG_KEY, grp, ASN1_OBJECT, 0),
@@ -80,9 +80,9 @@ IMPLEMENT_ASN1_FUNCTIONS(TANG_MSG)
 TANG_KEY *
 TANG_KEY_copy(const TANG_KEY *key)
 {
-	TANG_KEY *tmp = NULL;
-	uint8_t *buf = NULL;
-	int len = 0;
+    TANG_KEY *tmp = NULL;
+    uint8_t *buf = NULL;
+    int len = 0;
 
     len = i2d_TANG_KEY((TANG_KEY *) key, &buf);
     if (len <= 0)

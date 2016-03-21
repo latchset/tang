@@ -19,11 +19,11 @@
 
 #pragma once
 
-#include <openssl/asn1t.h>
 #include "asn1.h"
+#include <stdint.h>
 
 typedef struct {
-    unsigned char data[65535];
+    uint8_t data[65535];
     int size;
 } pkt_t;
 

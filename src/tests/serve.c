@@ -45,13 +45,14 @@ onexit(void)
 {
     const char *cmd = "rm -rf ";
     char tmp[strlen(cmd) + strlen(tempdir) + 1];
+    __attribute__((unused)) int r = 0;
 
     kill(pid, SIGTERM);
     waitpid(pid, NULL, 0);
 
     strcpy(tmp, cmd);
     strcat(tmp, tempdir);
-    system(tmp);
+    r = system(tmp);
 }
 
 int

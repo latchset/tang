@@ -10,6 +10,8 @@ AM_SILENT_RULES([yes])
 AM_PROG_CC_C_O
 AM_PROG_AR
 
+AC_CHECK_LIB([rt], [clock_gettime], [LIBS="-lrt $LIBS"])
+
 PKG_PROG_PKG_CONFIG([0.25])
 PKG_CHECK_MODULES([libcrypto], [libcrypto])
 
@@ -23,34 +25,21 @@ AC_ARG_WITH(
 AS_CASE(
     ["$with_systemd"],
     [yes],
-    [PKG_CHECK_MODULES(
-        [libsystemd],
-        [libsystemd libsystemd-daemon],
-        [HAVE_LIBSYSTEMD=1]
-    )],
+    [PKG_CHECK_MODULES([libsystemd], [libsystemd >= 221], [HAVE_LIBSYSTEMD=1])],
     [no],
     [],
-    [PKG_CHECK_MODULES(
-        [libsystemd],
-        [libsystemd libsystemd-daemon],
-        [HAVE_LIBSYSTEMD=1],
-        [HAVE_LIBSYSTEMD=0]
-    )]
+    [PKG_CHECK_MODULES([libsystemd], [libsystemd >= 221], [HAVE_LIBSYSTEMD=1], [HAVE_LIBSYSTEMD=0])]
 )
 AS_CASE(
     ["$with_systemd"],
     [yes],
-    [PKG_CHECK_MODULES(
-        [systemd],
-        [systemd],
+    [PKG_CHECK_MODULES([systemd], [systemd],
         [HAVE_SYSTEMD=1 && AC_SUBST([systemdsystemunitdir],
                                     [$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])],
     )],
     [no],
     [],
-    [PKG_CHECK_MODULES(
-        [systemd],
-        [systemd],
+    [PKG_CHECK_MODULES([systemd], [systemd],
         [HAVE_SYSTEMD=1 && AC_SUBST([systemdsystemunitdir],
                                     [$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])],
         [HAVE_SYSTEMD=0]

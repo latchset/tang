@@ -20,6 +20,7 @@
 #pragma once
 
 #include "../core/asn1.h"
+#include <limits.h>
 #include <unistd.h>
 
 typedef struct {

@@ -1,6 +1,6 @@
 SUBDIRS = . tests
 
-tangdir = @TANG_DB@
+tangdir = $(localstatedir)/$(PACKAGE_NAME)
 tang_DATA =
 
 systemdsystemunit_DATA =
@@ -8,7 +8,7 @@ libexec_PROGRAMS =
 EXTRA_DIST =
 CLEANFILES =
 AM_LDFLAGS = @libcrypto_LIBS@
-AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ @cryptsetup_CFLAGS@ -fPIC
+AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ @cryptsetup_CFLAGS@ -fPIC -DTANG_DB=\"$(tangdir)\"
 LIBS = libcore.a
 
 noinst_LIBRARIES = libcore.a libclt.a libsrv.a
@@ -78,7 +78,7 @@ endif
 %: %.in
 	$(AM_V_GEN)$(SED) \
 		-e 's,@libexecdir\@,$(libexecdir),g' \
-		-e 's,@TANG_DB\@,$(TANG_DB),g' \
+		-e 's,@TANG_DB\@,$(tangdir),g' \
 		-e 's,@TANG_PORT\@,$(TANG_PORT),g' \
 		$(srcdir)/$@.in > $@
 

@@ -1,6 +1,5 @@
 AC_PREREQ(2.59)
 AC_INIT(tang, 1)
-AC_CONFIG_MACRO_DIRS([m4])
 AC_CANONICAL_SYSTEM
 AC_PROG_CC_C99
 AC_PROG_RANLIB
@@ -148,9 +147,6 @@ AC_SUBST([TANG_CFLAGS])
 
 AC_SUBST([TANG_PORT], [5700])
 AC_DEFINE([TANG_PORT], [5700])
-
-AC_SUBST([TANG_DB], [${localstatedir}/${PACKAGE_NAME}])
-AX_DEFINE_DIR(TANG_DB, TANG_DB, [Location of key database])
 
 AC_CONFIG_FILES([Makefile src/Makefile src/tests/Makefile])
 AC_OUTPUT

@@ -1,0 +1,18 @@
+language: c
+before_install:
+  - sudo sed -i 's|trusty|wily|g' /etc/apt/sources.list
+  - sudo apt-get update -y
+  - sudo apt-get remove -y 'postgres.*'
+  - sudo apt-get -o Dpkg::Options::="--force-confnew" dist-upgrade -y
+  - sudo apt-get -o Dpkg::Options::="--force-confnew" install -y libsystemd-dev libssl-dev libcryptsetup-dev automake autoconf make gcc clang
+before_script:
+  - autoreconf -if
+script:
+  - ./configure --prefix=/usr
+  - make -k
+  - make check
+sudo: required
+dist: trusty
+compiler:
+  - clang
+  - gcc

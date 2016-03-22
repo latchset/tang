@@ -28,14 +28,7 @@ TangMessageRecoverReply ::= SEQUENCE {
 }
 
 TangMessageAdvertiseRequest ::= SEQUENCE {
-  types  [0] SET OF OBJECT IDENTIFIER,
-  body   [1] TangMessageAdvertiseRequestBody,
-  ...
-}
-
-TangMessageAdvertiseRequestBody ::= CHOICE {
-  grps   [0] SET OF OBJECT IDENTIFIER,
-  keys   [1] SET OF TangKey,
+  keys   [0] SET OF TangKey,
   ...
 }
 

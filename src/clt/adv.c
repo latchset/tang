@@ -23,6 +23,7 @@
 #include <openssl/evp.h>
 #include <openssl/ecdsa.h>
 #include <openssl/objects.h>
+#include <openssl/rand.h>
 
 static bool
 valid_sig(TANG_SIG *sig, EC_KEY *key, const uint8_t *body, size_t size)
@@ -197,6 +198,7 @@ adv_rep(const TANG_MSG_ADV_REP *adv, STACK_OF(TANG_KEY) *keys,
     EC_POINT *p = NULL;
     EC_KEY *r = NULL;
     EC_KEY *l = NULL;
+    int bytes = 0;
 
     if (!valid_adv(adv, keys, ctx))
     	return NULL;
@@ -208,6 +210,11 @@ adv_rep(const TANG_MSG_ADV_REP *adv, STACK_OF(TANG_KEY) *keys,
     g = EC_KEY_get0_group(r);
     if (!g)
     	goto error;
+
+
+    bytes = (EC_GROUP_get_degree(g) + 7) / 8;
+    if (RAND_load_file("/dev/random", bytes) != bytes)
+        goto error;
 
 
     l = EC_KEY_new();

@@ -20,6 +20,7 @@
 #include <openssl/ec.h>
 #include <openssl/objects.h>
 #include <openssl/pem.h>
+#include <openssl/rand.h>
 
 #include <sys/types.h>
 #include <sys/xattr.h>
@@ -211,6 +212,7 @@ main(int argc, char *argv[])
     char filename[PATH_MAX];
     EC_KEY *key = NULL;
     FILE *file = NULL;
+    int bytes = 0;
 
     if (argp_parse(&argp, argc, argv, 0, NULL, &opts) != 0)
         return EX_OSERR;
@@ -219,6 +221,12 @@ main(int argc, char *argv[])
 
     EC_GROUP_set_asn1_flag(opts.grp, OPENSSL_EC_NAMED_CURVE);
     EC_GROUP_set_point_conversion_form(opts.grp, POINT_CONVERSION_COMPRESSED);
+
+    bytes = (EC_GROUP_get_degree(opts.grp) + 7) / 8;
+    if (RAND_load_file("/dev/random", bytes) != bytes) {
+        EC_GROUP_free(opts.grp);
+        return EX_IOERR;
+    }
 
     key = EC_KEY_new();
     if (!key

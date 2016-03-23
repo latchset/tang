@@ -21,6 +21,7 @@
 #include "../core/conv.h"
 
 #include <openssl/objects.h>
+#include <openssl/rand.h>
 
 EC_KEY *
 rec_req(TANG_MSG_REC_REQ *rec, BN_CTX *ctx)
@@ -31,6 +32,7 @@ rec_req(TANG_MSG_REC_REQ *rec, BN_CTX *ctx)
     EC_KEY *r = NULL;
     EC_KEY *l = NULL;
     EC_KEY *o = NULL;
+    int bytes = 0;
 
     r = conv_tkey2eckey(rec->key, ctx);
     if (!r)
@@ -38,6 +40,10 @@ rec_req(TANG_MSG_REC_REQ *rec, BN_CTX *ctx)
 
     g = EC_KEY_get0_group(r);
     if (!g)
+        goto error;
+
+    bytes = (EC_GROUP_get_degree(g) + 7) / 8;
+    if (RAND_load_file("/dev/random", bytes) != bytes)
         goto error;
 
     p = EC_POINT_new(g);

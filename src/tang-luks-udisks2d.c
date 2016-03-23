@@ -25,6 +25,7 @@
 
 #include <errno.h>
 #include <error.h>
+#include <sysexits.h>
 
 #include <systemd/sd-bus.h>
 #include <libcryptsetup.h>
@@ -441,7 +442,7 @@ main(int argc, char *argv[])
 
     r = sd_bus_open_system(&bus);
     if (r < 0)
-        error(EXIT_FAILURE, -r, "Error connecting to system bus");
+        error(EX_IOERR, -r, "Error connecting to system bus");
 
     r = sd_bus_add_match(bus, NULL,
                          "type='signal',"
@@ -451,7 +452,7 @@ main(int argc, char *argv[])
                          "interface='org.freedesktop.DBus.ObjectManager'",
                          on_iface_rem, bus);
     if (r < 0)
-        error(EXIT_FAILURE, -r, "Error registering for interfaces");
+        error(EX_IOERR, -r, "Error registering for interfaces");
 
     r = sd_bus_add_match(bus, NULL,
                          "type='signal',"
@@ -461,34 +462,34 @@ main(int argc, char *argv[])
                          "interface='org.freedesktop.DBus.ObjectManager'",
                          on_iface_add, bus);
     if (r < 0)
-        error(EXIT_FAILURE, -r, "Error registering for interfaces");
+        error(EX_IOERR, -r, "Error registering for interfaces");
 
     r = sd_bus_call_method(bus, "org.freedesktop.UDisks2",
                            "/org/freedesktop/UDisks2",
                            "org.freedesktop.DBus.ObjectManager",
                            "GetManagedObjects", NULL, &msg, "");
     if (r < 0)
-        error(EXIT_FAILURE, -r, "Error calling ObjectManager");
+        error(EX_IOERR, -r, "Error calling ObjectManager");
 
     r = sd_bus_message_enter_container(msg, 'a', "{oa{sa{sv}}}");
     if (r < 0)
-        error(EXIT_FAILURE, -r, "Error parsing results");
+        error(EX_IOERR, -r, "Error parsing results");
 
     while ((r = sd_bus_message_enter_container(msg, 'e', "oa{sa{sv}}")) > 0) {
         r = on_iface_add(msg, bus, NULL);
         if (r < 0)
-            error(EXIT_FAILURE, -r, "Error parsing results");
+            error(EX_IOERR, -r, "Error parsing results");
 
         r = sd_bus_message_exit_container(msg);
         if (r < 0)
-            error(EXIT_FAILURE, -r, "Error parsing results");
+            error(EX_IOERR, -r, "Error parsing results");
     }
     if (r < 0)
-        error(EXIT_FAILURE, -r, "Error parsing results");
+        error(EX_IOERR, -r, "Error parsing results");
 
     r = sd_bus_message_exit_container(msg);
     if (r < 0)
-        error(EXIT_FAILURE, -r, "Error parsing results");
+        error(EX_IOERR, -r, "Error parsing results");
 
     process(bus);
 
@@ -496,12 +497,12 @@ main(int argc, char *argv[])
         while ((r = sd_bus_process(bus, NULL)) > 0)
             continue;
         if (r < 0)
-            error(EXIT_FAILURE, -r, "Error processing bus");
+            error(EX_IOERR, -r, "Error processing bus");
 
         process(bus);
     }
     if (r < 0 && r != -EINTR)
-        error(EXIT_FAILURE, -r, "Error waiting on bus");
+        error(EX_IOERR, -r, "Error waiting on bus");
 
     LIST_FOREACH(&devs, struct dev, d, list)
         free(d);

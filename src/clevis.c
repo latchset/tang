@@ -88,12 +88,6 @@ copy_config(const json_t *cfg)
     if (json_object_set_new(data, "service", tmp) < 0)
         goto error;
 
-    tmp = json_incref(json_object_get(cfg, "listen"));
-    if (!json_is_boolean(tmp))
-        tmp = json_boolean(false);
-    if (json_object_set_new(data, "listen", tmp) < 0)
-        goto error;
-
     tmp = json_incref(json_object_get(cfg, "timeout"));
     if (!json_is_integer(tmp))
         tmp = json_integer(10);
@@ -166,7 +160,6 @@ make_params(const json_t *data, msg_t *params)
         return false;
     strcpy(params->service, tmp);
 
-    params->listen = json_boolean_value(json_object_get(data, "listen"));
     params->timeout = json_integer_value(json_object_get(data, "timeout"));
     return true;
 }

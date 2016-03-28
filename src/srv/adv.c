@@ -49,6 +49,7 @@ static const struct {
     { NID_ecdsa_with_SHA256, NID_sha256 },
     { NID_ecdsa_with_SHA384, NID_sha384 },
     { NID_ecdsa_with_SHA512, NID_sha512 },
+    { NID_undef, NID_undef }
 };
 
 static void
@@ -170,7 +171,6 @@ adv_update(adv_t *adv, const db_t *db, BN_CTX *ctx)
     /* Create the new reply structure. */
     LIST_FOREACH(&db->keys, db_key_t, k, list)
         nkeys++;
-    nkeys *= sizeof(supported) / sizeof(*supported);
     tmp.sigs = calloc(nkeys + 1, sizeof(*tmp.sigs));
     tmp.rep = TANG_MSG_ADV_REP_new();
     if (!tmp.sigs || !tmp.rep)
@@ -203,7 +203,7 @@ adv_update(adv_t *adv, const db_t *db, BN_CTX *ctx)
 
     /* Create all signature combinations. */
     nkeys = 0;
-    for (size_t i = 0; i < sizeof(supported) / sizeof(*supported); i++) {
+    for (size_t i = 0; supported[i].sign != NID_undef; i++) {
         unsigned char hash[EVP_MAX_MD_SIZE] = {};
         unsigned int hlen = sizeof(hash);
         const EVP_MD *md = NULL;
@@ -223,6 +223,8 @@ adv_update(adv_t *adv, const db_t *db, BN_CTX *ctx)
             if (!tmp.sigs[nkeys++])
                 goto error;
         }
+
+        break;
     }
 
     /* Clean up. */

@@ -268,10 +268,6 @@ adv_sign(adv_t *adv, const TANG_MSG_ADV_REQ *req, pkt_t *pkt)
         }
     }
 
-    /* If no matching keys were found, error. */
-    if (SKM_sk_num(TANG_SIG, adv->rep->sigs) == 0)
-        return TANG_MSG_ERR_NOTFOUND_KEY;
-
     /* Encode the output. */
     r = pkt_encode(&(TANG_MSG) {
         .type = TANG_MSG_TYPE_ADV_REP,

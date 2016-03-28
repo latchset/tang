@@ -56,10 +56,9 @@ valid_sig(TANG_SIG *sig, EC_KEY *key, const uint8_t *body, size_t size)
     return r == 1;
 }
 
-static bool
-adv_signed_by(const TANG_MSG_ADV_REP *rep, TANG_KEY *tkey, BN_CTX *ctx)
+bool
+adv_signed_by(const TANG_MSG_ADV_REP *rep, EC_KEY *key, BN_CTX *ctx)
 {
-    EC_KEY *eckey = NULL;
     uint8_t *body = NULL;
     bool ret = false;
     int len = 0;
@@ -68,18 +67,13 @@ adv_signed_by(const TANG_MSG_ADV_REP *rep, TANG_KEY *tkey, BN_CTX *ctx)
     if (len <= 0)
         goto egress;
 
-    eckey = conv_tkey2eckey(tkey, ctx);
-    if (!eckey)
-        goto egress;
-
     for (int j = 0; !ret && j < SKM_sk_num(TANG_SIG, rep->sigs); j++) {
         TANG_SIG *sig = SKM_sk_value(TANG_SIG, rep->sigs, j);
-        ret = valid_sig(sig, eckey, body, len);
+        ret = valid_sig(sig, key, body, len);
     }
 
 egress:
     OPENSSL_free(body);
-    EC_KEY_free(eckey);
     return ret;
 }
 
@@ -94,6 +88,7 @@ valid_adv(const TANG_MSG_ADV_REP *rep, STACK_OF(TANG_KEY) *keys, BN_CTX *ctx)
      * Also, count the number of signing and recovery keys. */
     for (int i = 0; i < SKM_sk_num(TANG_KEY, rep->body->keys); i++) {
         TANG_KEY *tkey = NULL;
+        EC_KEY *eckey = NULL;
 
         tkey = SKM_sk_value(TANG_KEY, rep->body->keys, i);
         if (!tkey)
@@ -105,8 +100,16 @@ valid_adv(const TANG_MSG_ADV_REP *rep, STACK_OF(TANG_KEY) *keys, BN_CTX *ctx)
             break;
 
         case TANG_KEY_USE_SIG:
-            if (!adv_signed_by(rep, tkey, ctx))
+            eckey = conv_tkey2eckey(tkey, ctx);
+            if (!eckey)
                 return false;
+
+            if (!adv_signed_by(rep, eckey, ctx)) {
+                EC_KEY_free(eckey);
+                return false;
+            }
+
+            EC_KEY_free(eckey);
             acnt++;
             break;
 
@@ -118,6 +121,7 @@ valid_adv(const TANG_MSG_ADV_REP *rep, STACK_OF(TANG_KEY) *keys, BN_CTX *ctx)
     /* Ensure the advertisement is signed by at least one requested key. */
     for (int i = 0; !sig && i < SKM_sk_num(TANG_KEY, keys); i++) {
         TANG_KEY *tkey = NULL;
+        EC_KEY *eckey = NULL;
 
         tkey = SKM_sk_value(TANG_KEY, keys, i);
         if (!tkey)
@@ -126,7 +130,12 @@ valid_adv(const TANG_MSG_ADV_REP *rep, STACK_OF(TANG_KEY) *keys, BN_CTX *ctx)
         if (ASN1_ENUMERATED_get(tkey->use) != TANG_KEY_USE_SIG)
             continue;
 
-        sig = adv_signed_by(rep, tkey, ctx);
+        eckey = conv_tkey2eckey(tkey, ctx);
+        if (!eckey)
+            return false;
+
+        sig = adv_signed_by(rep, eckey, ctx);
+        EC_KEY_free(eckey);
     }
 
     return rcnt > 0 && acnt > 0 && sig;

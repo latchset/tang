@@ -22,6 +22,9 @@
 #include "skey.h"
 #include "../core/asn1.h"
 
+bool
+adv_signed_by(const TANG_MSG_ADV_REP *rep, EC_KEY *key, BN_CTX *ctx);
+
 TANG_MSG_ADV_REQ *
 adv_req(STACK_OF(TANG_KEY) *keys);
 

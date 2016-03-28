@@ -38,8 +38,7 @@ rec_decrypt(const db_t *db, const TANG_MSG_REC_REQ *req, pkt_t *pkt,
     int r;
 
     if (!req || !req->x || !req->key ||
-        !req->key->grp || !req->key->key || !req->key->use ||
-        ASN1_ENUMERATED_get(req->key->use) != TANG_KEY_USE_REC)
+        !req->key->grp || !req->key->key || !req->key->use)
         return TANG_MSG_ERR_INVALID_REQUEST;
 
     LIST_FOREACH(&db->keys, db_key_t, k, list) {

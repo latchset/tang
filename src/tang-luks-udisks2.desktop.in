@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=tang-luks-udisks2
+Exec=@libexecdir@/tang-luks-udisks2
+NoDisplay=true

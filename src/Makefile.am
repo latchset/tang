@@ -60,11 +60,17 @@ libexec_PROGRAMS += tang-luks-askpassd
 tang_luks_askpassd_LDADD = libaskpass.a libluks.a libclt.a @cryptsetup_LIBS@ $(LIBS)
 
 if USE_LIBSYSTEMD
-systemdsystemunit_DATA += tang-luks-udisks2d.service
-EXTRA_DIST += tang-luks-udisks2d.service.in
-CLEANFILES += tang-luks-udisks2d.service
-libexec_PROGRAMS += tang-luks-udisks2d
-tang_luks_udisks2d_LDADD = libluks.a libclt.a @cryptsetup_LIBS@ @libsystemd_LIBS@ $(LIBS)
+autostartdir = $(sysconfdir)/xdg/autostart
+autostart_DATA = tang-luks-udisks2.desktop
+
+libexec_PROGRAMS += tang-luks-udisks2
+tang_luks_udisks2_LDADD = libluks.a libclt.a @cryptsetup_LIBS@ @libsystemd_LIBS@ $(LIBS)
+
+EXTRA_DIST += tang-luks-udisks2.desktop.in
+CLEANFILES += tang-luks-udisks2.desktop
+
+install-exec-hook:
+	chmod 4711 $(DESTDIR)$(libexecdir)/tang-luks-udisks2
 endif
 endif
 endif

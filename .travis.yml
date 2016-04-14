@@ -8,10 +8,8 @@ script:
 compiler:
   - clang
   - gcc
-dist: trusty
 addons:
   apt:
     packages:
       - libcryptsetup-dev
       - libssl-dev
-      - libudisks2-dev

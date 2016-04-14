@@ -6,16 +6,10 @@ tang_DATA =
 libexec_PROGRAMS =
 EXTRA_DIST =
 CLEANFILES =
-AM_CFLAGS = \
-	@TANG_CFLAGS@ \
-	@libcrypto_CFLAGS@ \
-	@cryptsetup_CFLAGS@ \
-	@udisks2_CFLAGS@ \
-	@storaged_CFLAGS@ \
-	-fPIC -DTANG_DB=\"$(tangdir)\"
+AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ -fPIC -DTANG_DB=\"$(tangdir)\"
 LIBS = libcore.a @libcrypto_LIBS@
 
-noinst_LIBRARIES = libcore.a libclt.a libsrv.a
+noinst_LIBRARIES = libcore.a libclt.a libsrv.a libluks.a
 libcore_a_SOURCES = \
 	core/asn1.c core/asn1.h \
 	core/conv.c core/conv.h \
@@ -24,6 +18,7 @@ libcore_a_SOURCES = \
 	core/sbuf.c core/sbuf.h
 libclt_a_SOURCES = clt/adv.c clt/adv.h clt/rec.c clt/rec.h clt/msg.c clt/msg.h
 libsrv_a_SOURCES = srv/adv.c srv/adv.h srv/db.c srv/db.h srv/rec.c srv/rec.h srv/srv.c srv/srv.h
+libluks_a_SOURCES = luks/luks.c luks/luks.h luks/meta.c luks/meta.h luks/asn1.c luks/asn1.h
 
 bin_PROGRAMS = tang tang-key-gen tang-key-mod tang-key-groups
 
@@ -41,19 +36,19 @@ tang_so_LDFLAGS = -shared -Wl,--version-script=clevis.sym
 endif
 
 if USE_CRYPTSETUP
-noinst_LIBRARIES += libluks.a
-libluks_a_SOURCES = luks/luks.c luks/luks.h luks/meta.c luks/meta.h luks/asn1.c luks/asn1.h
-
 bin_PROGRAMS += tang-luks-bind tang-luks-list tang-luks-unbind
+tang_luks_bind_CFLAGS = @cryptsetup_CFLAGS@ $(AM_CFLAGS)
 tang_luks_bind_LDADD = libclt.a libluks.a @cryptsetup_LIBS@ $(LIBS)
+tang_luks_list_CFLAGS = @cryptsetup_CFLAGS@ $(AM_CFLAGS)
 tang_luks_list_LDADD = libluks.a $(LIBS)
+tang_luks_unbind_CFLAGS = @cryptsetup_CFLAGS@ $(AM_CFLAGS)
 tang_luks_unbind_LDADD = libluks.a @cryptsetup_LIBS@ $(LIBS)
+endif
 
 if USE_DRACUT
 dracutmodules_SCRIPTS = module-setup.sh
 EXTRA_DIST += module-setup.sh.in
 CLEANFILES += module-setup.sh
-endif
 
 noinst_LIBRARIES += libaskpass.a
 libaskpass_a_SOURCES = askpass/question.c askpass/question.h askpass/iface.c askpass/iface.h askpass/askp.c askpass/askp.h
@@ -71,6 +66,7 @@ autostart_DATA =
 if USE_UDISKS2
 autostart_DATA += tang-luks-udisks2.desktop
 libexec_PROGRAMS += tang-luks-udisks2
+tang_luks_udisks2_CFLAGS = @udisks2_CFLAGS@ $(AM_CFLAGS)
 tang_luks_udisks2_LDADD = libluks.a libclt.a @udisks2_LIBS@ $(LIBS)
 EXTRA_DIST += tang-luks-udisks2.desktop.in
 CLEANFILES += tang-luks-udisks2.desktop
@@ -79,6 +75,7 @@ endif
 if USE_STORAGED
 autostart_DATA += tang-luks-storaged.desktop
 libexec_PROGRAMS += tang-luks-storaged
+tang_luks_storaged_CFLAGS = @storaged_CFLAGS@ $(AM_CFLAGS)
 tang_luks_storaged_LDADD = libluks.a libclt.a @storaged_LIBS@ $(LIBS)
 EXTRA_DIST += tang-luks-storaged.desktop.in
 CLEANFILES += tang-luks-storaged.desktop

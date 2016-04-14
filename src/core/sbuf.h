@@ -27,13 +27,16 @@
 typedef struct {
     size_t size;
     uint8_t data[];
-} skey_t;
+} sbuf_t;
 
-skey_t *
-skey_new(size_t size);
+sbuf_t *
+sbuf_new(size_t size);
 
-skey_t *
-skey_from_point(const EC_GROUP *g, const EC_POINT *p, BN_CTX *ctx);
+sbuf_t *
+sbuf_from_point(const EC_GROUP *g, const EC_POINT *p, BN_CTX *ctx);
+
+sbuf_t *
+sbuf_to_hex(const sbuf_t *sbuf, const char *prefix);
 
 void
-skey_free(skey_t *skey);
+sbuf_free(sbuf_t *sbuf);

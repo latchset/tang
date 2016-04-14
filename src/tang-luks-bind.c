@@ -252,8 +252,8 @@ main(int argc, char *argv[])
     int status = EX_IOERR;
     TANG_MSG *msg = NULL;
     BN_CTX *ctx = NULL;
-    skey_t *key = NULL;
-    skey_t *hex = NULL;
+    sbuf_t *key = NULL;
+    sbuf_t *hex = NULL;
     int keysize = 0;
     int slot = 0;
 
@@ -297,7 +297,7 @@ main(int argc, char *argv[])
     if (!rec)
         goto egress;
 
-    hex = skey_new(key->size * 2 + 1);
+    hex = sbuf_new(key->size * 2 + 1);
     for (size_t i = 0; i < key->size; i++)
         snprintf((char *) &hex->data[i * 2], 3, "%02X", key->data[i]);
 
@@ -320,8 +320,8 @@ main(int argc, char *argv[])
 egress:
     TANG_MSG_free(msg);
     BN_CTX_free(ctx);
-    skey_free(key);
-    skey_free(hex);
+    sbuf_free(key);
+    sbuf_free(hex);
     crypt_free(cd);
     return status;
 }

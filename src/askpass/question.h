@@ -20,7 +20,7 @@
 #pragma once
 
 #include "../core/list.h"
-#include "../clt/skey.h"
+#include "../core/sbuf.h"
 
 #include <limits.h>
 #include <stdbool.h>
@@ -43,5 +43,5 @@ bool
 question_expired(const question_t *q);
 
 void
-question_answer(const question_t *q, const skey_t *skey);
+question_answer(const question_t *q, const sbuf_t *key);
 

@@ -19,7 +19,7 @@
 
 #pragma once
 
-#include "skey.h"
+#include "../core/sbuf.h"
 #include "../core/asn1.h"
 
 bool
@@ -30,4 +30,4 @@ adv_req(STACK_OF(TANG_KEY) *keys);
 
 TANG_MSG_REC_REQ *
 adv_rep(const TANG_MSG_ADV_REP *adv, STACK_OF(TANG_KEY) *keys,
-        size_t min, skey_t **key, BN_CTX *ctx);
+        size_t min, sbuf_t **key, BN_CTX *ctx);

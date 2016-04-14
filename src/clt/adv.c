@@ -200,7 +200,7 @@ select_key(STACK_OF(TANG_KEY) *keys, int min, BN_CTX *ctx)
 
 TANG_MSG_REC_REQ *
 adv_rep(const TANG_MSG_ADV_REP *adv, STACK_OF(TANG_KEY) *keys,
-        size_t min, skey_t **key, BN_CTX *ctx)
+        size_t min, sbuf_t **key, BN_CTX *ctx)
 {
     TANG_MSG_REC_REQ *req = NULL;
     const EC_GROUP *g = NULL;
@@ -256,7 +256,7 @@ adv_rep(const TANG_MSG_ADV_REP *adv, STACK_OF(TANG_KEY) *keys,
                      EC_KEY_get0_private_key(l), ctx) <= 0)
         goto error;
 
-    *key = skey_from_point(g, p, ctx);
+    *key = sbuf_from_point(g, p, ctx);
     if (!*key)
     	goto error;
 

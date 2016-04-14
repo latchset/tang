@@ -10,8 +10,13 @@ AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ @cryptsetup_CFLAGS@ @udisks2_CFLAGS
 LIBS = libcore.a @libcrypto_LIBS@
 
 noinst_LIBRARIES = libcore.a libclt.a libsrv.a
-libcore_a_SOURCES = core/asn1.c core/asn1.h core/conv.c core/conv.h core/pkt.c core/pkt.h core/list.c core/list.h
-libclt_a_SOURCES = clt/adv.c clt/adv.h clt/rec.c clt/rec.h clt/msg.c clt/msg.h clt/skey.c clt/skey.h
+libcore_a_SOURCES = \
+	core/asn1.c core/asn1.h \
+	core/conv.c core/conv.h \
+	core/pkt.c core/pkt.h \
+	core/list.c core/list.h \
+	core/sbuf.c core/sbuf.h
+libclt_a_SOURCES = clt/adv.c clt/adv.h clt/rec.c clt/rec.h clt/msg.c clt/msg.h
 libsrv_a_SOURCES = srv/adv.c srv/adv.h srv/db.c srv/db.h srv/rec.c srv/rec.h srv/srv.c srv/srv.h
 
 bin_PROGRAMS = tang tang-key-gen tang-key-mod tang-key-groups

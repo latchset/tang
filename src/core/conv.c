@@ -127,3 +127,4 @@ conv_os2point(const EC_GROUP *grp, const ASN1_OCTET_STRING *os, EC_POINT *p,
 
     return 0;
 }
+

@@ -19,11 +19,11 @@
 
 #pragma once
 
-#include "skey.h"
+#include "../core/sbuf.h"
 #include "../core/asn1.h"
 
 EC_KEY *
 rec_req(TANG_MSG_REC_REQ *rec, BN_CTX *ctx);
 
-skey_t *
+sbuf_t *
 rec_rep(const TANG_MSG_REC_REP *rec, const EC_KEY *key, BN_CTX *ctx);

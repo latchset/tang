@@ -19,6 +19,7 @@
 
 #define _GNU_SOURCE
 #include "question.h"
+#include "../core/conv.h"
 
 #include <sys/mman.h>
 #include <sys/socket.h>
@@ -198,28 +199,24 @@ question_expired(const question_t *q)
 }
 
 void
-question_answer(const question_t *q, const skey_t *skey)
+question_answer(const question_t *q, const sbuf_t *key)
 {
     questioni_t *qi = unwrap(q);
-    skey_t *hex = NULL;
+    sbuf_t *hex = NULL;
     int s = -1;
 
-    if (!qi || !skey || question_expired(q))
+    if (!qi || !key || question_expired(q))
         return;
 
-    hex = skey_new(skey->size * 2 + 2);
+    hex = sbuf_to_hex(key, "+");
     if (!hex)
         return;
-
-    hex->data[0] = '+';
-    for (size_t i = 0; i < skey->size; i++)
-        snprintf((char *) &hex->data[i * 2 + 1], 3, "%02X", skey->data[i]);
 
     s = socket(AF_UNIX, SOCK_DGRAM, 0);
     if (s >= 0)
         (void) sendto(s, hex->data, hex->size, 0, &qi->sock, sizeof(qi->sock));
 
-    skey_free(hex);
+    sbuf_free(hex);
     close(s);
 }
 

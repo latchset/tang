@@ -18,6 +18,7 @@
  */
 
 #include "core/list.h"
+#include "core/conv.h"
 #include "clt/msg.h"
 #include "clt/rec.h"
 #include "luks/asn1.h"
@@ -62,12 +63,12 @@ TANG_LUKS_get_params(const TANG_LUKS *tl, msg_t *params)
     return true;
 }
 
-static skey_t *
+static sbuf_t *
 get_key(const msg_t *params, TANG_MSG_REC_REQ *req)
 {
     EC_KEY *eckey = NULL;
     TANG_MSG *msg = NULL;
-    skey_t *skey = NULL;
+    sbuf_t *key = NULL;
     BN_CTX *ctx = NULL;
 
     ctx = BN_CTX_new();
@@ -86,13 +87,13 @@ get_key(const msg_t *params, TANG_MSG_REC_REQ *req)
     if (!msg || msg->type != TANG_MSG_TYPE_REC_REP)
         goto error;
 
-    skey = rec_rep(msg->val.rec.rep, eckey, ctx);
+    key = rec_rep(msg->val.rec.rep, eckey, ctx);
 
 error:
     EC_KEY_free(eckey);
     TANG_MSG_free(msg);
     BN_CTX_free(ctx);
-    return skey;
+    return key;
 }
 
 static void
@@ -106,18 +107,18 @@ remove_path(GList **lst, const char *path)
     }
 }
 
-static skey_t *
+static sbuf_t *
 unlock_device_slot(struct context *ctx, const char *dev, int slot)
 {
     ssize_t len = strlen(dev) + 2;
     uint8_t buf[MAX_UDP] = {};
     TANG_LUKS *tl = NULL;
-    skey_t *skey = NULL;
-    skey_t *hex = NULL;
+    sbuf_t *key = NULL;
+    sbuf_t *hex = NULL;
     msg_t p = {};
 
     if (len > MAX_UDP)
-        return FALSE;
+        return NULL;
 
     buf[0] = slot;
     memcpy(&buf[1], dev, len - 1);
@@ -126,43 +127,36 @@ unlock_device_slot(struct context *ctx, const char *dev, int slot)
 
     if (send(ctx->sock, buf, len, 0) != len) {
         g_main_loop_quit(ctx->loop);
-        return FALSE;
+        return NULL;
     }
 
     len = recv(ctx->sock, buf, sizeof(buf), 0);
     if (len < 0) {
         g_main_loop_quit(ctx->loop);
-        return FALSE;
+        return NULL;
     }
 
     fprintf(stderr, "%s\tMETA\t%d\n", dev, (int) len);
 
     tl = d2i_TANG_LUKS(NULL, &(const uint8_t *) { buf }, len);
     if (!tl)
-        return FALSE;
+        return NULL;
 
     if (!TANG_LUKS_get_params(tl, &p)) {
         TANG_LUKS_free(tl);
-        return FALSE;
+        return NULL;
     }
 
     fprintf(stderr, "%s\tDATA\t%s (%s)\n", dev, p.hostname, p.service);
 
-    skey = get_key(&p, tl->rec);
+    key = get_key(&p, tl->rec);
     TANG_LUKS_free(tl);
-    fprintf(stderr, "%s\tTREC\t%s\n", dev, skey ? "success" : "failure");
-    if (!skey)
-        return FALSE;
+    fprintf(stderr, "%s\tTREC\t%s\n", dev, key ? "success" : "failure");
+    if (!key)
+        return NULL;
 
-    hex = skey_new(skey->size * 2 + 1);
-    if (!hex) {
-        skey_free(skey);
-        return FALSE;
-    }
-
-    for (size_t i = 0; i < skey->size; i++)
-        snprintf((char *) &hex->data[i * 2], 3, "%02X", skey->data[i]);
-    skey_free(skey);
+    hex = sbuf_to_hex(key, "");
+    sbuf_free(key);
     return hex;
 }
 
@@ -205,7 +199,7 @@ idle(gpointer misc)
 
         for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
             gboolean success = FALSE;
-            skey_t *key = NULL;
+            sbuf_t *key = NULL;
 
             key = unlock_device_slot(ctx, dev, slot);
             if (!key)
@@ -213,7 +207,7 @@ idle(gpointer misc)
 
             success = udisks_encrypted_call_unlock_sync(
                     enc, (char *) key->data, options, NULL, NULL, NULL);
-            skey_free(key);
+            sbuf_free(key);
             if (success)
                 break;
         }

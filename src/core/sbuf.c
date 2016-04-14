@@ -17,21 +17,22 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "skey.h"
+#include "sbuf.h"
 
 #include <sys/mman.h>
 #include <stdlib.h>
+#include <string.h>
 
-skey_t *
-skey_new(size_t size)
+sbuf_t *
+sbuf_new(size_t size)
 {
-    skey_t *tmp = NULL;
+    sbuf_t *tmp = NULL;
 
-    tmp = malloc(sizeof(skey_t) + size);
+    tmp = malloc(sizeof(sbuf_t) + size);
     if (!tmp)
         return NULL;
 
-    if (mlock(tmp, sizeof(skey_t) + size) != 0) {
+    if (mlock(tmp, sizeof(sbuf_t) + size) != 0) {
         free(tmp);
         return NULL;
     }
@@ -40,35 +41,67 @@ skey_new(size_t size)
     return tmp;
 }
 
-skey_t *
-skey_from_point(const EC_GROUP *g, const EC_POINT *p, BN_CTX *ctx)
+sbuf_t *
+sbuf_from_point(const EC_GROUP *g, const EC_POINT *p, BN_CTX *ctx)
 {
-    skey_t *key = NULL;
+    sbuf_t *key = NULL;
     size_t len = 0;
 
     len = EC_POINT_point2oct(g, p, POINT_CONVERSION_COMPRESSED, NULL, 0, ctx);
     if (len == 0)
         return NULL;
 
-    key = skey_new(len);
+    key = sbuf_new(len);
     if (!key)
         return NULL;
 
     if (EC_POINT_point2oct(g, p, POINT_CONVERSION_COMPRESSED,
                            key->data, key->size, ctx) != len) {
-        skey_free(key);
+        sbuf_free(key);
         return NULL;
     }
 
     return key;
 }
 
+static uint8_t
+half2hex(uint8_t c)
+{
+    c &= 0x0f;
+
+    if (c < 10)
+        return '0' + c;
+
+    return 'A' + c - 10;
+}
+
+sbuf_t *
+sbuf_to_hex(const sbuf_t *sbuf, const char *prefix)
+{
+    const size_t plen = strlen(prefix);
+    sbuf_t *hex = NULL;
+
+    hex = sbuf_new(sbuf->size * 2 + 1 + plen);
+    if (!hex)
+        return NULL;
+
+    memcpy(hex->data, prefix, plen);
+
+    for (size_t i = 0; i < sbuf->size; i++) {
+        hex->data[i * 2 + plen] = half2hex(sbuf->data[i] >> 4);
+        hex->data[i * 2 + 1 + plen] = half2hex(sbuf->data[i]);
+    }
+
+    hex->data[sbuf->size * 2 + 1 + plen] = '\0';
+    return hex;
+}
+
 void
-skey_free(skey_t *key)
+sbuf_free(sbuf_t *key)
 {
     if (!key)
         return;
 
-    munlock(key, sizeof(skey_t) + key->size);
+    munlock(key, sizeof(sbuf_t) + key->size);
     free(key);
 }

@@ -173,7 +173,7 @@ provision(const clevis_provision_f *funcs,
     clevis_buf_t *okey = NULL;
     TANG_MSG *msg = NULL;
     json_t *data = NULL;
-    skey_t *tmp = NULL;
+    sbuf_t *tmp = NULL;
     BN_CTX *ctx = NULL;
     msg_t params = {};
 
@@ -225,7 +225,7 @@ provision(const clevis_provision_f *funcs,
     clevis_buf_free(okey);
     TANG_MSG_free(msg);
     BN_CTX_free(ctx);
-    skey_free(tmp);
+    sbuf_free(tmp);
     return data;
 
 error:
@@ -234,7 +234,7 @@ error:
     TANG_MSG_free(msg);
     json_decref(data);
     BN_CTX_free(ctx);
-    skey_free(tmp);
+    sbuf_free(tmp);
     return NULL;
 }
 
@@ -247,7 +247,7 @@ acquire(const clevis_acquire_f *funcs, const json_t *data)
     clevis_buf_t *out = NULL;
     TANG_MSG *msg = NULL;
     EC_KEY *eckey = NULL;
-    skey_t *skey = NULL;
+    sbuf_t *key = NULL;
     BN_CTX *ctx = NULL;
     msg_t params = {};
 
@@ -276,11 +276,11 @@ acquire(const clevis_acquire_f *funcs, const json_t *data)
     if (!rep)
         goto egress;
 
-    skey = rec_rep(rep, eckey, ctx);
-    if (!skey)
+    key = rec_rep(rep, eckey, ctx);
+    if (!key)
         goto egress;
 
-    okey = clevis_buf_make(skey->size, skey->data);
+    okey = clevis_buf_make(key->size, key->data);
     if (!okey)
         goto egress;
 
@@ -292,7 +292,7 @@ egress:
     TANG_MSG_free(msg);
     EC_KEY_free(eckey);
     BN_CTX_free(ctx);
-    skey_free(skey);
+    sbuf_free(key);
     return out;
 }
 

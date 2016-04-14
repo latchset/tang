@@ -76,14 +76,14 @@ TANG_LUKS_get_params(const TANG_LUKS *tl, msg_t *params)
     return true;
 }
 
-static skey_t *
+static sbuf_t *
 get_key(const char *device, int slot)
 {
     TANG_LUKS *tl = NULL;
     EC_KEY *eckey = NULL;
     uint8_t *data = NULL;
     TANG_MSG *msg = NULL;
-    skey_t *skey = NULL;
+    sbuf_t *key = NULL;
     BN_CTX *ctx = NULL;
     msg_t params = {};
     size_t size = 0;
@@ -122,7 +122,7 @@ get_key(const char *device, int slot)
         goto error;
     }
 
-    skey = rec_rep(msg->val.rec.rep, eckey, ctx);
+    key = rec_rep(msg->val.rec.rep, eckey, ctx);
 
 error:
     TANG_LUKS_free(tl);
@@ -130,7 +130,7 @@ error:
     TANG_MSG_free(msg);
     BN_CTX_free(ctx);
     free(data);
-    return skey;
+    return key;
 }
 
 static void
@@ -166,15 +166,15 @@ answer_question(const question_t *q)
     }
 
     for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
-        skey_t *skey = NULL;
+        sbuf_t *key = NULL;
 
         switch (crypt_keyslot_status(cd, slot)) {
         case CRYPT_SLOT_ACTIVE:
         case CRYPT_SLOT_ACTIVE_LAST:
-            skey = get_key(q->device, slot);
-            if (skey) {
-                question_answer(q, skey);
-                skey_free(skey);
+            key = get_key(q->device, slot);
+            if (key) {
+                question_answer(q, key);
+                sbuf_free(key);
                 break;
             }
 

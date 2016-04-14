@@ -98,12 +98,12 @@ error:
     return NULL;
 }
 
-skey_t *
+sbuf_t *
 rec_rep(const TANG_MSG_REC_REP *rec, const EC_KEY *key, BN_CTX *ctx)
 {
     const EC_GROUP *g = NULL;
     EC_POINT *p = NULL;
-    skey_t *out = NULL;
+    sbuf_t *out = NULL;
 
     g = EC_KEY_get0_group(key);
     if (!g)
@@ -119,7 +119,7 @@ rec_rep(const TANG_MSG_REC_REP *rec, const EC_KEY *key, BN_CTX *ctx)
     if (EC_POINT_add(g, p, p, EC_KEY_get0_public_key(key), ctx) <= 0)
         goto egress;
 
-    out = skey_from_point(g, p, ctx);
+    out = sbuf_from_point(g, p, ctx);
 
 egress:
     EC_POINT_clear_free(p);

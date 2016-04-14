@@ -6,7 +6,13 @@ tang_DATA =
 libexec_PROGRAMS =
 EXTRA_DIST =
 CLEANFILES =
-AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ @cryptsetup_CFLAGS@ @udisks2_CFLAGS@ @storaged_CFLAGS@ -fPIC -DTANG_DB=\"$(tangdir)\"
+AM_CFLAGS = \
+	@TANG_CFLAGS@ \
+	@libcrypto_CFLAGS@ \
+	@cryptsetup_CFLAGS@ \
+	@udisks2_CFLAGS@ \
+	@storaged_CFLAGS@ \
+	-fPIC -DTANG_DB=\"$(tangdir)\"
 LIBS = libcore.a @libcrypto_LIBS@
 
 noinst_LIBRARIES = libcore.a libclt.a libsrv.a

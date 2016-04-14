@@ -19,15 +19,17 @@
 
 #pragma once
 
+#include "../core/sbuf.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-uint8_t *
-meta_read(const char *device, uint8_t slot, size_t *size);
+sbuf_t *
+meta_read(const char *device, uint8_t slot);
 
 bool
-meta_write(const char *device, uint8_t slot, const uint8_t *buf, size_t size);
+meta_write(const char *device, uint8_t slot, const sbuf_t *buf);
 
 bool
 meta_erase(const char *device, uint8_t slot);

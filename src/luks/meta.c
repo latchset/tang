@@ -29,19 +29,20 @@
 
 #include <openssl/sha.h>
 
+static const char META_MAGIC[] = { 'T', 'A', 'N', 'G', 'S', 'L', 'O', 'T' };
+
 typedef struct {
-    char     magic[8];
+    char     magic[sizeof(META_MAGIC)];
     uint64_t length;
     uint8_t  digest[SHA256_DIGEST_LENGTH];
 } meta_t;
 
-static const meta_t DEFAULT = { { 'T', 'A', 'N', 'G', 'S', 'L', 'O', 'T' }, };
-
-static uint8_t *
-slot_read(int fd, uint32_t slen, size_t *size)
+static sbuf_t *
+slot_read(int fd, uint32_t slen)
 {
     uint8_t digest[SHA256_DIGEST_LENGTH] = {};
-    uint8_t *buf = NULL;
+    sbuf_t *buf = NULL;
+    uint64_t size = 0;
     meta_t meta = {};
 
     if (slen < sizeof(meta))
@@ -50,32 +51,32 @@ slot_read(int fd, uint32_t slen, size_t *size)
     if (read(fd, &meta, sizeof(meta)) != sizeof(meta))
         return NULL;
 
-    if (memcmp(meta.magic, DEFAULT.magic, sizeof(meta.magic)) != 0)
+    if (memcmp(meta.magic, META_MAGIC, sizeof(META_MAGIC)) != 0)
         return NULL;
 
-    *size = be64toh(meta.length);
-    if (slen < sizeof(meta) + *size)
+    size = be64toh(meta.length);
+    if (slen < sizeof(meta) + size)
         return NULL;
 
-    buf = malloc(*size);
+    buf = sbuf_new(size);
     if (!buf)
         return NULL;
 
-    if (read(fd, buf, *size) == (ssize_t) *size) {
-        if (SHA256(buf, *size, digest)) {
+    if (read(fd, buf->data, size) == (ssize_t) size) {
+        if (SHA256(buf->data, size, digest)) {
             if (memcmp(meta.digest, digest, sizeof(digest)) == 0)
                 return buf;
         }
     }
 
-    free(buf);
+    sbuf_free(buf);
     return NULL;
 }
 
-uint8_t *
-meta_read(const char *device, uint8_t slot, size_t *size)
+sbuf_t *
+meta_read(const char *device, uint8_t slot)
 {
-    uint8_t *output = NULL;
+    sbuf_t *output = NULL;
     uint32_t length = 0;
     uint32_t slen = 0;
     int fd = -1;
@@ -89,28 +90,30 @@ meta_read(const char *device, uint8_t slot, size_t *size)
 
     slen = length / LUKS_NUMKEYS / LUKS_ALIGN_KEYSLOTS * LUKS_ALIGN_KEYSLOTS;
     if (slot == 0 || lseek(fd, slot * slen, SEEK_CUR) != (off_t) -1)
-        output = slot_read(fd, slen, size);
+        output = slot_read(fd, slen);
 
     close(fd);
     return output;
 }
 
 bool
-meta_write(const char *device, uint8_t slot, const uint8_t *buf, size_t size)
+meta_write(const char *device, uint8_t slot, const sbuf_t *buf)
 {
-    meta_t meta = DEFAULT;
     bool success = false;
     uint32_t length = 0;
-    uint8_t *tmp = NULL;
+    sbuf_t *tmp = NULL;
     uint32_t slen = 0;
     off_t offset = 0;
+    meta_t meta = {};
     int fd = -1;
 
-    if (slot >= LUKS_NUMKEYS || size > UINT64_MAX)
+    if (slot >= LUKS_NUMKEYS || !buf || buf->size > UINT64_MAX)
         return false;
 
-    meta.length = htobe64(size);
-    if (!SHA256(buf, size, meta.digest))
+    memcpy(meta.magic, META_MAGIC, sizeof(META_MAGIC));
+
+    meta.length = htobe64(buf->size);
+    if (!SHA256(buf->data, buf->size, meta.digest))
         return false;
 
     fd = luks_hole(device, slot, true, &length);
@@ -118,7 +121,7 @@ meta_write(const char *device, uint8_t slot, const uint8_t *buf, size_t size)
         return false;
 
     slen = length / LUKS_NUMKEYS / LUKS_ALIGN_KEYSLOTS * LUKS_ALIGN_KEYSLOTS;
-    if (sizeof(meta_t) + size > slen)
+    if (sizeof(meta_t) + buf->size > slen)
         goto error;
 
     offset = lseek(fd, slot * slen, SEEK_CUR);
@@ -128,18 +131,18 @@ meta_write(const char *device, uint8_t slot, const uint8_t *buf, size_t size)
     if (write(fd, &meta, sizeof(meta)) != sizeof(meta))
         goto error;
 
-    if (write(fd, buf, size) != (ssize_t) size)
+    if (write(fd, buf->data, buf->size) != (ssize_t) buf->size)
         goto error;
 
     if (lseek(fd, offset, SEEK_SET) != offset)
         goto error;
 
-    tmp = slot_read(fd, slen, &size);
+    tmp = slot_read(fd, slen);
 
     success = tmp != NULL;
 
 error:
-    free(tmp);
+    sbuf_free(tmp);
     close(fd);
     return success;
 }

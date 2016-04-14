@@ -21,6 +21,7 @@
 #include "clt/msg.h"
 #include "clt/rec.h"
 #include "luks/asn1.h"
+#include "luks/luks.h"
 #include "luks/meta.h"
 
 #include <sys/types.h>
@@ -29,7 +30,6 @@
 
 #include <string.h>
 
-#include <libcryptsetup.h>
 #include <storaged/storaged.h>
 #include <glib-unix.h>
 
@@ -196,7 +196,7 @@ idle(gpointer misc)
         if (!dev)
             continue;
 
-        for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
+        for (int slot = 0; slot < LUKS_NUMKEYS; slot++) {
             gboolean success = FALSE;
             sbuf_t *key = NULL;
 
@@ -338,40 +338,6 @@ error:
  * ==========================================================================
  */
 
-static uint8_t *
-readmeta(const char *dev, int slot, size_t *size)
-{
-    struct crypt_device *cd = NULL;
-    uint8_t *data = NULL;
-    int r = 0;
-
-    if (slot >= crypt_keyslot_max(CRYPT_LUKS1))
-        return NULL;
-
-    r = crypt_init(&cd, dev);
-    if (r != 0)
-        goto error;
-
-    r = crypt_load(cd, NULL, NULL);
-    if (r != 0)
-        goto error;
-
-    switch (crypt_keyslot_status(cd, slot)) {
-    case CRYPT_SLOT_ACTIVE:
-    case CRYPT_SLOT_ACTIVE_LAST:
-        break;
-
-    default:
-        goto error;
-    }
-
-    data = meta_read(dev, slot, size);
-
-error:
-    crypt_free(cd);
-    return data;
-}
-
 static int pair[2] = { -1, -1 };
 
 static void
@@ -431,20 +397,19 @@ main(int argc, char *argv[])
     char buf[MAX_UDP] = {};
     ssize_t len = 0;
     while (true) {
-        uint8_t *data = NULL;
-        size_t size = 0;
+        sbuf_t *data = NULL;
 
         len = recv(pair[0], buf, sizeof(buf), 0);
         if (len < 2)
             goto error;
 
-        data = readmeta(&buf[1], buf[0], &size);
+        data = meta_read(&buf[1], buf[0]);
         if (data) {
             len = 0;
-            if (size < sizeof(buf))
-                len = send(pair[0], data, size, 0);
+            if (data->size < sizeof(buf))
+                len = send(pair[0], data->data, data->size, 0);
 
-            free(data);
+            sbuf_free(data);
             if (len > 0)
                 continue;
         }

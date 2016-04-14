@@ -141,35 +141,34 @@ main(int argc, char *argv[])
     }
 
     for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
-        TANG_LUKS *tluks = NULL;
-        uint8_t *data = NULL;
-        size_t size = 0;
+        TANG_LUKS *tl = NULL;
+        sbuf_t *buf = NULL;
 
         switch (crypt_keyslot_status(cd, slot)) {
         case CRYPT_SLOT_ACTIVE:
         case CRYPT_SLOT_ACTIVE_LAST:
-            data = meta_read(opts.device, slot, &size);
-            if (!data)
+            buf = meta_read(opts.device, slot);
+            if (!buf)
                 continue;
 
-            tluks = d2i_TANG_LUKS(NULL, &(const uint8_t *) { data }, size);
-            free(data);
-            if (!tluks)
+            tl = TANG_LUKS_from_sbuf(buf);
+            sbuf_free(buf);
+            if (!tl)
                 continue;
 
-            if (strncmp((char *) tluks->hostname->data, opts.params.hostname,
-                        tluks->hostname->length) != 0) {
-                TANG_LUKS_free(tluks);
-                continue;
-            }
-
-            if (strncmp((char *) tluks->service->data, opts.params.service,
-                        tluks->service->length) != 0) {
-                TANG_LUKS_free(tluks);
+            if (strncmp((char *) tl->hostname->data, opts.params.hostname,
+                        tl->hostname->length) != 0) {
+                TANG_LUKS_free(tl);
                 continue;
             }
 
-            TANG_LUKS_free(tluks);
+            if (strncmp((char *) tl->service->data, opts.params.service,
+                        tl->service->length) != 0) {
+                TANG_LUKS_free(tl);
+                continue;
+            }
+
+            TANG_LUKS_free(tl);
 
             if (crypt_keyslot_destroy(cd, slot) == 0)
                 meta_erase(opts.device, slot);

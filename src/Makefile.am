@@ -40,7 +40,7 @@ libluks_a_SOURCES = luks/luks.c luks/luks.h luks/meta.c luks/meta.h luks/asn1.c 
 
 bin_PROGRAMS += tang-luks-bind tang-luks-list tang-luks-unbind
 tang_luks_bind_LDADD = libclt.a libluks.a @cryptsetup_LIBS@ $(LIBS)
-tang_luks_list_LDADD = libluks.a @cryptsetup_LIBS@ $(LIBS)
+tang_luks_list_LDADD = libluks.a $(LIBS)
 tang_luks_unbind_LDADD = libluks.a @cryptsetup_LIBS@ $(LIBS)
 
 if USE_DRACUT
@@ -56,7 +56,7 @@ systemdsystemunit_DATA += tang-luks-askpassd.path tang-luks-askpassd.service
 EXTRA_DIST += tang-luks-askpassd.path.in tang-luks-askpassd.service.in
 CLEANFILES += tang-luks-askpassd.path tang-luks-askpassd.service
 libexec_PROGRAMS += tang-luks-askpassd
-tang_luks_askpassd_LDADD = libaskpass.a libluks.a libclt.a @cryptsetup_LIBS@ $(LIBS)
+tang_luks_askpassd_LDADD = libaskpass.a libluks.a libclt.a $(LIBS)
 endif
 
 autostartdir = $(sysconfdir)/xdg/autostart
@@ -65,7 +65,7 @@ autostart_DATA =
 if USE_UDISKS2
 autostart_DATA += tang-luks-udisks2.desktop
 libexec_PROGRAMS += tang-luks-udisks2
-tang_luks_udisks2_LDADD = libluks.a libclt.a @cryptsetup_LIBS@ @udisks2_LIBS@ $(LIBS)
+tang_luks_udisks2_LDADD = libluks.a libclt.a @udisks2_LIBS@ $(LIBS)
 EXTRA_DIST += tang-luks-udisks2.desktop.in
 CLEANFILES += tang-luks-udisks2.desktop
 endif
@@ -73,7 +73,7 @@ endif
 if USE_STORAGED
 autostart_DATA += tang-luks-storaged.desktop
 libexec_PROGRAMS += tang-luks-storaged
-tang_luks_storaged_LDADD = libluks.a libclt.a @cryptsetup_LIBS@ @storaged_LIBS@ $(LIBS)
+tang_luks_storaged_LDADD = libluks.a libclt.a @storaged_LIBS@ $(LIBS)
 EXTRA_DIST += tang-luks-storaged.desktop.in
 CLEANFILES += tang-luks-storaged.desktop
 endif

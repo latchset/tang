@@ -27,6 +27,7 @@
 #pragma once
 
 #include "../core/asn1.h"
+#include "../core/sbuf.h"
 
 typedef struct {
     TANG_MSG_REC_REQ *rec;
@@ -36,3 +37,8 @@ typedef struct {
 
 DECLARE_ASN1_FUNCTIONS(TANG_LUKS)
 
+sbuf_t *
+TANG_LUKS_to_sbuf(TANG_LUKS *tl);
+
+TANG_LUKS *
+TANG_LUKS_from_sbuf(const sbuf_t *buf);

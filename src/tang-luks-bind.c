@@ -150,22 +150,21 @@ store(const struct options *opts, TANG_MSG_REC_REQ *rec, int slot)
 {
     TANG_LUKS *tl = NULL;
     bool status = false;
-    uint8_t *buf = NULL;
-    int len = 0;
+    sbuf_t *buf = NULL;
 
     tl = TANG_LUKS_make(&opts->params, rec);
     if (!tl)
         goto egress;
 
-    len = i2d_TANG_LUKS(tl, &buf);
-    if (len <= 0)
+    buf = TANG_LUKS_to_sbuf(tl);
+    if (!buf)
         goto egress;
 
-    status = meta_write(opts->device, slot, buf, len);
+    status = meta_write(opts->device, slot, buf);
 
 egress:
     TANG_LUKS_free(tl);
-    OPENSSL_free(buf);
+    sbuf_free(buf);
     return status;
 }
 

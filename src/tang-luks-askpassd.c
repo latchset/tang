@@ -21,6 +21,7 @@
 #include "askpass/askp.h"
 #include "askpass/iface.h"
 #include "luks/asn1.h"
+#include "luks/luks.h"
 #include "luks/meta.h"
 #include "clt/rec.h"
 #include "clt/msg.h"
@@ -33,7 +34,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include <libcryptsetup.h>
 #include <string.h>
 
 #include <argp.h>
@@ -77,30 +77,22 @@ TANG_LUKS_get_params(const TANG_LUKS *tl, msg_t *params)
 }
 
 static sbuf_t *
-get_key(const char *device, int slot)
+get_key(const char *device, const sbuf_t *buf)
 {
     TANG_LUKS *tl = NULL;
     EC_KEY *eckey = NULL;
-    uint8_t *data = NULL;
     TANG_MSG *msg = NULL;
     sbuf_t *key = NULL;
     BN_CTX *ctx = NULL;
     msg_t params = {};
-    size_t size = 0;
 
     ctx = BN_CTX_new();
     if (!ctx)
         goto error;
 
-    data = meta_read(device, slot, &size);
-    if (!data) {
-        fprintf(stderr, "Error reading metadata from %s (%d)\n", device, slot);
-        goto error;
-    }
-
-    tl = d2i_TANG_LUKS(NULL, &(const uint8_t *) { data }, size);
+    tl = TANG_LUKS_from_sbuf(buf);
     if (!tl) {
-        fprintf(stderr, "Error parsing metadata from %s (%d)\n", device, slot);
+        fprintf(stderr, "Error parsing metadata from %s\n", device);
         goto error;
     }
 
@@ -129,62 +121,28 @@ error:
     EC_KEY_free(eckey);
     TANG_MSG_free(msg);
     BN_CTX_free(ctx);
-    free(data);
     return key;
 }
 
 static void
 answer_question(const question_t *q)
 {
-    struct crypt_device *cd = NULL;
-    const char *type = NULL;
-    int nerr = 0;
-
-    nerr = crypt_init(&cd, q->device);
-    if (nerr != 0) {
-        fprintf(stderr, "Unable to open device (%s): %s\n",
-                q->device, strerror(-nerr));
-        goto error;
-    }
-
-    nerr = crypt_load(cd, NULL, NULL);
-    if (nerr != 0) {
-        fprintf(stderr, "Unable to load device (%s): %s\n",
-                q->device, strerror(-nerr));
-        goto error;
-    }
-
-    type = crypt_get_type(cd);
-    if (type == NULL) {
-        fprintf(stderr, "Unable to determine device type\n");
-        goto error;
-    }
-
-    if (strcmp(type, CRYPT_LUKS1) != 0) {
-        fprintf(stderr, "%s (%s) is not a LUKS device\n", q->device, type);
-        goto error;
-    }
-
-    for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
+    for (int slot = 0; slot < LUKS_NUMKEYS; slot++) {
         sbuf_t *key = NULL;
+        sbuf_t *buf = NULL;
 
-        switch (crypt_keyslot_status(cd, slot)) {
-        case CRYPT_SLOT_ACTIVE:
-        case CRYPT_SLOT_ACTIVE_LAST:
-            key = get_key(q->device, slot);
-            if (key) {
-                question_answer(q, key);
-                sbuf_free(key);
-                break;
-            }
+        buf = meta_read(q->device, slot);
+        if (!buf)
+            continue;
 
-        default:
+        key = get_key(q->device, buf);
+        sbuf_free(buf);
+        if (key) {
+            question_answer(q, key);
+            sbuf_free(key);
             break;
         }
     }
-
-error:
-    crypt_free(cd);
 }
 
 const char *argp_program_version = VERSION;

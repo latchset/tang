@@ -18,9 +18,8 @@
  */
 
 #include "luks/asn1.h"
+#include "luks/luks.h"
 #include "luks/meta.h"
-
-#include <libcryptsetup.h>
 
 #include <argp.h>
 #include <string.h>
@@ -82,71 +81,32 @@ static const struct argp argp = {
 int
 main(int argc, char *argv[])
 {
-    struct crypt_device *cd = NULL;
     struct options opts = {};
-    const char *type = NULL;
-    int nerr = 0;
 
     if (argp_parse(&argp, argc, argv, 0, NULL, &opts) != 0)
         return EX_OSERR;
 
-    nerr = crypt_init(&cd, opts.device);
-    if (nerr != 0) {
-        fprintf(stderr, "Unable to open device (%s): %s\n",
-                opts.device, strerror(-nerr));
-        goto error;
+    for (int slot = 0; slot < LUKS_NUMKEYS; slot++) {
+        TANG_LUKS *tl = NULL;
+        sbuf_t *buf = NULL;
+
+        buf = meta_read(opts.device, slot);
+        if (!buf)
+            continue;
+
+        tl = TANG_LUKS_from_sbuf(buf);
+        sbuf_free(buf);
+        if (!tl)
+            continue;
+
+        fwrite(tl->hostname->data, tl->hostname->length, 1, stderr);
+        fwrite(":", 1, 1, stderr);
+        fwrite(tl->service->data, tl->service->length, 1, stderr);
+        fwrite("\n", 1, 1, stderr);
+
+        TANG_LUKS_free(tl);
     }
 
-    nerr = crypt_load(cd, NULL, NULL);
-    if (nerr != 0) {
-        fprintf(stderr, "Unable to load device (%s): %s\n",
-                opts.device, strerror(-nerr));
-        goto error;
-    }
-
-    type = crypt_get_type(cd);
-    if (type == NULL) {
-        fprintf(stderr, "Unable to determine device type\n");
-        goto error;
-    }
-    if (strcmp(type, CRYPT_LUKS1) != 0) {
-        fprintf(stderr, "%s (%s) is not a LUKS device\n", opts.device, type);
-        goto error;
-    }
-
-    for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
-        TANG_LUKS *tluks = NULL;
-        uint8_t *data = NULL;
-        size_t size = 0;
-
-        switch (crypt_keyslot_status(cd, slot)) {
-        case CRYPT_SLOT_ACTIVE:
-        case CRYPT_SLOT_ACTIVE_LAST:
-            data = meta_read(opts.device, slot, &size);
-            if (!data)
-                continue;
-
-            tluks = d2i_TANG_LUKS(NULL, &(const uint8_t *) { data }, size);
-            free(data);
-            if (!tluks)
-                continue;
-
-            fwrite(tluks->hostname->data, tluks->hostname->length, 1, stderr);
-            fwrite(":", 1, 1, stderr);
-            fwrite(tluks->service->data, tluks->service->length, 1, stderr);
-            fwrite("\n", 1, 1, stderr);
-            break;
-
-        default:
-            break;
-        }
-    }
-
-    crypt_free(cd);
     return 0;
-
-error:
-    crypt_free(cd);
-    return EX_IOERR;
 }
 

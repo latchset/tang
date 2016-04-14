@@ -33,4 +33,4 @@
 #define LUKS_NUMKEYS 8
 
 int
-luks_hole(const char *device, bool write, uint32_t *length);
+luks_hole(const char *device, int slot, bool write, uint32_t *length);

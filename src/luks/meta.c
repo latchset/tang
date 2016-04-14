@@ -83,7 +83,7 @@ meta_read(const char *device, uint8_t slot, size_t *size)
     if (slot >= LUKS_NUMKEYS)
         return false;
 
-    fd = luks_hole(device, false, &length);
+    fd = luks_hole(device, slot, false, &length);
     if (fd < 0)
         return false;
 
@@ -113,7 +113,7 @@ meta_write(const char *device, uint8_t slot, const uint8_t *buf, size_t size)
     if (!SHA256(buf, size, meta.digest))
         return false;
 
-    fd = luks_hole(device, true, &length);
+    fd = luks_hole(device, slot, true, &length);
     if (fd < 0)
         return false;
 
@@ -156,7 +156,7 @@ meta_erase(const char *device, uint8_t slot)
     if (slot >= LUKS_NUMKEYS)
         return false;
 
-    fd = luks_hole(device, true, &length);
+    fd = luks_hole(device, slot, true, &length);
     if (fd < 0)
         return false;
 

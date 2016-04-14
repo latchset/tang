@@ -26,15 +26,14 @@
 
 #include "luks.h"
 
-#include <endian.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <endian.h>
+#include <errno.h>
+#include <stdint.h>
+#include <string.h>
 #include <unistd.h>
 
 #define LUKS_CIPHERNAME_L 32
@@ -46,6 +45,8 @@
 #define UUID_STRING_L 40
 #define SECTOR_SIZE 512
 #define LUKS_MAGIC_L 6
+
+#define LUKS_KEY_ENABLED  0x00AC71F3
 
 typedef struct {
     uint32_t active;
@@ -76,96 +77,107 @@ typedef enum { up, down } direction_t;
 static const char LUKS_MAGIC[] = { 'L', 'U', 'K', 'S', 0xba, 0xbe };
 
 static inline uint32_t
-align(uint32_t val, uint32_t alignment, direction_t dir)
+align(uint32_t val, direction_t dir)
 {
     if (dir == up)
-        val += alignment - 1;
-    return val / alignment * alignment;
-}
-
-static inline void
-ntoh(luks_hdr_t *hdr)
-{
-    hdr->version = be16toh(hdr->version);
-    hdr->payloadOffset = be32toh(hdr->payloadOffset);
-    hdr->keyBytes = be32toh(hdr->keyBytes);
-    hdr->mkDigestIterations = be32toh(hdr->mkDigestIterations);
-
-    for (size_t i = 0; i < LUKS_NUMKEYS; i++) {
-        luks_kb_t *kb = &hdr->keyblock[i];
-        kb->active = be32toh(kb->active);
-        kb->passwordIterations = be32toh(kb->passwordIterations);
-        kb->keyMaterialOffset = be32toh(kb->keyMaterialOffset);
-        kb->stripes = be32toh(kb->stripes);
-    }
+        val += LUKS_ALIGN_KEYSLOTS - 1;
+    return val / LUKS_ALIGN_KEYSLOTS * LUKS_ALIGN_KEYSLOTS;
 }
 
 static inline uint32_t
-slots_end(const luks_hdr_t *hdr)
+hole_start(const luks_hdr_t *hdr)
 {
-    const luks_kb_t *lkb = &hdr->keyblock[LUKS_NUMKEYS - 1];
     uint32_t out = 0;
 
-    out  = align(hdr->keyBytes * lkb->stripes, LUKS_ALIGN_KEYSLOTS, up);
-    out += lkb->keyMaterialOffset * SECTOR_SIZE;
+    for (size_t i = 0; i < LUKS_NUMKEYS; i++) {
+        const luks_kb_t *lkb = &hdr->keyblock[i];
+        uint32_t len = hdr->keyBytes * lkb->stripes;
+        uint32_t off = lkb->keyMaterialOffset * SECTOR_SIZE;
+        if (off + len > out)
+            out = off + len;
+    }
 
-    return out;
+    return align(out, up);
 }
 
 static inline uint32_t
-luks_end(const luks_hdr_t *hdr)
+hole_end(const luks_hdr_t *hdr)
 {
-    return hdr->payloadOffset * SECTOR_SIZE;
-}
-
-static inline bool
-process(const luks_hdr_t *hdr, off_t *offset, uint32_t *length)
-{
-    long page_size = 0;
-
-    page_size = sysconf(_SC_PAGE_SIZE);
-    if (page_size < 0)
-        return false;
-
-    if (memcmp(hdr->magic, LUKS_MAGIC, sizeof(hdr->magic)) != 0)
-        return false;
-
-    if (hdr->version != 1)
-        return false;
-
-    *offset = align(slots_end(hdr), page_size, up);
-    *length = luks_end(hdr);
-    if (*length <= *offset)
-        return false;
-
-    *length = align(*length - *offset,  page_size, down);
-    if (*length == 0)
-        return false;
-
-    return true;
+    return align(hdr->payloadOffset * SECTOR_SIZE, down);
 }
 
 int
-luks_hole(const char *device, bool write, uint32_t *length)
+luks_hole(const char *device, int slot, bool write, uint32_t *length)
 {
     luks_hdr_t hdr = {};
     off_t offset = 0;
     int fd = -1;
 
+    if (slot >= LUKS_NUMKEYS)
+        return -EBADSLT;
+
     fd = open(device, write ? O_RDWR : O_RDONLY);
     if (fd < 0)
-        return fd;
+        return -errno;
 
-    if (read(fd, &hdr, sizeof(hdr)) != sizeof(hdr))
+    for (ssize_t r = 0, total = 0; total < (ssize_t) sizeof(hdr); ) {
+        r = read(fd, ((uint8_t *) &hdr) + total, sizeof(hdr) - total);
+        if (r < 0) {
+            close(fd);
+            return -errno;
+        } else if (r == 0) {
+            close(fd);
+            return -ENODATA;
+        }
+        total += r;
+    }
+
+    if (memcmp(hdr.magic, LUKS_MAGIC, sizeof(hdr.magic)) != 0) {
+        close(fd);
+        return -EINVAL;
+    }
+
+    hdr.version = be16toh(hdr.version);
+    hdr.payloadOffset = be32toh(hdr.payloadOffset);
+    hdr.keyBytes = be32toh(hdr.keyBytes);
+    hdr.mkDigestIterations = be32toh(hdr.mkDigestIterations);
+
+    if (hdr.version != 1) {
+        close(fd);
+        return -EINVAL;
+    }
+
+    for (size_t i = 0; i < LUKS_NUMKEYS; i++) {
+        luks_kb_t *kb = &hdr.keyblock[i];
+        kb->active = be32toh(kb->active);
+        kb->passwordIterations = be32toh(kb->passwordIterations);
+        kb->keyMaterialOffset = be32toh(kb->keyMaterialOffset);
+        kb->stripes = be32toh(kb->stripes);
+
+        if (kb->keyMaterialOffset > hdr.payloadOffset) {
+            close(fd);
+            return -EINVAL;
+        }
+    }
+
+    if (hdr.keyblock[slot].active != LUKS_KEY_ENABLED) {
+        close(fd);
+        return -EBADSLT;
+    }
+
+    offset = hole_start(&hdr);
+    if (offset >= hole_end(&hdr)) {
+        close(fd);
+        return -EINVAL;
+    }
+
+    if (lseek(fd, offset, SEEK_SET) != offset) {
+        close(fd);
+        return -errno;
+    }
         goto error;
 
-    ntoh(&hdr);
-    if (!process(&hdr, &offset, length))
-        goto error;
-
-    if (lseek(fd, offset, SEEK_SET) != offset)
-        goto error;
-
+    *length = hole_end(&hdr) - offset;
     return fd;
 
 error:

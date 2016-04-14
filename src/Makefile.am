@@ -7,7 +7,7 @@ systemdsystemunit_DATA =
 libexec_PROGRAMS =
 EXTRA_DIST =
 CLEANFILES =
-AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ @cryptsetup_CFLAGS@ @udisks2_CFLAGS@ -fPIC -DTANG_DB=\"$(tangdir)\"
+AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ @cryptsetup_CFLAGS@ @udisks2_CFLAGS@ @storaged_CFLAGS@-fPIC -DTANG_DB=\"$(tangdir)\"
 LIBS = libcore.a @libcrypto_LIBS@
 
 noinst_LIBRARIES = libcore.a libclt.a libsrv.a
@@ -61,19 +61,29 @@ tang_luks_askpassd_LDADD = libaskpass.a libluks.a libclt.a @cryptsetup_LIBS@ $(L
 endif
 endif
 
-if USE_UDISKS2
 autostartdir = $(sysconfdir)/xdg/autostart
-autostart_DATA = tang-luks-udisks2.desktop
+autostart_DATA =
 
+if USE_UDISKS2
+autostart_DATA += tang-luks-udisks2.desktop
 libexec_PROGRAMS += tang-luks-udisks2
 tang_luks_udisks2_LDADD = libluks.a libclt.a @cryptsetup_LIBS@ @udisks2_LIBS@ $(LIBS)
-
 EXTRA_DIST += tang-luks-udisks2.desktop.in
 CLEANFILES += tang-luks-udisks2.desktop
+endif
+
+if USE_STORAGED
+autostart_DATA += tang-luks-storaged.desktop
+libexec_PROGRAMS += tang-luks-storaged
+tang_luks_storaged_LDADD = libluks.a libclt.a @cryptsetup_LIBS@ @storaged_LIBS@ $(LIBS)
+EXTRA_DIST += tang-luks-storaged.desktop.in
+CLEANFILES += tang-luks-storaged.desktop
+endif
 
 install-exec-hook:
-	chmod 4711 $(DESTDIR)$(libexecdir)/tang-luks-udisks2
-endif
+	test -x $(DESTDIR)$(libexecdir)/tang-luks-storaged && chmod 4711 $(DESTDIR)$(libexecdir)/tang-luks-storaged
+	test -x $(DESTDIR)$(libexecdir)/tang-luks-udisks2 && chmod 4711 $(DESTDIR)$(libexecdir)/tang-luks-udisks2
+
 
 %: %.in
 	$(AM_V_GEN)$(SED) \

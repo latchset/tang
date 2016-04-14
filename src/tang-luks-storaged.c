@@ -1,0 +1,470 @@
+/* vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80: */
+/*
+ * Copyright (c) 2015 Red Hat, Inc.
+ * Author: Nathaniel McCallum <npmccallum@redhat.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "core/list.h"
+#include "clt/msg.h"
+#include "clt/rec.h"
+#include "luks/asn1.h"
+#include "luks/meta.h"
+
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+
+#include <string.h>
+
+#include <libcryptsetup.h>
+#include <storaged/storaged.h>
+#include <glib-unix.h>
+
+#define MAX_UDP 65535
+
+struct context {
+    StoragedClient *clt;
+    GMainLoop *loop;
+    GList *lst;
+    int sock;
+};
+
+static bool
+TANG_LUKS_get_params(const TANG_LUKS *tl, msg_t *params)
+{
+    if (!tl || !tl->hostname || !tl->service)
+        return false;
+
+    if (tl->hostname->length >= (int) sizeof(params->hostname))
+        return false;
+
+    if (tl->service->length >= (int) sizeof(params->service))
+        return false;
+
+    g_strlcpy(params->hostname, (char *) tl->hostname->data,
+              tl->hostname->length);
+    g_strlcpy(params->service, (char *) tl->service->data,
+              tl->service->length);
+
+    return true;
+}
+
+static skey_t *
+get_key(const msg_t *params, TANG_MSG_REC_REQ *req)
+{
+    EC_KEY *eckey = NULL;
+    TANG_MSG *msg = NULL;
+    skey_t *skey = NULL;
+    BN_CTX *ctx = NULL;
+
+    ctx = BN_CTX_new();
+    if (!ctx)
+        goto error;
+
+    eckey = rec_req(req, ctx);
+    if (!eckey)
+        goto error;
+
+    msg = msg_rqst(params, &(TANG_MSG) {
+        .type = TANG_MSG_TYPE_REC_REQ,
+        .val.rec.req = req
+    });
+
+    if (!msg || msg->type != TANG_MSG_TYPE_REC_REP)
+        goto error;
+
+    skey = rec_rep(msg->val.rec.rep, eckey, ctx);
+
+error:
+    EC_KEY_free(eckey);
+    TANG_MSG_free(msg);
+    BN_CTX_free(ctx);
+    return skey;
+}
+
+static void
+remove_path(GList **lst, const char *path)
+{
+    GList *i = NULL;
+
+    while ((i = g_list_find_custom(*lst, path, (GCompareFunc) g_strcmp0))) {
+        g_free(i->data);
+        *lst = g_list_remove(*lst, i->data);
+    }
+}
+
+static skey_t *
+unlock_device_slot(struct context *ctx, const char *dev, int slot)
+{
+    ssize_t len = strlen(dev) + 2;
+    uint8_t buf[MAX_UDP] = {};
+    TANG_LUKS *tl = NULL;
+    skey_t *skey = NULL;
+    skey_t *hex = NULL;
+    msg_t p = {};
+
+    if (len > MAX_UDP)
+        return FALSE;
+
+    buf[0] = slot;
+    memcpy(&buf[1], dev, len - 1);
+
+    fprintf(stderr, "%s\tSLOT\t%d\n", dev, slot);
+
+    if (send(ctx->sock, buf, len, 0) != len) {
+        g_main_loop_quit(ctx->loop);
+        return FALSE;
+    }
+
+    len = recv(ctx->sock, buf, sizeof(buf), 0);
+    if (len < 0) {
+        g_main_loop_quit(ctx->loop);
+        return FALSE;
+    }
+
+    fprintf(stderr, "%s\tMETA\t%d\n", dev, (int) len);
+
+    tl = d2i_TANG_LUKS(NULL, &(const uint8_t *) { buf }, len);
+    if (!tl)
+        return FALSE;
+
+    if (!TANG_LUKS_get_params(tl, &p)) {
+        TANG_LUKS_free(tl);
+        return FALSE;
+    }
+
+    fprintf(stderr, "%s\tDATA\t%s (%s)\n", dev, p.hostname, p.service);
+
+    skey = get_key(&p, tl->rec);
+    TANG_LUKS_free(tl);
+    fprintf(stderr, "%s\tTREC\t%s\n", dev, skey ? "success" : "failure");
+    if (!skey)
+        return FALSE;
+
+    hex = skey_new(skey->size * 2 + 1);
+    if (!hex) {
+        skey_free(skey);
+        return FALSE;
+    }
+
+    for (size_t i = 0; i < skey->size; i++)
+        snprintf((char *) &hex->data[i * 2], 3, "%02X", skey->data[i]);
+    skey_free(skey);
+    return hex;
+}
+
+static gboolean
+idle(gpointer misc)
+{
+    GVariantBuilder builder = {};
+    struct context *ctx = misc;
+    GVariant *options = NULL;
+
+    g_variant_builder_init(&builder, G_VARIANT_TYPE_VARDICT);
+    g_variant_builder_add(&builder, "{sv}", "auth.no_user_interaction",
+                          g_variant_new_boolean(TRUE));
+    options = g_variant_builder_end(&builder);
+    if (!options)
+        goto error;
+
+    for (GList *i = ctx->lst; i; i = i->next) {
+        StoragedEncrypted *enc = NULL;
+        const char *path = i->data;
+        StoragedObject *uobj = NULL;
+        StoragedBlock *block = NULL;
+        const char *dev = NULL;
+
+        uobj = storaged_client_peek_object(ctx->clt, path);
+        if (!uobj)
+            continue;
+
+        enc = storaged_object_peek_encrypted(uobj);
+        if (!enc)
+            continue;
+
+        block = storaged_object_peek_block(uobj);
+        if (!block)
+            continue;
+
+        dev = storaged_block_get_device(block);
+        if (!dev)
+            continue;
+
+        for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
+            gboolean success = FALSE;
+            skey_t *key = NULL;
+
+            key = unlock_device_slot(ctx, dev, slot);
+            if (!key)
+                continue;
+
+            success = storaged_encrypted_call_unlock_sync(
+                    enc, (char *) key->data, options, NULL, NULL, NULL);
+            skey_free(key);
+            if (success)
+                break;
+        }
+    }
+
+error:
+    g_list_free_full(ctx->lst, g_free);
+    ctx->lst = NULL;
+    return FALSE;
+}
+
+static void
+oadd(GDBusObjectManager *mgr, GDBusObject *obj, gpointer misc)
+{
+    struct context *ctx = misc;
+    StoragedObject *uobj = NULL;
+    const char *path = NULL;
+    const char *back = NULL;
+    StoragedBlock *ct = NULL;
+    StoragedBlock *pt = NULL;
+    GList *tmp = NULL;
+    char *ptmp = NULL;
+
+    path = g_dbus_object_get_object_path(obj);
+    if (!path)
+        return;
+
+    uobj = storaged_client_peek_object(ctx->clt, path);
+    if (!uobj)
+        return;
+
+    ct = storaged_object_peek_block(uobj);
+    if (!ct)
+        return;
+
+    back = storaged_block_get_crypto_backing_device(ct);
+    if (back)
+        remove_path(&ctx->lst, back);
+
+    if (!storaged_block_get_hint_auto(ct))
+        return;
+
+    if (!storaged_object_peek_encrypted(uobj))
+        return;
+
+    pt = storaged_client_get_cleartext_block(ctx->clt, ct);
+    if (pt) {
+        g_object_unref(pt);
+        return;
+    }
+
+    ptmp = g_strdup(path);
+    if (!ptmp)
+        return;
+
+    tmp = g_list_prepend(ctx->lst, ptmp);
+    if (!tmp) {
+        g_free(ptmp);
+        return;
+    }
+
+    ctx->lst = tmp;
+    g_idle_add(idle, ctx);
+}
+
+static void
+orem(GDBusObjectManager *mgr, GDBusObject *obj, gpointer misc)
+{
+    struct context *ctx = misc;
+    remove_path(&ctx->lst, g_dbus_object_get_object_path(obj));
+}
+
+static gboolean
+sockerr(gint fd, GIOCondition cond, gpointer misc)
+{
+    struct context *ctx = misc;
+    close(fd);
+    g_main_loop_quit(ctx->loop);
+    return FALSE;
+}
+
+static int
+child_main(int sock)
+{
+    struct context ctx = { .sock = sock };
+    int exit_status = EXIT_FAILURE;
+    GDBusObjectManager *mgr = NULL;
+    gulong id = 0;
+
+    ctx.loop = g_main_loop_new(NULL, FALSE);
+    if (!ctx.loop)
+        goto error;
+
+    ctx.clt = storaged_client_new_sync(NULL, NULL);
+    if (!ctx.clt)
+        goto error;
+
+    mgr = storaged_client_get_object_manager(ctx.clt);
+    if (!mgr)
+        goto error;
+
+    id = g_signal_connect(mgr, "object-added", G_CALLBACK(oadd), &ctx);
+    if (id == 0)
+        goto error;
+
+    id = g_signal_connect(mgr, "object-removed", G_CALLBACK(orem), &ctx);
+    if (id == 0)
+        goto error;
+
+    id = g_unix_fd_add(sock, G_IO_ERR, sockerr, &ctx);
+    if (id == 0)
+        goto error;
+
+    g_main_loop_run(ctx.loop);
+
+    exit_status = EXIT_SUCCESS;
+
+error:
+    g_list_free_full(ctx.lst, g_free);
+    g_main_loop_unref(ctx.loop);
+    g_object_unref(ctx.clt);
+    close(sock);
+    return exit_status;
+}
+
+/*
+ * ==========================================================================
+ *           Caution, code below this point runs with euid = 0!
+ * ==========================================================================
+ */
+
+static uint8_t *
+readmeta(const char *dev, int slot, size_t *size)
+{
+    struct crypt_device *cd = NULL;
+    uint8_t *data = NULL;
+    int r = 0;
+
+    if (slot >= crypt_keyslot_max(CRYPT_LUKS1))
+        return NULL;
+
+    r = crypt_init(&cd, dev);
+    if (r != 0)
+        goto error;
+
+    r = crypt_load(cd, NULL, NULL);
+    if (r != 0)
+        goto error;
+
+    switch (crypt_keyslot_status(cd, slot)) {
+    case CRYPT_SLOT_ACTIVE:
+    case CRYPT_SLOT_ACTIVE_LAST:
+        break;
+
+    default:
+        goto error;
+    }
+
+    data = meta_read(dev, slot, size);
+
+error:
+    crypt_free(cd);
+    return data;
+}
+
+static int pair[2] = { -1, -1 };
+
+static void
+safeclose(int *fd)
+{
+    if (*fd >= 0)
+        close(*fd);
+    *fd = -1;
+}
+
+static void
+on_signal(int sig)
+{
+    safeclose(&pair[0]);
+}
+
+int
+main(int argc, char *argv[])
+{
+    pid_t pid = 0;
+
+    if (socketpair(AF_UNIX, SOCK_DGRAM, 0, pair) == -1)
+        return EXIT_FAILURE;
+
+    pid = fork();
+    if (pid < 0) {
+        safeclose(&pair[0]);
+        safeclose(&pair[1]);
+        return EXIT_FAILURE;
+    }
+
+    if (pid == 0) {
+        int status = EXIT_FAILURE;
+
+        safeclose(&pair[0]);
+
+        if (seteuid(getuid()) == 0)
+            status = child_main(pair[1]);
+
+        safeclose(&pair[1]);
+        return status;
+    }
+
+    safeclose(&pair[1]);
+
+    signal(SIGHUP, on_signal);
+    signal(SIGINT, on_signal);
+    signal(SIGPIPE, on_signal);
+    signal(SIGTERM, on_signal);
+    signal(SIGUSR1, on_signal);
+    signal(SIGUSR2, on_signal);
+    signal(SIGCHLD, on_signal);
+
+    if (setuid(geteuid()) == -1)
+        goto error;
+
+    char buf[MAX_UDP] = {};
+    ssize_t len = 0;
+    while (true) {
+        uint8_t *data = NULL;
+        size_t size = 0;
+
+        len = recv(pair[0], buf, sizeof(buf), 0);
+        if (len < 2)
+            goto error;
+
+        data = readmeta(&buf[1], buf[0], &size);
+        if (data) {
+            len = 0;
+            if (size < sizeof(buf))
+                len = send(pair[0], data, size, 0);
+
+            free(data);
+            if (len > 0)
+                continue;
+        }
+
+        if (send(pair[0], "", 0, 0) != 0)
+            goto error;
+    }
+
+error:
+    safeclose(&pair[0]);
+    memset(buf, 0, sizeof(buf));
+
+    kill(pid, SIGTERM);
+    waitpid(pid, NULL, 0);
+    return EXIT_FAILURE;
+}

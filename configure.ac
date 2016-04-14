@@ -66,7 +66,7 @@ AM_CONDITIONAL([USE_CRYPTSETUP], [test "$with_cryptsetup" != no -a "$HAVE_CRYPTS
 
 AC_ARG_WITH(
     [udisks2],
-    [AS_HELP_STRING([--with-udisks2], [build removable media unlocker @<:@default=check@:>@])],
+    [AS_HELP_STRING([--with-udisks2], [build udisks2 unlocker @<:@default=check@:>@])],
     [],
     [with_udisks2=check]
 )
@@ -77,6 +77,21 @@ AS_CASE(
     [PKG_CHECK_MODULES([udisks2], [udisks2], [HAVE_UDISKS2=1], [HAVE_UDISKS2=0])]
 )
 AM_CONDITIONAL([USE_UDISKS2], [test "$with_udisks2" != no -a "$HAVE_UDISKS2" -eq 1])
+
+
+AC_ARG_WITH(
+    [storaged],
+    [AS_HELP_STRING([--with-storaged], [build storaged unlocker @<:@default=check@:>@])],
+    [],
+    [with_storaged=check]
+)
+AS_CASE(
+    ["$with_storaged"],
+    [yes], [PKG_CHECK_MODULES([storaged], [storaged], [HAVE_STORAGED=1])],
+    [no], [],
+    [PKG_CHECK_MODULES([storaged], [storaged], [HAVE_STORAGED=1], [HAVE_STORAGED=0])]
+)
+AM_CONDITIONAL([USE_STORAGED], [test "$with_storaged" != no -a "$HAVE_STORAGED" -eq 1])
 
 
 AC_ARG_WITH(

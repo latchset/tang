@@ -78,9 +78,10 @@ CLEANFILES += tang-luks-storaged.desktop
 endif
 
 install-exec-hook:
-	test -x $(DESTDIR)$(libexecdir)/tang-luks-storaged && chmod 4711 $(DESTDIR)$(libexecdir)/tang-luks-storaged
-	test -x $(DESTDIR)$(libexecdir)/tang-luks-udisks2 && chmod 4711 $(DESTDIR)$(libexecdir)/tang-luks-udisks2
-
+	file=$(DESTDIR)$(libexecdir)/tang-luks-storaged
+	if [ -x $file ]; then chmod 4711 $file; fi
+	file=$(DESTDIR)$(libexecdir)/tang-luks-udisks2
+	if [ -x $file ]; then chmod 4711 $file; fi
 
 %: %.in
 	$(AM_V_GEN)$(SED) \

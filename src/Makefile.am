@@ -3,7 +3,6 @@ SUBDIRS = . tests
 tangdir = $(localstatedir)/$(PACKAGE_NAME)
 tang_DATA =
 
-systemdsystemunit_DATA =
 libexec_PROGRAMS =
 EXTRA_DIST =
 CLEANFILES =
@@ -17,15 +16,11 @@ libsrv_a_SOURCES = srv/adv.c srv/adv.h srv/db.c srv/db.h srv/rec.c srv/rec.h srv
 
 bin_PROGRAMS = tang tang-key-gen tang-key-mod tang-key-groups
 
-if USE_SYSTEMD
-if USE_LIBSYSTEMD
-systemdsystemunit_DATA += tang-keyd.socket tang-keyd.service
+systemdsystemunit_DATA = tang-keyd.socket tang-keyd.service
 EXTRA_DIST += tang-keyd.socket.in tang-keyd.service.in
 CLEANFILES += tang-keyd.socket tang-keyd.service
 libexec_PROGRAMS += tang-keyd
 tang_keyd_LDADD = libsrv.a $(LIBS)
-endif
-endif
 
 if USE_CLEVIS
 clevispin_PROGRAMS = tang.so
@@ -43,7 +38,6 @@ tang_luks_bind_LDADD = libclt.a libluks.a @cryptsetup_LIBS@ $(LIBS)
 tang_luks_list_LDADD = libluks.a @cryptsetup_LIBS@ $(LIBS)
 tang_luks_unbind_LDADD = libluks.a @cryptsetup_LIBS@ $(LIBS)
 
-if USE_SYSTEMD
 if USE_DRACUT
 dracutmodules_SCRIPTS = module-setup.sh
 EXTRA_DIST += module-setup.sh.in
@@ -58,7 +52,6 @@ EXTRA_DIST += tang-luks-askpassd.path.in tang-luks-askpassd.service.in
 CLEANFILES += tang-luks-askpassd.path tang-luks-askpassd.service
 libexec_PROGRAMS += tang-luks-askpassd
 tang_luks_askpassd_LDADD = libaskpass.a libluks.a libclt.a @cryptsetup_LIBS@ $(LIBS)
-endif
 endif
 
 autostartdir = $(sysconfdir)/xdg/autostart

@@ -39,7 +39,7 @@
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 
-#include <systemd/sd-daemon.h>
+#define SD_LISTEN_FDS_START 3
 
 #define test(cond, cmd) \
     if (!(cond)) { \

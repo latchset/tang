@@ -16,38 +16,10 @@ PKG_PROG_PKG_CONFIG([0.25])
 PKG_CHECK_MODULES([libcrypto], [libcrypto])
 
 
-AC_ARG_WITH(
-    [systemd],
-    [AS_HELP_STRING([--with-systemd], [build systemd utilities @<:@default=check@:>@])],
-    [],
-    [with_systemd=check]
-)
-AS_CASE(
-    ["$with_systemd"],
-    [yes],
-    [PKG_CHECK_MODULES([libsystemd], [libsystemd >= 221], [HAVE_LIBSYSTEMD=1])],
-    [no],
-    [],
-    [PKG_CHECK_MODULES([libsystemd], [libsystemd >= 221], [HAVE_LIBSYSTEMD=1], [HAVE_LIBSYSTEMD=0])]
-)
-AS_CASE(
-    ["$with_systemd"],
-    [yes],
-    [PKG_CHECK_MODULES([systemd], [systemd],
-        [HAVE_SYSTEMD=1 && AC_SUBST([systemdsystemunitdir],
-                                    [$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])],
-    )],
-    [no],
-    [],
-    [PKG_CHECK_MODULES([systemd], [systemd],
-        [HAVE_SYSTEMD=1 && AC_SUBST([systemdsystemunitdir],
-                                    [$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])],
-        [HAVE_SYSTEMD=0]
-    )]
-)
-AM_CONDITIONAL([USE_LIBSYSTEMD], [test "$with_systemd" != no -a "$HAVE_LIBSYSTEMD" -eq 1])
-AM_CONDITIONAL([USE_SYSTEMD], [test "$with_systemd" != no -a "$HAVE_SYSTEMD" -eq 1])
-
+PKG_CHECK_MODULES([systemd], [systemd],
+		  [systemdsystemunitdir=$($PKG_CONFIG --variable=systemdsystemunitdir systemd)],
+		  [systemdsystemunitdir=${libdir}/systemd/system])
+AC_SUBST([systemdsystemunitdir], [$systemdsystemunitdir])
 
 AC_ARG_WITH(
     [cryptsetup],

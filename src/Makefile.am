@@ -9,7 +9,7 @@ CLEANFILES =
 AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ -fPIC -DTANG_DB=\"$(tangdir)\"
 LIBS = libcore.a @libcrypto_LIBS@
 
-noinst_LIBRARIES = libcore.a libclt.a libsrv.a libluks.a
+noinst_LIBRARIES = libcore.a libclt.a libsrv.a libluks.a libaskpass.a
 libcore_a_SOURCES = \
 	core/asn1.c core/asn1.h \
 	core/conv.c core/conv.h \
@@ -19,6 +19,7 @@ libcore_a_SOURCES = \
 libclt_a_SOURCES = clt/adv.c clt/adv.h clt/rec.c clt/rec.h clt/msg.c clt/msg.h
 libsrv_a_SOURCES = srv/adv.c srv/adv.h srv/db.c srv/db.h srv/rec.c srv/rec.h srv/srv.c srv/srv.h
 libluks_a_SOURCES = luks/luks.c luks/luks.h luks/meta.c luks/meta.h luks/asn1.c luks/asn1.h
+libaskpass_a_SOURCES = askpass/question.c askpass/question.h askpass/iface.c askpass/iface.h askpass/askp.c askpass/askp.h
 
 bin_PROGRAMS = tang tang-key-gen tang-key-mod tang-key-groups
 
@@ -45,20 +46,15 @@ tang_luks_unbind_CFLAGS = @cryptsetup_CFLAGS@ $(AM_CFLAGS)
 tang_luks_unbind_LDADD = libluks.a @cryptsetup_LIBS@ $(LIBS)
 endif
 
-if USE_DRACUT
 dracutmodules_SCRIPTS = module-setup.sh
 EXTRA_DIST += module-setup.sh.in
 CLEANFILES += module-setup.sh
-
-noinst_LIBRARIES += libaskpass.a
-libaskpass_a_SOURCES = askpass/question.c askpass/question.h askpass/iface.c askpass/iface.h askpass/askp.c askpass/askp.h
 
 systemdsystemunit_DATA += tang-luks-askpassd.path tang-luks-askpassd.service
 EXTRA_DIST += tang-luks-askpassd.path.in tang-luks-askpassd.service.in
 CLEANFILES += tang-luks-askpassd.path tang-luks-askpassd.service
 libexec_PROGRAMS += tang-luks-askpassd
 tang_luks_askpassd_LDADD = libaskpass.a libluks.a libclt.a $(LIBS)
-endif
 
 autostartdir = $(sysconfdir)/xdg/autostart
 autostart_DATA =

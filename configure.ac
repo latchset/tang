@@ -14,12 +14,13 @@ AC_CHECK_LIB([rt], [clock_gettime], [LIBS="-lrt $LIBS"])
 
 PKG_PROG_PKG_CONFIG([0.25])
 PKG_CHECK_MODULES([libcrypto], [libcrypto])
-
-
 PKG_CHECK_MODULES([systemd], [systemd],
-		  [systemdsystemunitdir=$($PKG_CONFIG --variable=systemdsystemunitdir systemd)],
-		  [systemdsystemunitdir=${libdir}/systemd/system])
-AC_SUBST([systemdsystemunitdir], [$systemdsystemunitdir])
+		  [AC_SUBST([systemdsystemunitdir], [$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])],
+		  [AC_SUBST([systemdsystemunitdir], [${libdir}/systemd/system])])
+PKG_CHECK_MODULES([dracut], [dracut],
+                  [AC_SUBST([dracutmodulesdir], [$($PKG_CONFIG --variable=dracutmodulesdir dracut)])],
+                  [AC_SUBST([dracutmodulesdir], [${libdir}/dracut/modules.d])])
+
 
 AC_ARG_WITH(
     [cryptsetup],
@@ -64,31 +65,6 @@ AS_CASE(
     [PKG_CHECK_MODULES([storaged], [storaged], [HAVE_STORAGED=1], [HAVE_STORAGED=0])]
 )
 AM_CONDITIONAL([USE_STORAGED], [test "$with_storaged" != no -a "$HAVE_STORAGED" -eq 1])
-
-
-AC_ARG_WITH(
-    [dracut],
-    [AS_HELP_STRING([--with-dracut], [build early boot utility @<:@default=check@:>@])],
-    [],
-    [with_dracut=check]
-)
-AS_CASE(
-    ["$with_dracut"],
-    [yes],
-    [PKG_CHECK_MODULES(
-        [dracut],
-        [dracut],
-        [HAVE_DRACUT=1 && AC_SUBST([dracutmodulesdir], [$($PKG_CONFIG --variable=dracutmodulesdir dracut)])]
-    )],
-    [no], [],
-    [PKG_CHECK_MODULES(
-        [dracut],
-        [dracut],
-        [HAVE_DRACUT=1 && AC_SUBST([dracutmodulesdir], [$($PKG_CONFIG --variable=dracutmodulesdir dracut)])],
-        [HAVE_DRACUT=0]
-    )]
-)
-AM_CONDITIONAL([USE_DRACUT], [test "$with_dracut" != no -a "$HAVE_DRACUT" -eq 1])
 
 
 AC_ARG_WITH(

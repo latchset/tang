@@ -27,53 +27,20 @@
 #include <sys/socket.h>
 #include <sys/wait.h>
 
-#include <errno.h>
-#include <error.h>
-#include <ctype.h>
-#include <sysexits.h>
+#include <string.h>
 
-#include <systemd/sd-bus.h>
 #include <libcryptsetup.h>
+#include <udisks/udisks.h>
+#include <glib-unix.h>
 
 #define MAX_UDP 65535
 
-struct encrypted {
-    list_t list;
-    char path[PATH_MAX];
+struct context {
+    UDisksClient *clt;
+    GMainLoop *loop;
+    GList *lst;
+    int sock;
 };
-
-struct blockdev {
-    list_t list;
-    char path[PATH_MAX];
-
-    bool disabled;
-    bool HintAuto;
-    char Device[PATH_MAX];
-    char CryptoBackingDevice[PATH_MAX];
-};
-
-static list_t encrypteds = LIST_INIT(encrypteds);
-static list_t blockdevs = LIST_INIT(blockdevs);
-
-static void
-disable(const char *path)
-{
-    LIST_FOREACH(&blockdevs, struct blockdev, bd, list) {
-        if (strcmp(bd->path, path) == 0)
-            bd->disabled = true;
-    }
-}
-
-static bool
-is_locked(const char *obj)
-{
-    LIST_FOREACH(&blockdevs, struct blockdev, bd, list) {
-        if (strcmp(obj, bd->CryptoBackingDevice) == 0)
-            return false;
-    }
-
-    return true;
-}
 
 static bool
 TANG_LUKS_get_params(const TANG_LUKS *tl, msg_t *params)
@@ -87,10 +54,10 @@ TANG_LUKS_get_params(const TANG_LUKS *tl, msg_t *params)
     if (tl->service->length >= (int) sizeof(params->service))
         return false;
 
-    strncpy(params->hostname, (char *) tl->hostname->data,
-            tl->hostname->length);
-    strncpy(params->service, (char *) tl->service->data,
-            tl->service->length);
+    g_strlcpy(params->hostname, (char *) tl->hostname->data,
+              tl->hostname->length);
+    g_strlcpy(params->service, (char *) tl->service->data,
+              tl->service->length);
 
     return true;
 }
@@ -128,441 +95,248 @@ error:
     return skey;
 }
 
-static int
-on_iface_rem(sd_bus_message *m, void *misc, sd_bus_error *ret_error)
+static void
+remove_path(GList **lst, const char *path)
 {
-    const char *obj = NULL;
-    int r;
+    GList *i = NULL;
 
-    r = sd_bus_message_has_signature(m, "oas");
-    if (r < 0)
-        return r;
-
-    r = sd_bus_message_read(m, "o", &obj);
-    if (r < 0)
-    return r;
-
-    r = sd_bus_message_enter_container(m, 'a', "s");
-    if (r < 0)
-        return r;
-
-    for (const char *i = NULL; (r = sd_bus_message_read(m, "s", &i)) > 0; ) {
-        if (strcmp(i, "org.freedesktop.UDisks2.Encrypted") == 0) {
-            LIST_FOREACH(&encrypteds, struct encrypted, e, list) {
-                if (strcmp(obj, e->path) != 0)
-                    continue;
-
-                list_pop(&e->list);
-                free(e);
-            }
-        } else if (strcmp(i, "org.freedesktop.UDisks2.Block") == 0) {
-            LIST_FOREACH(&blockdevs, struct blockdev, bd, list) {
-                if (strcmp(obj, bd->path) != 0)
-                    continue;
-
-                disable(bd->CryptoBackingDevice);
-
-                list_pop(&bd->list);
-                free(bd);
-            }
-        }
+    while ((i = g_list_find_custom(*lst, path, (GCompareFunc) g_strcmp0))) {
+        g_free(i->data);
+        *lst = g_list_remove(*lst, i->data);
     }
-    if (r < 0)
-        return r;
-
-    r = sd_bus_message_exit_container(m);
-    if (r < 0)
-        return r;
-
-    return 0;
 }
 
-static int
-parse_Device(sd_bus_message *m, struct blockdev *bd)
+static skey_t *
+unlock_device_slot(struct context *ctx, const char *dev, int slot)
 {
-    const void *out = NULL;
-    size_t size = 0;
-    int r = 0;
+    ssize_t len = strlen(dev) + 2;
+    uint8_t buf[MAX_UDP] = {};
+    TANG_LUKS *tl = NULL;
+    skey_t *skey = NULL;
+    skey_t *hex = NULL;
+    msg_t p = {};
 
-    r = sd_bus_message_enter_container(m, 'v', "ay");
-    if (r < 0)
-        return r;
+    if (len > MAX_UDP)
+        return FALSE;
 
-    r = sd_bus_message_read_array(m, 'y', &out, &size);
-    if (r < 0)
-        return r;
+    buf[0] = slot;
+    memcpy(&buf[1], dev, len - 1);
 
-    if (size > sizeof(bd->Device))
-        return -E2BIG;
+    fprintf(stderr, "%s\tSLOT\t%d\n", dev, slot);
 
-    memcpy(bd->Device, out, size);
-    bd->Device[size] = '\0';
-
-    return sd_bus_message_exit_container(m);
-}
-
-static int
-parse_HintAuto(sd_bus_message *m, struct blockdev *bd)
-{
-    int HintAuto = 0;
-    int r = 0;
-
-    r = sd_bus_message_enter_container(m, 'v', "b");
-    if (r < 0)
-        return r;
-
-    r = sd_bus_message_read_basic(m, 'b', &HintAuto);
-    if (r < 0)
-        return r;
-
-    bd->HintAuto = HintAuto;
-    return sd_bus_message_exit_container(m);
-}
-
-static int
-parse_CryptoBackingDevice(sd_bus_message *m, struct blockdev *bd)
-{
-    const char *out = NULL;
-    int r = 0;
-
-    r = sd_bus_message_enter_container(m, 'v', "o");
-    if (r < 0)
-        return r;
-
-    r = sd_bus_message_read(m, "o", &out);
-    if (r < 0)
-        return r;
-
-    if (strlen(out) >= sizeof(bd->CryptoBackingDevice))
-        return -E2BIG;
-
-    strcpy(bd->CryptoBackingDevice, out);
-    return sd_bus_message_exit_container(m);
-}
-
-static int
-parse_Encrypted(sd_bus_message *m, const char *obj)
-{
-    struct encrypted *enc = NULL;
-
-    LIST_FOREACH(&encrypteds, struct encrypted, e, list) {
-        if (strcmp(e->path, obj) == 0)
-            return 0;
+    if (send(ctx->sock, buf, len, 0) != len) {
+        g_main_loop_quit(ctx->loop);
+        return FALSE;
     }
 
-    enc = calloc(1, sizeof(*enc));
-    if (!enc)
-        return -errno;
-
-    if (strlen(obj) >= sizeof(enc->path)) {
-        free(enc);
-        return -E2BIG;
+    len = recv(ctx->sock, buf, sizeof(buf), 0);
+    if (len < 0) {
+        g_main_loop_quit(ctx->loop);
+        return FALSE;
     }
 
-    strcpy(enc->path, obj);
-    list_add_after(&encrypteds, &enc->list);
+    fprintf(stderr, "%s\tMETA\t%d\n", dev, (int) len);
 
-    return sd_bus_message_skip(m, "a{sv}");
-}
+    tl = d2i_TANG_LUKS(NULL, &(const uint8_t *) { buf }, len);
+    if (!tl)
+        return FALSE;
 
-static int
-parse_Block(sd_bus_message *m, const char *obj)
-{
-    struct blockdev *bd = NULL;
-    int r;
-
-    LIST_FOREACH(&blockdevs, struct blockdev, b, list) {
-        if (strcmp(b->path, obj) == 0)
-            return 0;
-    }
-
-    bd = calloc(1, sizeof(*bd));
-    if (!bd)
-        return -errno;
-
-    if (strlen(obj) >= sizeof(bd->path)) {
-        free(bd);
-        return -E2BIG;
-    }
-
-    strcpy(bd->path, obj);
-
-    r = sd_bus_message_enter_container(m, 'a', "{sv}");
-    if (r < 0)
-        goto error;
-
-    while ((r = sd_bus_message_enter_container(m, 'e', "sv")) > 0) {
-        const char *name = NULL;
-
-        r = sd_bus_message_read(m, "s", &name);
-        if (r < 0)
-            goto error;
-
-        if (strcmp(name, "Device") == 0)
-            r = parse_Device(m, bd);
-        else if (strcmp(name, "HintAuto") == 0)
-            r = parse_HintAuto(m, bd);
-        else if (strcmp(name, "CryptoBackingDevice") == 0)
-            r = parse_CryptoBackingDevice(m, bd);
-        else
-            r = sd_bus_message_skip(m, "v");
-        if (r < 0)
-            goto error;
-
-        r = sd_bus_message_exit_container(m);
-        if (r < 0)
-            goto error;
-    }
-    if (r < 0)
-        goto error;
-
-    r = sd_bus_message_exit_container(m);
-    if (r < 0)
-        goto error;
-
-    list_add_after(&blockdevs, &bd->list);
-    return r;
-
-error:
-    free(bd);
-    return r;
-}
-
-static int
-on_iface_add(sd_bus_message *m, void *misc, sd_bus_error *ret_error)
-{
-    const char *obj = NULL;
-    int r;
-
-    r = sd_bus_message_has_signature(m, "oa{sa{sv}}");
-    if (r < 0)
-        return r;
-
-    r = sd_bus_message_read(m, "o", &obj);
-    if (r < 0)
-        return r;
-
-    if (strlen(obj) >= PATH_MAX)
-        return -E2BIG;
-
-    r = sd_bus_message_enter_container(m, 'a', "{sa{sv}}");
-    if (r < 0)
-        return r;
-
-    while ((r = sd_bus_message_enter_container(m, 'e', "sa{sv}")) > 0) {
-        const char *iface = NULL;
-
-        r = sd_bus_message_read(m, "s", &iface);
-        if (r < 0)
-            return r;
-
-
-        if (strcmp(iface, "org.freedesktop.UDisks2.Encrypted") == 0) {
-            r = parse_Encrypted(m, obj);
-        } else if (strcmp(iface, "org.freedesktop.UDisks2.Block") == 0) {
-            r = parse_Block(m, obj);
-        } else {
-            r = sd_bus_message_skip(m, "a{sv}");
-        }
-        if (r < 0)
-            return r;
-
-        r = sd_bus_message_exit_container(m);
-        if (r < 0)
-            return r;
-    }
-    if (r < 0)
-        return r;
-
-    r = sd_bus_message_exit_container(m);
-    if (r < 0)
-        return r;
-
-    return 0;
-}
-
-static int
-process(sd_bus *bus, struct blockdev *bd, int sock)
-{
-    bool enc = false;
-
-    LIST_FOREACH(&encrypteds, struct encrypted, e, list)
-        enc |= strcmp(e->path, bd->path) == 0;
-
-    if (!bd->HintAuto || bd->disabled || !enc || !is_locked(bd->path))
-        return 0;
-
-    for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
-        ssize_t len = strlen(bd->Device) + 2;
-        uint8_t buf[MAX_UDP] = {};
-        TANG_LUKS *tl = NULL;
-        skey_t *skey = NULL;
-        skey_t *hex = NULL;
-        msg_t params = {};
-        int r = 0;
-
-        buf[0] = slot;
-        memcpy(&buf[1], bd->Device, len - 1);
-
-        fprintf(stderr, "%s\tSLOT\t%d\n", bd->path, slot);
-
-        errno = 0;
-        if (send(sock, buf, len, 0) != len)
-            return errno != 0 ? -errno : -EIO;
-
-        len = recv(sock, buf, sizeof(buf), 0);
-        if (len < 0)
-            return -errno;
-
-        fprintf(stderr, "%s\tMETA\t%d\n", bd->path, (int) len);
-
-        tl = d2i_TANG_LUKS(NULL, &(const uint8_t *) { buf }, len);
-        if (!tl)
-            continue;
-
-        if (!TANG_LUKS_get_params(tl, &params)) {
-            TANG_LUKS_free(tl);
-            continue;
-        }
-        fprintf(stderr, "%s\tDATA\t%s (%s)\n",
-                bd->path, params.hostname, params.service);
-
-        skey = get_key(&params, tl->rec);
+    if (!TANG_LUKS_get_params(tl, &p)) {
         TANG_LUKS_free(tl);
-        fprintf(stderr, "%s\tTREC\t%s\n", bd->path,
-                skey ? "success" : "failure");
-        if (!skey)
-            continue;
-
-        hex = skey_new(skey->size * 2 + 1);
-        if (!hex) {
-            skey_free(skey);
-            continue;
-        }
-
-        for (size_t i = 0; i < skey->size; i++)
-            snprintf((char *) &hex->data[i * 2], 3, "%02X", skey->data[i]);
-        skey_free(skey);
-
-        r = sd_bus_call_method(bus, "org.freedesktop.UDisks2", bd->path,
-                               "org.freedesktop.UDisks2.Encrypted", "Unlock",
-                               NULL, NULL, "sa{sv}", hex->data, 0);
-        skey_free(hex);
-        if (r >= 0)
-            break;
+        return FALSE;
     }
 
-    return 0;
+    fprintf(stderr, "%s\tDATA\t%s (%s)\n", dev, p.hostname, p.service);
+
+    skey = get_key(&p, tl->rec);
+    TANG_LUKS_free(tl);
+    fprintf(stderr, "%s\tTREC\t%s\n", dev, skey ? "success" : "failure");
+    if (!skey)
+        return FALSE;
+
+    hex = skey_new(skey->size * 2 + 1);
+    if (!hex) {
+        skey_free(skey);
+        return FALSE;
+    }
+
+    for (size_t i = 0; i < skey->size; i++)
+        snprintf((char *) &hex->data[i * 2], 3, "%02X", skey->data[i]);
+    skey_free(skey);
+    return hex;
 }
 
-static int
-call_GetManagedObjects(sd_bus *bus)
+static gboolean
+idle(gpointer misc)
 {
-    sd_bus_message *msg = NULL;
-    int r = 0;
+    GVariantBuilder builder = {};
+    struct context *ctx = misc;
+    GVariant *options = NULL;
 
-    r = sd_bus_call_method(bus, "org.freedesktop.UDisks2",
-                           "/org/freedesktop/UDisks2",
-                           "org.freedesktop.DBus.ObjectManager",
-                           "GetManagedObjects", NULL, &msg, "");
-    if (r < 0)
+    g_variant_builder_init(&builder, G_VARIANT_TYPE_VARDICT);
+    g_variant_builder_add(&builder, "{sv}", "auth.no_user_interaction",
+                          g_variant_new_boolean(TRUE));
+    options = g_variant_builder_end(&builder);
+    if (!options)
         goto error;
 
-    r = sd_bus_message_enter_container(msg, 'a', "{oa{sa{sv}}}");
-    if (r < 0)
-        goto error;
+    for (GList *i = ctx->lst; i; i = i->next) {
+        UDisksEncrypted *enc = NULL;
+        const char *path = i->data;
+        UDisksObject *uobj = NULL;
+        UDisksBlock *block = NULL;
+        const char *dev = NULL;
 
-    while ((r = sd_bus_message_enter_container(msg, 'e', "oa{sa{sv}}")) > 0) {
-        r = on_iface_add(msg, bus, NULL);
-        if (r < 0)
-            goto error;
+        uobj = udisks_client_peek_object(ctx->clt, path);
+        if (!uobj)
+            continue;
 
-        r = sd_bus_message_exit_container(msg);
-        if (r < 0)
-            goto error;
+        enc = udisks_object_peek_encrypted(uobj);
+        if (!enc)
+            continue;
+
+        block = udisks_object_peek_block(uobj);
+        if (!block)
+            continue;
+
+        dev = udisks_block_get_device(block);
+        if (!dev)
+            continue;
+
+        for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
+            gboolean success = FALSE;
+            skey_t *key = NULL;
+
+            key = unlock_device_slot(ctx, dev, slot);
+            if (!key)
+                continue;
+
+            success = udisks_encrypted_call_unlock_sync(
+                    enc, (char *) key->data, options, NULL, NULL, NULL);
+            skey_free(key);
+            if (success)
+                break;
+        }
     }
-    if (r < 0)
-        goto error;
-
-    r = sd_bus_message_exit_container(msg);
-    if (r < 0)
-        goto error;
 
 error:
-    sd_bus_message_unref(msg);
-    return r;
+    g_list_free_full(ctx->lst, g_free);
+    ctx->lst = NULL;
+    return FALSE;
+}
+
+static void
+oadd(GDBusObjectManager *mgr, GDBusObject *obj, gpointer misc)
+{
+    struct context *ctx = misc;
+    UDisksObject *uobj = NULL;
+    const char *path = NULL;
+    const char *back = NULL;
+    UDisksBlock *ct = NULL;
+    UDisksBlock *pt = NULL;
+    GList *tmp = NULL;
+    char *ptmp = NULL;
+
+    path = g_dbus_object_get_object_path(obj);
+    if (!path)
+        return;
+
+    uobj = udisks_client_peek_object(ctx->clt, path);
+    if (!uobj)
+        return;
+
+    ct = udisks_object_peek_block(uobj);
+    if (!ct)
+        return;
+
+    back = udisks_block_get_crypto_backing_device(ct);
+    if (back)
+        remove_path(&ctx->lst, back);
+
+    if (!udisks_block_get_hint_auto(ct))
+        return;
+
+    if (!udisks_object_peek_encrypted(uobj))
+        return;
+
+    pt = udisks_client_get_cleartext_block(ctx->clt, ct);
+    if (pt) {
+        g_object_unref(pt);
+        return;
+    }
+
+    ptmp = g_strdup(path);
+    if (!ptmp)
+        return;
+
+    tmp = g_list_prepend(ctx->lst, ptmp);
+    if (!tmp) {
+        g_free(ptmp);
+        return;
+    }
+
+    ctx->lst = tmp;
+    g_idle_add(idle, ctx);
+}
+
+static void
+orem(GDBusObjectManager *mgr, GDBusObject *obj, gpointer misc)
+{
+    struct context *ctx = misc;
+    remove_path(&ctx->lst, g_dbus_object_get_object_path(obj));
+}
+
+static gboolean
+sockerr(gint fd, GIOCondition cond, gpointer misc)
+{
+    struct context *ctx = misc;
+    close(fd);
+    g_main_loop_quit(ctx->loop);
+    return FALSE;
 }
 
 static int
 child_main(int sock)
 {
-    sd_bus_slot *slot_rem = NULL;
-    sd_bus_slot *slot_add = NULL;
-    sd_bus *bus = NULL;
-    int r;
+    struct context ctx = { .sock = sock };
+    int exit_status = EXIT_FAILURE;
+    GDBusObjectManager *mgr = NULL;
+    gulong id = 0;
 
-    r = sd_bus_open_system(&bus);
-    if (r < 0)
+    ctx.loop = g_main_loop_new(NULL, FALSE);
+    if (!ctx.loop)
         goto error;
 
-    r = sd_bus_add_object_manager(bus, NULL, "/");
-    if (r < 0)
+    ctx.clt = udisks_client_new_sync(NULL, NULL);
+    if (!ctx.clt)
         goto error;
 
-    r = sd_bus_add_match(bus, &slot_rem,
-                         "type='signal',"
-                         "sender='org.freedesktop.UDisks2',"
-                         "path='/org/freedesktop/UDisks2',"
-                         "member='InterfacesRemoved',"
-                         "interface='org.freedesktop.DBus.ObjectManager'",
-                         on_iface_rem, NULL);
-    if (r < 0)
+    mgr = udisks_client_get_object_manager(ctx.clt);
+    if (!mgr)
         goto error;
 
-    r = sd_bus_add_match(bus, &slot_add,
-                         "type='signal',"
-                         "sender='org.freedesktop.UDisks2',"
-                         "path='/org/freedesktop/UDisks2',"
-                         "member='InterfacesAdded',"
-                         "interface='org.freedesktop.DBus.ObjectManager'",
-                         on_iface_add, NULL);
-    if (r < 0)
+    id = g_signal_connect(mgr, "object-added", G_CALLBACK(oadd), &ctx);
+    if (id == 0)
         goto error;
 
-    r = call_GetManagedObjects(bus);
-    if (r < 0)
+    id = g_signal_connect(mgr, "object-removed", G_CALLBACK(orem), &ctx);
+    if (id == 0)
         goto error;
 
-    LIST_FOREACH(&blockdevs, struct blockdev, bd, list) {
-        r = process(bus, bd, sock);
-        if (r < 0)
-            goto error;
-    }
+    id = g_unix_fd_add(sock, G_IO_ERR, sockerr, &ctx);
+    if (id == 0)
+        goto error;
 
-    while ((r = sd_bus_wait(bus, (uint64_t) -1)) >= 0) {
-        while ((r = sd_bus_process(bus, NULL)) > 0)
-            continue;
-        if (r < 0)
-            goto error;
+    g_main_loop_run(ctx.loop);
 
-        LIST_FOREACH(&blockdevs, struct blockdev, bd, list) {
-            r = process(bus, bd, sock);
-            if (r < 0)
-                goto error;
-        }
-    }
-
-    LIST_FOREACH(&encrypteds, struct encrypted, e, list)
-        free(e);
-    LIST_FOREACH(&blockdevs, struct blockdev, bd, list)
-        free(bd);
+    exit_status = EXIT_SUCCESS;
 
 error:
-    sd_bus_slot_unref(slot_rem);
-    sd_bus_slot_unref(slot_add);
-    sd_bus_unref(bus);
+    g_list_free_full(ctx.lst, g_free);
+    g_main_loop_unref(ctx.loop);
+    g_object_unref(ctx.clt);
     close(sock);
-    return (r < 0 && r != -EINTR) ? EXIT_FAILURE : EXIT_SUCCESS;
+    return exit_status;
 }
 
 /*
@@ -619,7 +393,6 @@ static void
 on_signal(int sig)
 {
     safeclose(&pair[0]);
-    safeclose(&pair[1]);
 }
 
 int
@@ -627,26 +400,18 @@ main(int argc, char *argv[])
 {
     pid_t pid = 0;
 
-    signal(SIGHUP, on_signal);
-    signal(SIGINT, on_signal);
-    signal(SIGPIPE, on_signal);
-    signal(SIGTERM, on_signal);
-    signal(SIGUSR1, on_signal);
-    signal(SIGUSR2, on_signal);
-    signal(SIGCHLD, on_signal);
-
     if (socketpair(AF_UNIX, SOCK_DGRAM, 0, pair) == -1)
-        error(EX_OSERR, errno, "Unable to create socket pair");
+        return EXIT_FAILURE;
 
     pid = fork();
     if (pid < 0) {
         safeclose(&pair[0]);
         safeclose(&pair[1]);
-        error(EX_OSERR, errno, "Unable to fork");
+        return EXIT_FAILURE;
     }
 
     if (pid == 0) {
-        int status = EX_OSERR;
+        int status = EXIT_FAILURE;
 
         safeclose(&pair[0]);
 
@@ -657,14 +422,21 @@ main(int argc, char *argv[])
         return status;
     }
 
+    safeclose(&pair[1]);
+
+    signal(SIGHUP, on_signal);
+    signal(SIGINT, on_signal);
+    signal(SIGPIPE, on_signal);
+    signal(SIGTERM, on_signal);
+    signal(SIGUSR1, on_signal);
+    signal(SIGUSR2, on_signal);
+    signal(SIGCHLD, on_signal);
+
     if (setuid(geteuid()) == -1)
         goto error;
 
-    safeclose(&pair[1]);
-
     char buf[MAX_UDP] = {};
     ssize_t len = 0;
-
     while (true) {
         uint8_t *data = NULL;
         size_t size = 0;

@@ -65,6 +65,21 @@ AM_CONDITIONAL([USE_CRYPTSETUP], [test "$with_cryptsetup" != no -a "$HAVE_CRYPTS
 
 
 AC_ARG_WITH(
+    [udisks2],
+    [AS_HELP_STRING([--with-udisks2], [build removable media unlocker @<:@default=check@:>@])],
+    [],
+    [with_udisks2=check]
+)
+AS_CASE(
+    ["$with_udisks2"],
+    [yes], [PKG_CHECK_MODULES([udisks2], [udisks2], [HAVE_UDISKS2=1])],
+    [no], [],
+    [PKG_CHECK_MODULES([udisks2], [udisks2], [HAVE_UDISKS2=1], [HAVE_UDISKS2=0])]
+)
+AM_CONDITIONAL([USE_UDISKS2], [test "$with_udisks2" != no -a "$HAVE_UDISKS2" -eq 1])
+
+
+AC_ARG_WITH(
     [dracut],
     [AS_HELP_STRING([--with-dracut], [build early boot utility @<:@default=check@:>@])],
     [],

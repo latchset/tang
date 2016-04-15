@@ -217,7 +217,7 @@ main(int argc, char *argv[])
     if (argp_parse(&argp, argc, argv, 0, NULL, &opts) != 0)
         return EX_OSERR;
 
-    umask(S_IRWXG | S_IRWXO);
+    umask(S_IXUSR | S_IXGRP | S_IRWXO);
 
     EC_GROUP_set_asn1_flag(opts.grp, OPENSSL_EC_NAMED_CURVE);
     EC_GROUP_set_point_conversion_form(opts.grp, POINT_CONVERSION_COMPRESSED);

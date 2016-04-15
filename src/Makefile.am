@@ -1,4 +1,4 @@
-SUBDIRS = . tests
+SUBDIRS = core . tests
 
 tangdir = $(localstatedir)/$(PACKAGE_NAME)
 tang_DATA =
@@ -7,15 +7,9 @@ libexec_PROGRAMS =
 EXTRA_DIST = clevis.sym
 CLEANFILES =
 AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ -fPIC -DTANG_DB=\"$(tangdir)\"
-LIBS = libcore.a @libcrypto_LIBS@
+LIBS = core/libcore.a @libcrypto_LIBS@
 
-noinst_LIBRARIES = libcore.a libclt.a libsrv.a libluks.a libaskpass.a
-libcore_a_SOURCES = \
-	core/asn1.c core/asn1.h \
-	core/conv.c core/conv.h \
-	core/pkt.c core/pkt.h \
-	core/list.c core/list.h \
-	core/sbuf.c core/sbuf.h
+noinst_LIBRARIES = libclt.a libsrv.a libluks.a libaskpass.a
 libclt_a_SOURCES = clt/adv.c clt/adv.h clt/rec.c clt/rec.h clt/msg.c clt/msg.h
 libsrv_a_SOURCES = srv/adv.c srv/adv.h srv/db.c srv/db.h srv/rec.c srv/rec.h srv/srv.c srv/srv.h
 libluks_a_SOURCES = luks/luks.c luks/luks.h luks/meta.c luks/meta.h luks/asn1.c luks/asn1.h

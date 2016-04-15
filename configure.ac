@@ -115,5 +115,5 @@ AC_SUBST([TANG_CFLAGS])
 AC_SUBST([TANG_PORT], [5700])
 AC_DEFINE([TANG_PORT], [5700])
 
-AC_CONFIG_FILES([Makefile src/Makefile src/tests/Makefile])
+AC_CONFIG_FILES([Makefile src/Makefile src/core/Makefile src/tests/Makefile])
 AC_OUTPUT

@@ -31,7 +31,7 @@ AC_ARG_WITH(
 AS_CASE(
     ["$with_cryptsetup"],
     [yes], [PKG_CHECK_MODULES([cryptsetup], [libcryptsetup], [HAVE_CRYPTSETUP=1])],
-    [no], [],
+    [no], [HAVE_CRYPTSETUP=0],
     [PKG_CHECK_MODULES([cryptsetup], [libcryptsetup], [HAVE_CRYPTSETUP=1], [HAVE_CRYPTSETUP=0])]
 )
 AM_CONDITIONAL([USE_CRYPTSETUP], [test "$with_cryptsetup" != no -a "$HAVE_CRYPTSETUP" -eq 1])
@@ -46,7 +46,7 @@ AC_ARG_WITH(
 AS_CASE(
     ["$with_udisks2"],
     [yes], [PKG_CHECK_MODULES([udisks2], [udisks2], [HAVE_UDISKS2=1])],
-    [no], [],
+    [no], [HAVE_UDISKS2=0],
     [PKG_CHECK_MODULES([udisks2], [udisks2], [HAVE_UDISKS2=1], [HAVE_UDISKS2=0])]
 )
 AM_CONDITIONAL([USE_UDISKS2], [test "$with_udisks2" != no -a "$HAVE_UDISKS2" -eq 1])
@@ -61,7 +61,7 @@ AC_ARG_WITH(
 AS_CASE(
     ["$with_storaged"],
     [yes], [PKG_CHECK_MODULES([storaged], [storaged], [HAVE_STORAGED=1])],
-    [no], [],
+    [no], [HAVE_STORAGED=0],
     [PKG_CHECK_MODULES([storaged], [storaged], [HAVE_STORAGED=1], [HAVE_STORAGED=0])]
 )
 AM_CONDITIONAL([USE_STORAGED], [test "$with_storaged" != no -a "$HAVE_STORAGED" -eq 1])
@@ -81,7 +81,7 @@ AS_CASE(
 	[clevis],
 	[HAVE_CLEVIS=1 && AC_SUBST([clevispindir], [$($PKG_CONFIG --variable=pindir clevis)])]
     )],
-    [no], [],
+    [no], [HAVE_CLEVIS=0],
     [PKG_CHECK_MODULES(
         [clevis],
         [clevis],

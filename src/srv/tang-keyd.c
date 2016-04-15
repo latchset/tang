@@ -21,6 +21,7 @@
 
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <argp.h>
 #include <signal.h>
 #include <sysexits.h>
@@ -93,6 +94,37 @@ parser(int key, char* arg, struct argp_state* state)
     }
 }
 
+static int
+epoll_add(int epoll, int fd)
+{
+    return epoll_ctl(epoll, EPOLL_CTL_ADD, fd, &(struct epoll_event) {
+        .events = EPOLLIN | EPOLLRDHUP | EPOLLPRI,
+        .data.fd = fd
+    });
+}
+
+static int
+setup(int epoll, int family, struct sockaddr *addr, socklen_t addrlen)
+{
+    int sock = 0;
+
+    sock = socket(family, SOCK_DGRAM, 0);
+    if (sock < 0)
+        goto error;
+
+    if (bind(sock, addr, addrlen) != 0)
+        goto error;
+
+    if (epoll_add(epoll, sock) != 0)
+        goto error;
+
+    return sock;
+
+error:
+    close(sock);
+    return -errno;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -106,7 +138,9 @@ main(int argc, char *argv[])
     };
     const char *lfds = NULL;
     struct addr addr = {};
-    int epoll;
+    int epoll = -1;
+    int sock4 = -1;
+    int sock6 = -1;
     int r;
 
     if (argp_parse(&argp, argc, argv, 0, NULL, &opts) != 0)
@@ -118,28 +152,37 @@ main(int argc, char *argv[])
 
     /* Setup listening sockets. */
     lfds = getenv("LISTEN_FDS");
-    if (!lfds) {
-        fprintf(stderr, "No listening sockets\n");
-        close(epoll);
-        return EX_CONFIG;
-    }
-
-    errno = 0;
-    fds = strtol(lfds, NULL, 10);
-    if (errno != 0 || fds == 0) {
-        fprintf(stderr, "Invalid LISTEN_FDS: %s\n", lfds);
-        close(epoll);
-        return EX_CONFIG;
-    }
-
-    for (int i = 0; i < fds; i++) {
-        int fd = i + LISTEN_FD_START;
-
-        if (epoll_ctl(epoll, EPOLL_CTL_ADD, fd, &(struct epoll_event) {
-            .events = EPOLLIN | EPOLLRDHUP | EPOLLPRI,
-            .data.fd = fd
-        }) != 0) {
+    if (lfds) {
+        errno = 0;
+        fds = strtol(lfds, NULL, 10);
+        if (errno != 0 || fds == 0) {
+            fprintf(stderr, "Invalid LISTEN_FDS: %s\n", lfds);
             close(epoll);
+            return EX_CONFIG;
+        }
+
+        for (int i = 0; i < fds; i++) {
+            if (epoll_add(epoll, i + LISTEN_FD_START) != 0) {
+                close(epoll);
+                return EX_OSERR;
+            }
+        }
+    } else {
+        sock6 = setup(epoll, AF_INET6,
+                      (struct sockaddr *) &(struct sockaddr_in6) {
+                          .sin6_family = AF_INET6,
+                          .sin6_port = htons(TANG_PORT),
+                          .sin6_addr = IN6ADDR_ANY_INIT
+                      }, sizeof(struct sockaddr_in6));
+        sock4 = setup(epoll, AF_INET,
+                      (struct sockaddr *) &(struct sockaddr_in) {
+                          .sin_family = AF_INET,
+                          .sin_port = htons(TANG_PORT),
+                          .sin_addr = { .s_addr = htonl(INADDR_ANY) }
+                      }, sizeof(struct sockaddr_in));
+        if (sock4 < 0 && sock6 < 0) {
+            close(sock4);
+            close(sock6);
             return EX_OSERR;
         }
     }
@@ -149,5 +192,7 @@ main(int argc, char *argv[])
 
     r = srv_main(opts.dbdir, epoll, req, rep, &addr, -1);
     close(epoll);
+    close(sock4);
+    close(sock6);
     return r == 0 ? 0 : EX_IOERR;
 }

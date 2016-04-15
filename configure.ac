@@ -16,10 +16,10 @@ PKG_PROG_PKG_CONFIG([0.25])
 PKG_CHECK_MODULES([libcrypto], [libcrypto])
 PKG_CHECK_MODULES([systemd], [systemd],
 		  [AC_SUBST([systemdsystemunitdir], [$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])],
-		  [AC_SUBST([systemdsystemunitdir], [${libdir}/systemd/system])])
+		  [AC_SUBST([systemdsystemunitdir], [${prefix}/lib/systemd/system])])
 PKG_CHECK_MODULES([dracut], [dracut],
                   [AC_SUBST([dracutmodulesdir], [$($PKG_CONFIG --variable=dracutmodulesdir dracut)])],
-                  [AC_SUBST([dracutmodulesdir], [${libdir}/dracut/modules.d])])
+                  [AC_SUBST([dracutmodulesdir], [${prefix}/lib/dracut/modules.d])])
 
 
 AC_ARG_WITH(

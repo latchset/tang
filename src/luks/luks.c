@@ -110,7 +110,7 @@ int
 luks_hole(const char *device, int slot, bool write, uint32_t *length)
 {
     luks_hdr_t hdr = {};
-    off_t offset = 0;
+    uint32_t offset = 0;
     int fd = -1;
 
     if (slot >= LUKS_NUMKEYS)
@@ -171,7 +171,7 @@ luks_hole(const char *device, int slot, bool write, uint32_t *length)
         return -EINVAL;
     }
 
-    if (lseek(fd, offset, SEEK_SET) != offset) {
+    if (lseek(fd, offset, SEEK_SET) == -1) {
         close(fd);
         return -errno;
     }

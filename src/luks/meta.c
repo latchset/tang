@@ -107,7 +107,7 @@ meta_write(const char *device, uint8_t slot, const sbuf_t *buf)
     meta_t meta = {};
     int fd = -1;
 
-    if (slot >= LUKS_NUMKEYS || !buf || buf->size > UINT64_MAX)
+    if (slot >= LUKS_NUMKEYS || !buf)
         return false;
 
     memcpy(meta.magic, META_MAGIC, sizeof(META_MAGIC));

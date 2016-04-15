@@ -21,8 +21,8 @@
 #include <stdbool.h>
 #include <limits.h>
 
-#include "../core/asn1.h"
-#include "../core/list.h"
+#include "../asn1.h"
+#include "../list.h"
 
 #include <openssl/ec.h>
 

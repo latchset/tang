@@ -17,9 +17,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "luks/asn1.h"
-#include "luks/meta.h"
-#include "clt/msg.h"
+#include "asn1.h"
+#include "meta.h"
+#include "../msg.h"
 
 #include <libcryptsetup.h>
 

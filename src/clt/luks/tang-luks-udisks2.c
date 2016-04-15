@@ -17,12 +17,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "core/list.h"
-#include "clt/msg.h"
-#include "clt/rec.h"
-#include "luks/asn1.h"
-#include "luks/luks.h"
-#include "luks/meta.h"
+#include "../../list.h"
+#include "../msg.h"
+#include "../rec.h"
+#include "asn1.h"
+#include "luks.h"
+#include "meta.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -30,13 +30,13 @@
 
 #include <string.h>
 
-#include <storaged/storaged.h>
+#include <udisks/udisks.h>
 #include <glib-unix.h>
 
 #define MAX_UDP 65535
 
 struct context {
-    StoragedClient *clt;
+    UDisksClient *clt;
     GMainLoop *loop;
     GList *lst;
     int sock;
@@ -174,25 +174,25 @@ idle(gpointer misc)
         goto error;
 
     for (GList *i = ctx->lst; i; i = i->next) {
-        StoragedEncrypted *enc = NULL;
+        UDisksEncrypted *enc = NULL;
         const char *path = i->data;
-        StoragedObject *uobj = NULL;
-        StoragedBlock *block = NULL;
+        UDisksObject *uobj = NULL;
+        UDisksBlock *block = NULL;
         const char *dev = NULL;
 
-        uobj = storaged_client_peek_object(ctx->clt, path);
+        uobj = udisks_client_peek_object(ctx->clt, path);
         if (!uobj)
             continue;
 
-        enc = storaged_object_peek_encrypted(uobj);
+        enc = udisks_object_peek_encrypted(uobj);
         if (!enc)
             continue;
 
-        block = storaged_object_peek_block(uobj);
+        block = udisks_object_peek_block(uobj);
         if (!block)
             continue;
 
-        dev = storaged_block_get_device(block);
+        dev = udisks_block_get_device(block);
         if (!dev)
             continue;
 
@@ -204,7 +204,7 @@ idle(gpointer misc)
             if (!key)
                 continue;
 
-            success = storaged_encrypted_call_unlock_sync(
+            success = udisks_encrypted_call_unlock_sync(
                     enc, (char *) key->data, options, NULL, NULL, NULL);
             sbuf_free(key);
             if (success)
@@ -222,11 +222,11 @@ static void
 oadd(GDBusObjectManager *mgr, GDBusObject *obj, gpointer misc)
 {
     struct context *ctx = misc;
-    StoragedObject *uobj = NULL;
+    UDisksObject *uobj = NULL;
     const char *path = NULL;
     const char *back = NULL;
-    StoragedBlock *ct = NULL;
-    StoragedBlock *pt = NULL;
+    UDisksBlock *ct = NULL;
+    UDisksBlock *pt = NULL;
     GList *tmp = NULL;
     char *ptmp = NULL;
 
@@ -234,25 +234,25 @@ oadd(GDBusObjectManager *mgr, GDBusObject *obj, gpointer misc)
     if (!path)
         return;
 
-    uobj = storaged_client_peek_object(ctx->clt, path);
+    uobj = udisks_client_peek_object(ctx->clt, path);
     if (!uobj)
         return;
 
-    ct = storaged_object_peek_block(uobj);
+    ct = udisks_object_peek_block(uobj);
     if (!ct)
         return;
 
-    back = storaged_block_get_crypto_backing_device(ct);
+    back = udisks_block_get_crypto_backing_device(ct);
     if (back)
         remove_path(&ctx->lst, back);
 
-    if (!storaged_block_get_hint_auto(ct))
+    if (!udisks_block_get_hint_auto(ct))
         return;
 
-    if (!storaged_object_peek_encrypted(uobj))
+    if (!udisks_object_peek_encrypted(uobj))
         return;
 
-    pt = storaged_client_get_cleartext_block(ctx->clt, ct);
+    pt = udisks_client_get_cleartext_block(ctx->clt, ct);
     if (pt) {
         g_object_unref(pt);
         return;
@@ -300,11 +300,11 @@ child_main(int sock)
     if (!ctx.loop)
         goto error;
 
-    ctx.clt = storaged_client_new_sync(NULL, NULL);
+    ctx.clt = udisks_client_new_sync(NULL, NULL);
     if (!ctx.clt)
         goto error;
 
-    mgr = storaged_client_get_object_manager(ctx.clt);
+    mgr = udisks_client_get_object_manager(ctx.clt);
     if (!mgr)
         goto error;
 
@@ -407,7 +407,7 @@ main(int argc, char *argv[])
         if (data) {
             len = 0;
             if (data->size < sizeof(buf))
-                len = send(pair[0], data->data, data->size, 0);
+                len = send(pair[0], data, data->size, 0);
 
             sbuf_free(data);
             if (len > 0)

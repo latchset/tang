@@ -19,7 +19,7 @@
 
 #pragma once
 
-#include "../core/pkt.h"
+#include "../pkt.h"
 #include "db.h"
 
 TANG_MSG_ERR

@@ -19,8 +19,8 @@
 
 #pragma once
 
-#include "../core/list.h"
-#include "../core/sbuf.h"
+#include "../../../list.h"
+#include "../../sbuf.h"
 
 #include <limits.h>
 #include <stdbool.h>

@@ -17,10 +17,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "clt/adv.h"
-#include "clt/msg.h"
-#include "luks/asn1.h"
-#include "luks/meta.h"
+#include "../adv.h"
+#include "../msg.h"
+#include "asn1.h"
+#include "meta.h"
 
 #include <libcryptsetup.h>
 #include <openssl/sha.h>

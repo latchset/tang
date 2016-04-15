@@ -2,15 +2,15 @@ AC_PREREQ(2.59)
 AC_INIT(tang, 0)
 AC_CANONICAL_SYSTEM
 AC_PROG_CC_C99
-AC_PROG_RANLIB
 AC_PROG_SED
+
+AC_CHECK_LIB([rt], [clock_gettime], [LIBS="-lrt $LIBS"])
 
 AM_INIT_AUTOMAKE([subdir-objects foreign no-dist-gzip dist-bzip2 parallel-tests])
 AM_SILENT_RULES([yes])
 AM_PROG_CC_C_O
-AM_PROG_AR
 
-AC_CHECK_LIB([rt], [clock_gettime], [LIBS="-lrt $LIBS"])
+LT_INIT([disable-static])
 
 PKG_PROG_PKG_CONFIG([0.25])
 PKG_CHECK_MODULES([libcrypto], [libcrypto])
@@ -115,5 +115,13 @@ AC_SUBST([TANG_CFLAGS])
 AC_SUBST([TANG_PORT], [5700])
 AC_DEFINE([TANG_PORT], [5700])
 
-AC_CONFIG_FILES([Makefile src/Makefile src/core/Makefile src/tests/Makefile])
+AC_CONFIG_FILES([
+    Makefile
+    src/Makefile
+    src/srv/Makefile
+    src/clt/Makefile
+    src/clt/luks/Makefile
+    src/clt/luks/askp/Makefile
+    tests/Makefile
+])
 AC_OUTPUT

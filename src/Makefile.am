@@ -1,86 +1,9 @@
-SUBDIRS = core . tests
+SUBDIRS = . srv clt
 
-tangdir = $(localstatedir)/$(PACKAGE_NAME)
-tang_DATA =
+bin_PROGRAMS = tang
+tang_CFLAGS = @TANG_CFLAGS@
 
-libexec_PROGRAMS =
-EXTRA_DIST = clevis.sym
-CLEANFILES =
-AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ -fPIC -DTANG_DB=\"$(tangdir)\"
-LIBS = core/libcore.a @libcrypto_LIBS@
-
-noinst_LIBRARIES = libclt.a libsrv.a libluks.a libaskpass.a
-libclt_a_SOURCES = clt/adv.c clt/adv.h clt/rec.c clt/rec.h clt/msg.c clt/msg.h
-libsrv_a_SOURCES = srv/adv.c srv/adv.h srv/db.c srv/db.h srv/rec.c srv/rec.h srv/srv.c srv/srv.h
-libluks_a_SOURCES = luks/luks.c luks/luks.h luks/meta.c luks/meta.h luks/asn1.c luks/asn1.h
-libaskpass_a_SOURCES = askpass/question.c askpass/question.h askpass/iface.c askpass/iface.h askpass/askp.c askpass/askp.h
-
-bin_PROGRAMS = tang tang-key-gen tang-key-mod tang-key-groups
-
-systemdsystemunit_DATA = tang-keyd.socket tang-keyd.service
-EXTRA_DIST += tang-keyd.socket.in tang-keyd.service.in
-CLEANFILES += tang-keyd.socket tang-keyd.service
-libexec_PROGRAMS += tang-keyd
-tang_keyd_LDADD = libsrv.a $(LIBS)
-
-if USE_CLEVIS
-clevispin_PROGRAMS = tang.so
-tang_so_SOURCES = clevis.c
-tang_so_LDADD = libclt.a @clevis_LIBS@ $(LIBS)
-tang_so_LDFLAGS = -shared -Wl,--version-script=clevis.sym
-endif
-
-if USE_CRYPTSETUP
-bin_PROGRAMS += tang-luks-bind tang-luks-list tang-luks-unbind
-tang_luks_bind_CFLAGS = @cryptsetup_CFLAGS@ $(AM_CFLAGS)
-tang_luks_bind_LDADD = libclt.a libluks.a @cryptsetup_LIBS@ $(LIBS)
-tang_luks_list_CFLAGS = @cryptsetup_CFLAGS@ $(AM_CFLAGS)
-tang_luks_list_LDADD = libluks.a $(LIBS)
-tang_luks_unbind_CFLAGS = @cryptsetup_CFLAGS@ $(AM_CFLAGS)
-tang_luks_unbind_LDADD = libluks.a @cryptsetup_LIBS@ $(LIBS)
-endif
-
-dracutmodules_SCRIPTS = module-setup.sh
-EXTRA_DIST += module-setup.sh.in
-CLEANFILES += module-setup.sh
-
-systemdsystemunit_DATA += tang-luks-askpassd.path tang-luks-askpassd.service
-EXTRA_DIST += tang-luks-askpassd.path.in tang-luks-askpassd.service.in
-CLEANFILES += tang-luks-askpassd.path tang-luks-askpassd.service
-libexec_PROGRAMS += tang-luks-askpassd
-tang_luks_askpassd_LDADD = libaskpass.a libluks.a libclt.a $(LIBS)
-
-autostartdir = $(sysconfdir)/xdg/autostart
-autostart_DATA =
-
-if USE_UDISKS2
-autostart_DATA += tang-luks-udisks2.desktop
-libexec_PROGRAMS += tang-luks-udisks2
-tang_luks_udisks2_CFLAGS = @udisks2_CFLAGS@ $(AM_CFLAGS)
-tang_luks_udisks2_LDADD = libluks.a libclt.a @udisks2_LIBS@ $(LIBS)
-EXTRA_DIST += tang-luks-udisks2.desktop.in
-CLEANFILES += tang-luks-udisks2.desktop
-endif
-
-if USE_STORAGED
-autostart_DATA += tang-luks-storaged.desktop
-libexec_PROGRAMS += tang-luks-storaged
-tang_luks_storaged_CFLAGS = @storaged_CFLAGS@ $(AM_CFLAGS)
-tang_luks_storaged_LDADD = libluks.a libclt.a @storaged_LIBS@ $(LIBS)
-EXTRA_DIST += tang-luks-storaged.desktop.in
-CLEANFILES += tang-luks-storaged.desktop
-endif
-
-install-exec-hook:
-	file=$(DESTDIR)$(libexecdir)/tang-luks-storaged
-	if [ -x $file ]; then chmod 4711 $file; fi
-	file=$(DESTDIR)$(libexecdir)/tang-luks-udisks2
-	if [ -x $file ]; then chmod 4711 $file; fi
-
-%: %.in
-	$(AM_V_GEN)$(SED) \
-		-e 's,@libexecdir\@,$(libexecdir),g' \
-		-e 's,@TANG_DB\@,$(tangdir),g' \
-		-e 's,@TANG_PORT\@,$(TANG_PORT),g' \
-		$(srcdir)/$@.in > $@
-
+noinst_LTLIBRARIES = libcore.la
+libcore_la_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@
+libcore_la_LIBADD = @libcrypto_LIBS@
+libcore_la_SOURCES = asn1.c asn1.h conv.c conv.h pkt.c pkt.h list.c list.h

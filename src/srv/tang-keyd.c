@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "srv/srv.h"
+#include "srv.h"
 
 #include <sys/epoll.h>
 #include <sys/socket.h>

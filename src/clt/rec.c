@@ -18,7 +18,7 @@
  */
 
 #include "rec.h"
-#include "../core/conv.h"
+#include "../conv.h"
 
 #include <openssl/objects.h>
 #include <openssl/rand.h>

@@ -19,7 +19,6 @@
 
 #define _GNU_SOURCE
 #include "question.h"
-#include "../core/conv.h"
 
 #include <sys/mman.h>
 #include <sys/socket.h>

@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "../core/conv.h"
+#include "../conv.h"
 #include "adv.h"
 #include "rec.h"
 

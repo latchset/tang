@@ -17,9 +17,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "../core/conv.h"
-#include "../clt/adv.h"
-#include "../clt/msg.h"
+#include "../src/conv.h"
+#include "../src/clt/adv.h"
+#include "../src/clt/msg.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -40,6 +40,8 @@
 #include <openssl/pem.h>
 
 #define SD_LISTEN_FDS_START 3
+#define KEYD_BIN "../src/srv/tang-keyd"
+#define KEY_GEN_BIN "../src/srv/tang-key-gen"
 
 #define test(cond, cmd) \
     if (!(cond)) { \
@@ -68,7 +70,7 @@ keygen(const char *dbdir, const char *name, const char *grpname,
         return NULL;
 
     if (snprintf(cmd, sizeof(cmd),
-                 "../tang-key-gen -%c %s %s -f %s >/dev/null",
+                 KEY_GEN_BIN " -%c %s %s -f %s >/dev/null",
                  adv ? 'A' : 'a', grpname, use, fname) <= 0)
         return NULL;
 
@@ -459,7 +461,7 @@ main(int argc, char *argv[])
             close(sock6);
         }
 
-        execlp("../tang-keyd", "../tang-keyd", "-d", tempdir, NULL);
+        execlp(KEYD_BIN, KEYD_BIN, "-d", tempdir, NULL);
         teste(false);
     }
 

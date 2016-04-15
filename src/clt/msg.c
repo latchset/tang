@@ -18,7 +18,7 @@
  */
 
 #include "msg.h"
-#include "../core/pkt.h"
+#include "../pkt.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>

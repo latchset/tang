@@ -19,8 +19,8 @@
 
 #pragma once
 
-#include "../core/sbuf.h"
-#include "../core/asn1.h"
+#include "../asn1.h"
+#include "sbuf.h"
 
 EC_KEY *
 rec_req(TANG_MSG_REC_REQ *rec, BN_CTX *ctx);

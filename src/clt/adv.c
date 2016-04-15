@@ -18,7 +18,7 @@
  */
 
 #include "adv.h"
-#include "../core/conv.h"
+#include "../conv.h"
 
 #include <openssl/evp.h>
 #include <openssl/ecdsa.h>

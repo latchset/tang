@@ -17,28 +17,19 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/**
- * The sole purpose of this file is to encapsulate all code related
- * to parsing the LUKS v1 header. It is used to calculate the hole
- * in the LUKS v1 header that arises due to alignment. We will
- * exploit this hole for metadata storage.
- */
-
 #pragma once
 
-#include "../core/asn1.h"
-#include "../core/sbuf.h"
+#include "../sbuf.h"
 
-typedef struct {
-    TANG_MSG_REC_REQ *rec;
-    ASN1_UTF8STRING *hostname;
-    ASN1_UTF8STRING *service;
-} TANG_LUKS;
-
-DECLARE_ASN1_FUNCTIONS(TANG_LUKS)
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 sbuf_t *
-TANG_LUKS_to_sbuf(TANG_LUKS *tl);
+meta_read(const char *device, uint8_t slot);
 
-TANG_LUKS *
-TANG_LUKS_from_sbuf(const sbuf_t *buf);
+bool
+meta_write(const char *device, uint8_t slot, const sbuf_t *buf);
+
+bool
+meta_erase(const char *device, uint8_t slot);

@@ -19,8 +19,8 @@
 
 #pragma once
 
-#include "../core/asn1.h"
-#include "../core/pkt.h"
+#include "../asn1.h"
+#include "../pkt.h"
 
 typedef int srv_req(int sock, TANG_MSG **req, void *misc);
 typedef int srv_rep(int sock, const pkt_t *pkt, void *misc);

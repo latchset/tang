@@ -17,10 +17,11 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "adv.h"
+#include "rec.h"
+#include "msg.h"
+
 #include <clevis.h>
-#include "clt/adv.h"
-#include "clt/rec.h"
-#include "clt/msg.h"
 #include <string.h>
 
 #include <openssl/sha.h>

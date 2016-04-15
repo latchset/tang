@@ -19,8 +19,8 @@
 
 #pragma once
 
-#include "../core/sbuf.h"
-#include "../core/asn1.h"
+#include "../asn1.h"
+#include "sbuf.h"
 
 bool
 adv_signed_by(const TANG_MSG_ADV_REP *rep, EC_KEY *key, BN_CTX *ctx);

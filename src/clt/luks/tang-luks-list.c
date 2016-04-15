@@ -17,9 +17,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "luks/asn1.h"
-#include "luks/luks.h"
-#include "luks/meta.h"
+#include "asn1.h"
+#include "luks.h"
+#include "meta.h"
 
 #include <argp.h>
 #include <string.h>

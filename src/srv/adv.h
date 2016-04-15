@@ -19,7 +19,7 @@
 
 #pragma once
 
-#include "../core/pkt.h"
+#include "../pkt.h"
 #include "db.h"
 
 typedef struct adv adv_t;

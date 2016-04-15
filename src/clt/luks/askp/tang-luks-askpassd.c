@@ -18,13 +18,13 @@
  */
 
 #define _GNU_SOURCE
-#include "askpass/askp.h"
-#include "askpass/iface.h"
-#include "luks/asn1.h"
-#include "luks/luks.h"
-#include "luks/meta.h"
-#include "clt/rec.h"
-#include "clt/msg.h"
+#include "askp.h"
+#include "iface.h"
+#include "../asn1.h"
+#include "../luks.h"
+#include "../meta.h"
+#include "../../rec.h"
+#include "../../msg.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>

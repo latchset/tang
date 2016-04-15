@@ -4,7 +4,7 @@ tangdir = $(localstatedir)/$(PACKAGE_NAME)
 tang_DATA =
 
 libexec_PROGRAMS =
-EXTRA_DIST =
+EXTRA_DIST = clevis.sym
 CLEANFILES =
 AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ -fPIC -DTANG_DB=\"$(tangdir)\"
 LIBS = libcore.a @libcrypto_LIBS@

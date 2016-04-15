@@ -14,6 +14,7 @@ tang_keyd_SOURCES = adv.c adv.h db.c db.h rec.c rec.h srv.c srv.h tang-keyd.c
 
 install-data-hook:
 	mkdir -p $(DESTDIR)$(tangdir)
+	chmod 0700 $(DESTDIR)$(tangdir)
 
 %: %.in
 	$(AM_V_GEN)$(SED) \

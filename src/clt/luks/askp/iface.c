@@ -20,7 +20,6 @@
 #define _GNU_SOURCE
 #include "iface.h"
 
-#include <stdalign.h>
 #include <errno.h>
 #include <unistd.h>
 
@@ -69,7 +68,7 @@ iface_new(struct pollfd *fd)
 bool
 iface_new_route(struct pollfd *fd)
 {
-    alignas(struct nlmsghdr) uint8_t buf[4096];
+    struct nlmsghdr buf[256];
     size_t bytes;
     int len;
 
@@ -83,7 +82,7 @@ iface_new_route(struct pollfd *fd)
     }
 
     bytes = len;
-    for (struct nlmsghdr *msghdr = (struct nlmsghdr *) buf;
+    for (struct nlmsghdr *msghdr = buf;
          NLMSG_OK(msghdr, bytes) && msghdr->nlmsg_type != NLMSG_DONE;
          msghdr = NLMSG_NEXT(msghdr, bytes)) {
         struct rtmsg *rtmsg = NLMSG_DATA(msghdr);

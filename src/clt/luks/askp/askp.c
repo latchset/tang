@@ -26,7 +26,6 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <stdalign.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -43,17 +42,17 @@ typedef struct {
 } askpi_t;
 
 static struct inotify_event *
-for_event(struct inotify_event *e, uint8_t *buf, size_t len)
+for_event(struct inotify_event *e, struct inotify_event *buf, size_t len)
 #define for_event(n, b, l) \
     for (struct inotify_event *n = NULL; (n = for_event(n, b, l)); )
 {
     uint8_t *tmp;
 
     if (e == NULL)
-        return (struct inotify_event *) buf;
+        return buf;
 
-    tmp = (uint8_t *) e + sizeof(struct inotify_event) + e->len;
-    if (tmp < buf + len)
+    tmp = (uint8_t *) &e[1] + e->len;
+    if (tmp < (uint8_t *) buf + len)
         return (struct inotify_event *) tmp;
 
     return NULL;
@@ -114,7 +113,7 @@ error:
 bool
 askp_new_question(askp_t *askp, struct pollfd *fd)
 {
-    alignas(struct inotify_event) uint8_t buf[8192];
+    struct inotify_event buf[512];
     bool havenew = false;
     ssize_t len;
 

@@ -57,67 +57,71 @@ static char tempdir[] = "/tmp/tangXXXXXX";
 static pid_t pid;
 
 static EC_KEY *
-keygen(const char *grpname, TANG_KEY_USE use, bool adv)
+keygen(const char *grpname, const char *name, TANG_KEY_USE use, bool adv)
 {
-    char fname[PATH_MAX];
-    char cmd[PATH_MAX*2];
+    char path[PATH_MAX] = {};
     EC_GROUP *grp = NULL;
     EC_KEY *key = NULL;
-    FILE *f = NULL;
-    size_t len = 0;
-    char usec;
+    FILE *file = NULL;
+    int nid;
+
+    nid = OBJ_txt2nid(grpname);
+    if (nid == NID_undef)
+        goto error;
+
+    grp = EC_GROUP_new_by_curve_name(nid);
+    if (!grp)
+        goto error;
+
+    EC_GROUP_set_asn1_flag(grp, OPENSSL_EC_NAMED_CURVE);
+    EC_GROUP_set_point_conversion_form(grp, POINT_CONVERSION_COMPRESSED);
+
+    key = EC_KEY_new();
+    if (!key)
+        goto error;
+
+    if (EC_KEY_set_group(key, grp) <= 0)
+        goto error;
+
+    if (EC_KEY_generate_key(key) <= 0)
+        goto error;
+
+    if (strlen(tempdir) + strlen(name) + 7 > sizeof(path))
+        goto error;
+
+    strcpy(path, tempdir);
+    strcat(path, "/");
+
+    if (!adv)
+        strcat(path, ".");
+
+    strcat(path, name);
 
     switch (use) {
-    case TANG_KEY_USE_SIG: usec = 's'; break;
-    case TANG_KEY_USE_REC: usec = 'r'; break;
-    default: return NULL;
+    case TANG_KEY_USE_SIG: strcat(path, ".sig"); break;
+    case TANG_KEY_USE_REC: strcat(path, ".rec"); break;
+    default: goto error;
     }
 
-    if (snprintf(cmd, sizeof(cmd), KEY_GEN_BIN " -%c -g %s -%c -d %s",
-                 adv ? 'A' : 'a', grpname, usec, tempdir) <= 0)
-        return NULL;
+    file = fopen(path, "wx");
+    if (!file)
+        goto error;
 
-    f = popen(cmd, "r");
-    if (f == NULL)
-        return NULL;
+    if (PEM_write_ECPKParameters(file, grp) <= 0)
+        goto error;
 
-    memset(fname, 0, sizeof(fname));
-    strcat(fname, tempdir);
-    strcat(fname, "/");
-
-    len = strlen(fname);
-    len = fread(&fname[len], 1, sizeof(fname) - len - 1, f);
-    fclose(f);
-    if (len <= 0)
-        return NULL;
-
-    for (size_t i = 0; fname[i]; i++) {
-        if (fname[i] == '\n') {
-            fname[i] = '\0';
-            break;
-        }
-    }
-
-    f = fopen(fname, "r");
-    if (!f)
-        return NULL;
-
-    grp = PEM_read_ECPKParameters(f, NULL, NULL, NULL);
-    if (grp) {
-        if (EC_GROUP_get_curve_name(grp) != NID_undef) {
-            key = PEM_read_ECPrivateKey(f, NULL, NULL, NULL);
-            if (key) {
-                if (EC_KEY_set_group(key, grp) <= 0) {
-                    EC_KEY_free(key);
-                    key = NULL;
-                }
-            }
-        }
-    }
+    if (PEM_write_ECPrivateKey(file, key, NULL, NULL, 0, NULL, NULL) <= 0)
+        goto error;
 
     EC_GROUP_free(grp);
-    fclose(f);
+    fclose(file);
     return key;
+
+error:
+    EC_GROUP_free(grp);
+    EC_KEY_free(key);
+    fclose(file);
+    return NULL;
 }
 
 static void
@@ -496,8 +500,8 @@ main(int argc, char *argv[])
         teste(stage0(&ipv6, ctx));
 
     /* Make some unadvertised keys. */
-    reca = keygen("secp384r1", TANG_KEY_USE_REC, false);
-    siga = keygen("secp384r1", TANG_KEY_USE_SIG, false);
+    reca = keygen("secp384r1", "reca", TANG_KEY_USE_REC, false);
+    siga = keygen("secp384r1", "siga", TANG_KEY_USE_SIG, false);
     teste(reca);
     teste(siga);
     usleep(100000); /* Let the daemon have time to pick up the new files. */
@@ -507,8 +511,8 @@ main(int argc, char *argv[])
         teste(stage1(&ipv6, reca, siga, ctx));
 
     /* Make some advertised keys. */
-    recA = keygen("secp384r1", TANG_KEY_USE_REC, true);
-    sigA = keygen("secp384r1", TANG_KEY_USE_SIG, true);
+    recA = keygen("secp384r1", "recA", TANG_KEY_USE_REC, true);
+    sigA = keygen("secp384r1", "sigA", TANG_KEY_USE_SIG, true);
     teste(recA);
     teste(sigA);
     usleep(100000); /* Let the daemon have time to pick up the new files. */

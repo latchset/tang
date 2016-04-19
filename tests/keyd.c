@@ -53,29 +53,50 @@
 #define teste(cond) test(cond, exit(EXIT_FAILURE))
 #define testb(cond) test(cond, return false)
 
-static char tempdir[] = "/var/tmp/tangXXXXXX";
+static char tempdir[] = "/tmp/tangXXXXXX";
 static pid_t pid;
 
 static EC_KEY *
-keygen(const char *dbdir, const char *name, const char *grpname,
-       const char *use, bool adv)
+keygen(const char *grpname, TANG_KEY_USE use, bool adv)
 {
     char fname[PATH_MAX];
     char cmd[PATH_MAX*2];
     EC_GROUP *grp = NULL;
     EC_KEY *key = NULL;
     FILE *f = NULL;
+    size_t len = 0;
+    char usec;
 
-    if (snprintf(fname, sizeof(fname), "%s/%s", dbdir, name) <= 0)
+    switch (use) {
+    case TANG_KEY_USE_SIG: usec = 's'; break;
+    case TANG_KEY_USE_REC: usec = 'r'; break;
+    default: return NULL;
+    }
+
+    if (snprintf(cmd, sizeof(cmd), KEY_GEN_BIN " -%c -g %s -%c -d %s",
+                 adv ? 'A' : 'a', grpname, usec, tempdir) <= 0)
         return NULL;
 
-    if (snprintf(cmd, sizeof(cmd),
-                 KEY_GEN_BIN " -%c %s %s -f %s >/dev/null",
-                 adv ? 'A' : 'a', grpname, use, fname) <= 0)
+    f = popen(cmd, "r");
+    if (f == NULL)
         return NULL;
 
-    if (system(cmd) != 0)
+    memset(fname, 0, sizeof(fname));
+    strcat(fname, tempdir);
+    strcat(fname, "/");
+
+    len = strlen(fname);
+    len = fread(&fname[len], 1, sizeof(fname) - len - 1, f);
+    fclose(f);
+    if (len <= 0)
         return NULL;
+
+    for (size_t i = 0; fname[i]; i++) {
+        if (fname[i] == '\n') {
+            fname[i] = '\0';
+            break;
+        }
+    }
 
     f = fopen(fname, "r");
     if (!f)
@@ -475,8 +496,8 @@ main(int argc, char *argv[])
         teste(stage0(&ipv6, ctx));
 
     /* Make some unadvertised keys. */
-    reca = keygen(tempdir, "reca", "secp384r1", "rec", false);
-    siga = keygen(tempdir, "siga", "secp384r1", "sig", false);
+    reca = keygen("secp384r1", TANG_KEY_USE_REC, false);
+    siga = keygen("secp384r1", TANG_KEY_USE_SIG, false);
     teste(reca);
     teste(siga);
     usleep(100000); /* Let the daemon have time to pick up the new files. */
@@ -486,8 +507,8 @@ main(int argc, char *argv[])
         teste(stage1(&ipv6, reca, siga, ctx));
 
     /* Make some advertised keys. */
-    recA = keygen(tempdir, "recA", "secp384r1", "rec", true);
-    sigA = keygen(tempdir, "sigA", "secp384r1", "sig", true);
+    recA = keygen("secp384r1", TANG_KEY_USE_REC, true);
+    sigA = keygen("secp384r1", TANG_KEY_USE_SIG, true);
     teste(recA);
     teste(sigA);
     usleep(100000); /* Let the daemon have time to pick up the new files. */

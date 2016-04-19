@@ -38,82 +38,22 @@
 
 struct options {
     const char *dbdir;
-    const char *file;
-    const char *use;
     EC_GROUP *grp;
-    bool show;
-    bool hide;
+    struct {
+        bool show : 1;
+        bool hide : 1;
+        bool rec : 1;
+        bool sig : 1;
+    };
 };
 
 const char *argp_program_version = VERSION;
-
-/* Generate len random bytes. Convert to null-terminated hex (2 * len + 1). */
-static bool
-hexrandom(size_t len, char *hex)
-{
-    static const char chrs[] = "0123456789abcdef";
-    unsigned char bin[len];
-    FILE *file = NULL;
-
-    file = fopen("/dev/urandom", "r");
-    if (!file)
-        return errno;
-
-    if (fread(bin, 1, sizeof(bin), file) != sizeof(bin)) {
-        fclose(file);
-        return EIO;
-    }
-    fclose(file);
-
-    for (size_t i = 0; i < len; i++) {
-        hex[i * 2 + 0] = chrs[bin[i] >> 0 & 0x0f];
-        hex[i * 2 + 1] = chrs[bin[i] >> 4 & 0x0f];
-    }
-
-    hex[len * 2] = 0;
-    return 0;
-}
-
-static int
-keyfilegen(const char *dbdir, char path[PATH_MAX])
-{
-    char hex[33];
-
-    hexrandom(sizeof(hex) / 2, hex);
-
-    if (strlen(dbdir) + 34 > PATH_MAX)
-        return E2BIG;
-
-    strcpy(path, dbdir);
-    strcat(path, "/");
-    strcat(path, hex);
-    return 0;
-}
-
-static const char *
-get_use(const char *use)
-{
-    static const char *uses[] = {
-        "recovery",
-        "signature",
-        NULL
-    };
-
-    if (strlen(use) < 3)
-        return false;
-
-    for (int i = 0; uses[i]; i++) {
-        if (strncmp(uses[i], use, strlen(use)) == 0)
-          return uses[i];
-    }
-
-    return use;
-}
 
 static error_t
 parser(int key, char* arg, struct argp_state* state)
 {
     struct options *opts = state->input;
+    int nid;
 
     switch (key) {
     case SUMMARY:
@@ -128,42 +68,65 @@ parser(int key, char* arg, struct argp_state* state)
         opts->hide = true;
         return 0;
 
+    case 'r':
+        opts->rec = true;
+        return 0;
+
+    case 's':
+        opts->sig = true;
+        return 0;
+
     case 'd':
+        if (strlen(arg) > PATH_MAX / 2) {
+            fprintf(stderr, "The specified dbdir is too long\n");
+            return E2BIG;
+        }
+
         opts->dbdir = arg;
         return 0;
 
-    case 'f':
-        opts->file = arg;
-        return 0;
+    case 'g':
+        if (opts->grp)
+           EC_GROUP_free(opts->grp);
 
-    case ARGP_KEY_ARG:
-        if (!opts->grp) {
-            int nid = 0;
+        if (strcmp(arg, "list") == 0) {
+            size_t ncurves = 0;
 
-            nid = OBJ_txt2nid(arg);
-            if (nid == NID_undef) {
-                fprintf(stderr, "Invalid group: %s\n", arg);
-                return EINVAL;
+            ncurves = EC_get_builtin_curves(NULL, 0);
+            if (ncurves == 0)
+                exit(EX_OSERR);
+
+            EC_builtin_curve curves[ncurves];
+            if (EC_get_builtin_curves(curves, ncurves) != ncurves)
+                exit(EX_OSERR);
+
+            for (size_t i = 0; i < ncurves; i++) {
+                EC_GROUP *grp = NULL;
+
+                grp = EC_GROUP_new_by_curve_name(curves[i].nid);
+                if (!grp)
+                    continue;
+
+                EC_GROUP_free(grp);
+                printf("%s\n", OBJ_nid2sn(curves[i].nid));
             }
 
-            opts->grp = EC_GROUP_new_by_curve_name(nid);
-            if (!opts->grp) {
-                fprintf(stderr, "Unsupported group: %s\n", arg);
-                return EINVAL;
-            }
-
-            return 0;
-        } else if (!opts->use) {
-            opts->use = get_use(arg);
-            if (!opts->use) {
-                fprintf(stderr, "Invalid use: %s\n", arg);
-                return EINVAL;
-            }
-
-            return 0;
+            exit(EX_OK);
         }
 
-        return ARGP_ERR_UNKNOWN;
+        nid = OBJ_txt2nid(arg);
+        if (nid == NID_undef) {
+            fprintf(stderr, "Invalid group: %s\n", arg);
+            return EINVAL;
+        }
+
+        opts->grp = EC_GROUP_new_by_curve_name(nid);
+        if (!opts->grp) {
+            fprintf(stderr, "Unsupported group: %s\n", arg);
+            return EINVAL;
+        }
+
+        return 0;
 
     case ARGP_KEY_END:
         if (!opts->grp) {
@@ -172,14 +135,15 @@ parser(int key, char* arg, struct argp_state* state)
             return EINVAL;
         }
 
-        if (!opts->use) {
-            fprintf(stderr, "Use MUST be specified!\n\n");
+        if (!(opts->hide ^ opts->show)) {
+            fprintf(stderr, "Either show or hide is required\n\n");
             argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
             return EINVAL;
         }
 
-        if (!(opts->hide ^ opts->show)) {
-            fprintf(stderr, "You MUST specify either show or hide\n\n");
+        if (!(opts->rec ^ opts->sig)) {
+            fprintf(stderr, "Either recovery or signature is required\n\n");
+            argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
             return EINVAL;
         }
 
@@ -193,6 +157,21 @@ parser(int key, char* arg, struct argp_state* state)
     }
 }
 
+static size_t
+curftime(char *out, size_t max)
+{
+    struct tm tm = {};
+    time_t t = -1;
+
+    if (time(&t) == -1)
+        return 0;
+
+    if (!gmtime_r(&t, &tm))
+        return 0;
+
+    return strftime(out, max, "%Y%m%dT%H%M%S", &tm);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -200,18 +179,19 @@ main(int argc, char *argv[])
     const struct argp argp = {
         .options = (const struct argp_option[]) {
             { "summary", SUMMARY, .flags = OPTION_HIDDEN },
-            { "dbdir", 'd', "dir", .doc = "database directory" },
-            { "file", 'f', "file", .doc = "output key file" },
-            { "show", 'A', .doc = "key advertisement" },
-            { "hide", 'a', .doc = "key advertisement" },
+            { "dbdir", 'd', "dir", .doc = "Key database directory" },
+            { "show", 'A', .doc = "Advertise the key" },
+            { "hide", 'a', .doc = "Do not advertise the key" },
+            { "signature", 's', .doc = "Use key for signatures" },
+            { "recovery", 'r', .doc = "Use key for recovery" },
+            { "group", 'g', "group", .doc = "Key group ('list' for options)" },
             {}
         },
         .parser = parser,
-        .args_doc = "GROUP <recovery|signature>"
     };
-    char filename[PATH_MAX];
     EC_KEY *key = NULL;
     FILE *file = NULL;
+    char fn[PATH_MAX];
     int bytes = 0;
 
     if (argp_parse(&argp, argc, argv, 0, NULL, &opts) != 0)
@@ -238,28 +218,36 @@ main(int argc, char *argv[])
         return EX_OSERR;
     }
 
-    if (opts.file) {
-        if (strlen(opts.file) > sizeof(filename) - 1) {
-            fprintf(stderr, "Filename too long: %s\n", opts.file);
+    while (true) {
+        char timestamp[16] = {};
+
+        if (curftime(timestamp, sizeof(timestamp)) == 0) {
+            fprintf(stderr, "Unable to get current time\n");
             EC_GROUP_free(opts.grp);
             EC_KEY_free(key);
-            return EX_USAGE;
+            return EX_OSERR;
         }
 
-        strcpy(filename, opts.file);
-        file = fopen(filename, "wx");
-    } else {
-        do {
-            if (keyfilegen(opts.dbdir, filename) != 0) {
-                fprintf(stderr, "Error generating keyfile name\n");
-                EC_GROUP_free(opts.grp);
-                EC_KEY_free(key);
-                return EX_OSERR;
-            }
+        strcpy(fn, opts.dbdir);
+        strcat(fn, "/");
 
-            file = fopen(filename, "wx");
-        } while (!file && errno == EEXIST);
+        if (opts.hide)
+            strcat(fn, ".");
+
+        strcat(fn, timestamp);
+
+        if (opts.rec)
+            strcat(fn, ".rec");
+        else if (opts.sig)
+            strcat(fn, ".sig");
+
+        file = fopen(fn, "wx");
+        if (file || errno != EEXIST)
+            break;
+
+        sleep(1);
     }
+
     if (!file) {
         fprintf(stderr, "Unable to create output file\n");
         EC_GROUP_free(opts.grp);
@@ -267,38 +255,17 @@ main(int argc, char *argv[])
         return EX_IOERR;
     }
 
-    if (setxattr(filename, "user.tang.use", opts.use, 3, XATTR_CREATE) != 0) {
-        fprintf(stderr, "Error setting key usage\n");
-        EC_GROUP_free(opts.grp);
-        unlink(filename);
-        EC_KEY_free(key);
-        fclose(file);
-        return EX_IOERR;
-    }
-
-    if (opts.show && !opts.hide) {
-        if (setxattr(filename, "user.tang.adv", "", 0, XATTR_CREATE) != 0) {
-            fprintf(stderr, "Error setting key advertisement\n");
-            EC_GROUP_free(opts.grp);
-            unlink(filename);
-            EC_KEY_free(key);
-            fclose(file);
-            return EX_IOERR;
-        }
-    }
-
     if (PEM_write_ECPKParameters(file, opts.grp) <= 0 ||
         PEM_write_ECPrivateKey(file, key, NULL, NULL, 0, NULL, NULL) <= 0) {
-        unlink(filename);
         fprintf(stderr, "Error writing key\n");
+        unlink(fn);
         EC_GROUP_free(opts.grp);
         EC_KEY_free(key);
         fclose(file);
         return EX_IOERR;
     }
 
-    if (!opts.file)
-        fprintf(stdout, "%s\n", basename(filename));
+    fprintf(stdout, "%s\n", basename(fn));
 
     EC_GROUP_free(opts.grp);
     EC_KEY_free(key);

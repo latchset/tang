@@ -3,7 +3,7 @@ tangdir = $(localstatedir)/$(PACKAGE_NAME)
 AM_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@ -DTANG_DB=\"$(tangdir)\"
 LIBS = ../libcore.la
 
-bin_PROGRAMS = tang-key-gen tang-key-mod tang-key-groups
+bin_PROGRAMS = tang-key-gen
 
 systemdsystemunit_DATA = tang-keyd.socket tang-keyd.service
 EXTRA_DIST = tang-keyd.socket.in tang-keyd.service.in

@@ -43,56 +43,48 @@ db_key_free(db_key_t *key)
     free(key);
 }
 
-static int
-load_attrs(db_t *db, db_key_t *key)
+static inline bool
+get_adv(const char *name)
 {
-    char path[PATH_MAX+1];
-    char attr[NAME_MAX];
-    int r;
+    return name[0] != '.';
+}
 
-    r = snprintf(path, sizeof(path), "%s/%s", db->path, key->name);
-    if (r >= (typeof(r)) sizeof(path)) return E2BIG;
-    if (r < 0) return errno;
+static inline TANG_KEY_USE
+get_use(const char *name)
+{
+    size_t len = strlen(name);
 
-    key->adv = false;
-    r = getxattr(path, "user.tang.adv", attr, sizeof(attr));
-    if (r >= 0)
-        key->adv = true;
+    if (len > 4) {
+        if (strcmp(&name[len - 4], ".rec") == 0)
+            return TANG_KEY_USE_REC;
 
-    key->use = TANG_KEY_USE_NONE;
-    r = getxattr(path, "user.tang.use", attr, sizeof(attr));
-    if (r >= 0) {
-        if (strncmp(attr, "rec", MIN(r, 3)) == 0)
-            key->use = TANG_KEY_USE_REC;
-        else if (strncmp(attr, "sig", MIN(r, 3)) == 0)
-            key->use = TANG_KEY_USE_SIG;
+        if (strcmp(&name[len - 4], ".sig") == 0)
+            return TANG_KEY_USE_SIG;
     }
 
-    return 0;
+    return TANG_KEY_USE_NONE;
 }
 
 static int
 load(db_t *db, const char *name)
 {
-    char path[PATH_MAX+1];
     EC_GROUP *grp = NULL;
     db_key_t *key = NULL;
+    char path[PATH_MAX];
     FILE *file = NULL;
     ssize_t r;
 
     r = snprintf(path, sizeof(path), "%s/%s", db->path, name);
-    if (r >= (typeof(r)) sizeof(path)) return E2BIG;
+    if (r >= (ssize_t) sizeof(path)) return E2BIG;
     if (r < 0) return errno;
 
     key = calloc(1, sizeof(*key));
     if (!key)
         return errno;
 
-    if (strlen(name) >= sizeof(key->name)) {
-        db_key_free(key);
-        return E2BIG;
-    }
     strncpy(key->name, name, sizeof(key->name));
+    key->adv = get_adv(name);
+    key->use = get_use(name);
 
     file = fopen(path, "r");
     if (!file) {
@@ -122,12 +114,6 @@ load(db_t *db, const char *name)
         return EINVAL;
     }
     EC_GROUP_free(grp);
-
-    r = load_attrs(db, key);
-    if (r != 0) {
-        db_key_free(key);
-        return r;
-    }
 
     list_add_after(&db->keys, &key->list);
     return 0;
@@ -159,7 +145,7 @@ db_open(const char *dbdir, db_t **db)
     }
 
     r = inotify_add_watch(tmp->fd, tmp->path,
-                          IN_DELETE | IN_MOVE | IN_CLOSE_WRITE | IN_ATTRIB);
+                          IN_DELETE | IN_MOVE | IN_CLOSE_WRITE);
     if (r < 0) {
         db_free(tmp);
         return errno;
@@ -218,19 +204,13 @@ db_event(db_t *db)
     for (ssize_t i = 0; i < bytes; i += sizeof(*ev) + ev->len) {
         ev = (struct inotify_event *) &buf[i];
 
-        if (ev->len == 0 || ev->name[0] == '.')
+        if (ev->len == 0)
             continue;
 
         LIST_FOREACH(&db->keys, db_key_t, k, list) {
             if (strcmp(ev->name, k->name) == 0) {
-                if (ev->mask == IN_ATTRIB) {
-                    r = load_attrs(db, k);
-                    if (r != 0)
-                        return r;
-                } else {
-                    list_pop(&k->list);
-                    db_key_free(k);
-                }
+                list_pop(&k->list);
+                db_key_free(k);
             }
         }
 

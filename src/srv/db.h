@@ -33,7 +33,7 @@ typedef struct {
 } db_t;
 
 typedef struct {
-    char name[NAME_MAX];
+    char name[PATH_MAX];
     list_t list;
     EC_KEY *key;
     TANG_KEY_USE use;

@@ -296,14 +296,13 @@ main(int argc, char *argv[])
     if (!rec)
         goto egress;
 
-    hex = sbuf_new(key->size * 2 + 1);
-    for (size_t i = 0; i < key->size; i++)
-        snprintf((char *) &hex->data[i * 2], 3, "%02X", key->data[i]);
+    hex = sbuf_to_hex(key, "");
+    if (!hex)
+        goto egress;
 
     slot = crypt_keyslot_add_by_passphrase(cd, CRYPT_ANY_SLOT, NULL,
                                            0, (char *) hex->data,
                                            hex->size - 1);
-    OPENSSL_free(key);
     if (slot < 0) {
         TANG_MSG_REC_REQ_free(rec);
         goto egress;

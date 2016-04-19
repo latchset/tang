@@ -18,6 +18,7 @@
  */
 
 #include "asn1.h"
+#include "luks.h"
 #include "meta.h"
 #include "../msg.h"
 
@@ -29,7 +30,6 @@
 
 #define _STR(x) # x
 #define STR(x) _STR(x)
-#define SUMMARY 192
 
 struct options {
     const char *device;
@@ -42,9 +42,17 @@ argp_parser(int key, char* arg, struct argp_state* state)
     struct options *opts = state->input;
 
     switch (key) {
-    case SUMMARY:
-        fprintf(stderr, "Unbind a LUKS device from Tang");
-        return EINVAL;
+    case 'd':
+        opts->device = arg;
+        return 0;
+
+    case 'h':
+        strncpy(opts->params.hostname, arg, sizeof(opts->params.hostname) - 1);
+        return 0;
+
+    case 's':
+        strncpy(opts->params.service, arg, sizeof(opts->params.service) - 1);
+        return 0;
 
     case ARGP_KEY_END:
         if (!opts->device) {
@@ -53,37 +61,8 @@ argp_parser(int key, char* arg, struct argp_state* state)
             return EINVAL;
         }
 
-        if (strlen(opts->params.hostname) == 0) {
-            fprintf(stderr, "Host MUST be specified!\n");
-            argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
-            return EINVAL;
-        }
-
         if (strlen(opts->params.service) == 0)
             strcpy(opts->params.service, STR(TANG_PORT));
-
-        return 0;
-
-    case ARGP_KEY_ARG:
-        if (!opts->device) {
-            opts->device = arg;
-        } else if (strlen(opts->params.hostname) == 0) {
-            if (strlen(arg) >= sizeof(opts->params.hostname)) {
-                fprintf(stderr, "Hostname is too long!\n");
-                return EINVAL;
-            }
-
-            strncpy(opts->params.hostname, arg, sizeof(opts->params.hostname));
-        } else if (strlen(opts->params.service) == 0) {
-            if (strlen(arg) >= sizeof(opts->params.service)) {
-                fprintf(stderr, "Service is too long!\n");
-                return EINVAL;
-            }
-
-            strncpy(opts->params.service, arg, sizeof(opts->params.service));
-        } else {
-            return ARGP_ERR_UNKNOWN;
-        }
 
         return 0;
 
@@ -95,14 +74,16 @@ argp_parser(int key, char* arg, struct argp_state* state)
 const char *argp_program_version = VERSION;
 
 static const struct argp_option argp_options[] = {
-    { "summary", SUMMARY, .flags = OPTION_HIDDEN },
+    { "device",   'd', "device",   .doc = "LUKSv1 device (required)" },
+    { "hostname", 'h', "hostname", .doc = "Remote server hostname" },
+    { "service",  's', "service",  .doc = "Remote server service" },
     {}
 };
 
 static const struct argp argp = {
     .options = argp_options,
     .parser = argp_parser,
-    .args_doc = "DEVICE HOSTNAME [SERVICE]"
+    .args_doc = ""
 };
 
 int
@@ -115,6 +96,31 @@ main(int argc, char *argv[])
 
     if (argp_parse(&argp, argc, argv, 0, NULL, &opts) != 0)
         return EX_OSERR;
+
+    if (strlen(opts.params.hostname) == 0) {
+        for (int slot = 0; slot < LUKS_NUMKEYS; slot++) {
+            TANG_LUKS *tl = NULL;
+            sbuf_t *buf = NULL;
+
+            buf = meta_read(opts.device, slot);
+            if (!buf)
+                continue;
+
+            tl = TANG_LUKS_from_sbuf(buf);
+            sbuf_free(buf);
+            if (!tl)
+                continue;
+
+            fwrite(tl->hostname->data, tl->hostname->length, 1, stderr);
+            fwrite(":", 1, 1, stderr);
+            fwrite(tl->service->data, tl->service->length, 1, stderr);
+            fwrite("\n", 1, 1, stderr);
+
+            TANG_LUKS_free(tl);
+        }
+
+        return 0;
+    }
 
     nerr = crypt_init(&cd, opts.device);
     if (nerr != 0) {

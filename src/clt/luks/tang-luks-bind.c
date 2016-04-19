@@ -32,7 +32,6 @@
 
 #define _STR(x) # x
 #define STR(x) _STR(x)
-#define SUMMARY 192
 
 struct options {
     const char *device;
@@ -174,12 +173,20 @@ argp_parser(int key, char* arg, struct argp_state* state)
     struct options *opts = state->input;
 
     switch (key) {
-    case SUMMARY:
-        fprintf(stderr, "Add a tang key to a LUKS device");
-        return EINVAL;
-
     case 'a':
         opts->file = arg;
+        return 0;
+
+    case 'd':
+        opts->device = arg;
+        return 0;
+
+    case 'h':
+        strncpy(opts->params.hostname, arg, sizeof(opts->params.hostname) - 1);
+        return 0;
+
+    case 's':
+        strncpy(opts->params.service, arg, sizeof(opts->params.service) - 1);
         return 0;
 
     case ARGP_KEY_END:
@@ -200,29 +207,6 @@ argp_parser(int key, char* arg, struct argp_state* state)
 
         return 0;
 
-    case ARGP_KEY_ARG:
-        if (!opts->device) {
-            opts->device = arg;
-        } else if (strlen(opts->params.hostname) == 0) {
-            if (strlen(arg) >= sizeof(opts->params.hostname)) {
-                fprintf(stderr, "Hostname is too long!\n");
-                return EINVAL;
-            }
-
-            strncpy(opts->params.hostname, arg, sizeof(opts->params.hostname));
-        } else if (strlen(opts->params.service) == 0) {
-            if (strlen(arg) >= sizeof(opts->params.service)) {
-                fprintf(stderr, "Service is too long!\n");
-                return EINVAL;
-            }
-
-            strncpy(opts->params.service, arg, sizeof(opts->params.service));
-        } else {
-            return ARGP_ERR_UNKNOWN;
-        }
-
-        return 0;
-
     default:
         return ARGP_ERR_UNKNOWN;
     }
@@ -231,15 +215,17 @@ argp_parser(int key, char* arg, struct argp_state* state)
 const char *argp_program_version = VERSION;
 
 static const struct argp_option argp_options[] = {
-    { "adv",    'a', "file", .doc = "Advertisement file" },
-    { "summary", SUMMARY, .flags = OPTION_HIDDEN },
+    { "device",   'd', "device",   .doc = "LUKSv1 device (required)" },
+    { "hostname", 'h', "hostname", .doc = "Remote server hostname (required)" },
+    { "service",  's', "service",  .doc = "Remote server service" },
+    { "adv",      'a', "file",     .doc = "Advertisement file" },
     {}
 };
 
 static const struct argp argp = {
     .options = argp_options,
     .parser = argp_parser,
-    .args_doc = "DEVICE HOSTNAME [SERVICE]"
+    .args_doc = ""
 };
 
 int

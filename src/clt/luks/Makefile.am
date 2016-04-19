@@ -13,8 +13,7 @@ libluks_la_SOURCES = luks.c luks.h meta.c meta.h asn1.c asn1.h
 libluks_la_LIBADD = ../libclt.la
 
 if USE_CRYPTSETUP
-bin_PROGRAMS = tang-luks-list tang-luks-bind tang-luks-unbind
-tang_luks_list_LDADD = libluks.la
+bin_PROGRAMS = tang-luks-bind tang-luks-unbind
 tang_luks_bind_LDADD = libluks.la @cryptsetup_LIBS@
 tang_luks_unbind_LDADD = libluks.la @cryptsetup_LIBS@
 endif

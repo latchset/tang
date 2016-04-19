@@ -51,7 +51,7 @@ onsig(int sig)
 }
 
 static int
-req(int sock, TANG_MSG **req, void *misc)
+req(int sock, TANG_MSG **msg, void *misc)
 {
     struct addr *addr = misc;
     pkt_t pkt = {};
@@ -62,8 +62,8 @@ req(int sock, TANG_MSG **req, void *misc)
     if (pkt.size < 0)
         return EAGAIN;
 
-    *req = d2i_TANG_MSG(NULL, &(const uint8_t *) { pkt.data }, pkt.size);
-    return *req ? 0 : EAGAIN;
+    *msg = d2i_TANG_MSG(NULL, &(const uint8_t *) { pkt.data }, pkt.size);
+    return *msg ? 0 : EAGAIN;
 }
 
 static int

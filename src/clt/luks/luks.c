@@ -107,7 +107,7 @@ hole_end(const luks_hdr_t *hdr)
 }
 
 int
-luks_hole(const char *device, int slot, bool write, uint32_t *length)
+luks_hole(const char *device, int slot, bool rw, uint32_t *length)
 {
     luks_hdr_t hdr = {};
     uint32_t offset = 0;
@@ -116,7 +116,7 @@ luks_hole(const char *device, int slot, bool write, uint32_t *length)
     if (slot >= LUKS_NUMKEYS)
         return -EBADSLT;
 
-    fd = open(device, write ? O_RDWR : O_RDONLY);
+    fd = open(device, rw ? O_RDWR : O_RDONLY);
     if (fd < 0)
         return -errno;
 

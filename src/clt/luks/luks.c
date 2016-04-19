@@ -36,6 +36,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#define LUKS_ALIGN_KEYSLOTS 4096
 #define LUKS_CIPHERNAME_L 32
 #define LUKS_CIPHERMODE_L 32
 #define LUKS_HASHSPEC_L 32

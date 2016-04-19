@@ -29,7 +29,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define LUKS_ALIGN_KEYSLOTS 4096
 #define LUKS_NUMKEYS 8
 
 int

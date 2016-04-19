@@ -29,6 +29,8 @@
 
 #include <openssl/sha.h>
 
+#define META_ALIGN 512
+
 static const char META_MAGIC[] = { 'T', 'A', 'N', 'G', 'S', 'L', 'O', 'T' };
 
 typedef struct {
@@ -88,7 +90,7 @@ meta_read(const char *device, uint8_t slot)
     if (fd < 0)
         return false;
 
-    slen = length / LUKS_NUMKEYS / LUKS_ALIGN_KEYSLOTS * LUKS_ALIGN_KEYSLOTS;
+    slen = length / LUKS_NUMKEYS / META_ALIGN * META_ALIGN;
     if (slot == 0 || lseek(fd, slot * slen, SEEK_CUR) != (off_t) -1)
         output = slot_read(fd, slen);
 
@@ -120,7 +122,7 @@ meta_write(const char *device, uint8_t slot, const sbuf_t *buf)
     if (fd < 0)
         return false;
 
-    slen = length / LUKS_NUMKEYS / LUKS_ALIGN_KEYSLOTS * LUKS_ALIGN_KEYSLOTS;
+    slen = length / LUKS_NUMKEYS / META_ALIGN * META_ALIGN;
     if (sizeof(meta_t) + buf->size > slen)
         goto error;
 
@@ -150,7 +152,7 @@ error:
 bool
 meta_erase(const char *device, uint8_t slot)
 {
-    uint8_t zero[LUKS_ALIGN_KEYSLOTS] = {};
+    uint8_t zero[META_ALIGN] = {};
     bool success = false;
     uint32_t length = 0;
     uint32_t slen = 0;
@@ -163,11 +165,11 @@ meta_erase(const char *device, uint8_t slot)
     if (fd < 0)
         return false;
 
-    slen = length / LUKS_NUMKEYS / LUKS_ALIGN_KEYSLOTS * LUKS_ALIGN_KEYSLOTS;
+    slen = length / LUKS_NUMKEYS / META_ALIGN * META_ALIGN;
     if (slot > 0 && lseek(fd, slot * slen, SEEK_CUR) != 0)
         goto error;
 
-    for (size_t i = 0; i < slen / LUKS_ALIGN_KEYSLOTS; i++) {
+    for (size_t i = 0; i < slen / META_ALIGN; i++) {
         if (write(fd, zero, sizeof(zero)) != sizeof(zero))
             goto error;
     }

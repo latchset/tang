@@ -203,7 +203,7 @@ main(int argc, char *argv[])
     EC_GROUP_set_point_conversion_form(opts.grp, POINT_CONVERSION_COMPRESSED);
 
     bytes = (EC_GROUP_get_degree(opts.grp) + 7) / 8;
-    if (RAND_load_file("/dev/random", bytes) != bytes) {
+    if (RAND_load_file("/dev/urandom", bytes) != bytes) {
         EC_GROUP_free(opts.grp);
         return EX_IOERR;
     }

@@ -43,7 +43,7 @@ rec_req(TANG_MSG_REC_REQ *rec, BN_CTX *ctx)
         goto error;
 
     bytes = (EC_GROUP_get_degree(g) + 7) / 8;
-    if (RAND_load_file("/dev/random", bytes) != bytes)
+    if (RAND_load_file("/dev/urandom", bytes) != bytes)
         goto error;
 
     p = EC_POINT_new(g);

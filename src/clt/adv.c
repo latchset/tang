@@ -222,7 +222,7 @@ adv_rep(const TANG_MSG_ADV_REP *adv, STACK_OF(TANG_KEY) *keys,
 
 
     bytes = (EC_GROUP_get_degree(g) + 7) / 8;
-    if (RAND_load_file("/dev/random", bytes) != bytes)
+    if (RAND_load_file("/dev/urandom", bytes) != bytes)
         goto error;
 
 

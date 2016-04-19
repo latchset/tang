@@ -175,13 +175,8 @@ luks_hole(const char *device, int slot, bool rw, uint32_t *length)
         close(fd);
         return -errno;
     }
-        goto error;
 
     *length = hole_end(&hdr) - offset;
     return fd;
-
-error:
-    close(fd);
-    return -1;
 }
 

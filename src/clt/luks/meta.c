@@ -134,7 +134,7 @@ meta_write(const char *device, uint8_t slot, const sbuf_t *buf)
     if (write(fd, buf->data, buf->size) != (ssize_t) buf->size)
         goto error;
 
-    if (lseek(fd, offset, SEEK_SET) != offset)
+    if (lseek(fd, offset, SEEK_SET) == -1)
         goto error;
 
     tmp = slot_read(fd, slen);

@@ -82,7 +82,7 @@ make_sig(int nid, const db_key_t *key, const unsigned char *hash, size_t hlen,
     if (!sig->key)
         goto error;
 
-    if (conv_eckey2tkey(key->key, key->use, sig->key, ctx) != 0)
+    if (conv_eckey2tkey(key->key, sig->key, ctx) != 0)
         goto error;
 
     sig->sig = TANG_SIG_new();
@@ -178,21 +178,28 @@ adv_update(adv_t *adv, const db_t *db, BN_CTX *ctx)
 
     /* Create the reply body from the loaded keys. */
     LIST_FOREACH(&db->keys, db_key_t, k, list) {
+        STACK_OF(TANG_KEY) *keys = NULL;
         TANG_KEY *key = NULL;
 
         if (!k->adv)
             continue;
 
+        switch (k->use) {
+        case db_use_sig: keys = tmp.rep->body->sigs; break;
+        case db_use_rec: keys = tmp.rep->body->recs; break;
+        default: continue;
+        }
+
         key = TANG_KEY_new();
         if (!key)
             goto error;
 
-        if (SKM_sk_push(TANG_KEY, tmp.rep->body->keys, key) <= 0) {
+        if (SKM_sk_push(TANG_KEY, keys, key) <= 0) {
             TANG_KEY_free(key);
             goto error;
         }
 
-        if (conv_eckey2tkey(k->key, k->use, key, ctx) != 0)
+        if (conv_eckey2tkey(k->key, key, ctx) != 0)
             goto error;
     }
 
@@ -216,7 +223,7 @@ adv_update(adv_t *adv, const db_t *db, BN_CTX *ctx)
             goto error;
 
         LIST_FOREACH(&db->keys, db_key_t, k, list) {
-            if (k->use != TANG_KEY_USE_SIG)
+            if (k->use != db_use_sig)
                 continue;
 
             tmp.sigs[nkeys] = make_sig(supported[i].sign, k, hash, hlen, ctx);

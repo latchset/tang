@@ -81,18 +81,15 @@ error:
 static bool
 adv_trusted(TANG_MSG_ADV_REP *rep)
 {
-    int nkeys = SKM_sk_num(TANG_KEY, rep->body->keys);
+    int nkeys = SKM_sk_num(TANG_KEY, rep->body->sigs);
     int c = 'a';
 
     printf("The server advertised the following signing key%s:\n\n",
            nkeys > 1 ? "s" : "");
 
     for (int i = 0; i < nkeys; i++) {
-        TANG_KEY *key = SKM_sk_value(TANG_KEY, rep->body->keys, i);
+        TANG_KEY *key = SKM_sk_value(TANG_KEY, rep->body->sigs, i);
         uint8_t md[SHA256_DIGEST_LENGTH] = {};
-
-        if (ASN1_ENUMERATED_get(key->use) != TANG_KEY_USE_SIG)
-            continue;
 
         if (!SHA256(key->key->data, key->key->length, md))
             return false;

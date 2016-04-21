@@ -81,41 +81,26 @@ static bool
 valid_adv(const TANG_MSG_ADV_REP *rep, STACK_OF(TANG_KEY) *keys, BN_CTX *ctx)
 {
     bool sig = keys ? SKM_sk_num(TANG_KEY, keys) == 0 : true;
-    size_t rcnt = 0;
-    size_t acnt = 0;
 
-    /* Ensure the advertisement is signed by all advertised signing keys.
-     * Also, count the number of signing and recovery keys. */
-    for (int i = 0; i < SKM_sk_num(TANG_KEY, rep->body->keys); i++) {
+    /* Ensure the advertisement is signed by all advertised signing keys. */
+    for (int i = 0; i < SKM_sk_num(TANG_KEY, rep->body->sigs); i++) {
         TANG_KEY *tkey = NULL;
         EC_KEY *eckey = NULL;
 
-        tkey = SKM_sk_value(TANG_KEY, rep->body->keys, i);
+        tkey = SKM_sk_value(TANG_KEY, rep->body->sigs, i);
         if (!tkey)
             return false;
 
-        switch (ASN1_ENUMERATED_get(tkey->use)) {
-        case TANG_KEY_USE_REC:
-            rcnt++;
-            break;
+        eckey = conv_tkey2eckey(tkey, ctx);
+        if (!eckey)
+            return false;
 
-        case TANG_KEY_USE_SIG:
-            eckey = conv_tkey2eckey(tkey, ctx);
-            if (!eckey)
-                return false;
-
-            if (!adv_signed_by(rep, eckey, ctx)) {
-                EC_KEY_free(eckey);
-                return false;
-            }
-
+        if (!adv_signed_by(rep, eckey, ctx)) {
             EC_KEY_free(eckey);
-            acnt++;
-            break;
-
-        default:
             return false;
         }
+
+        EC_KEY_free(eckey);
     }
 
     /* Ensure the advertisement is signed by at least one requested key. */
@@ -127,9 +112,6 @@ valid_adv(const TANG_MSG_ADV_REP *rep, STACK_OF(TANG_KEY) *keys, BN_CTX *ctx)
         if (!tkey)
             return false;
 
-        if (ASN1_ENUMERATED_get(tkey->use) != TANG_KEY_USE_SIG)
-            continue;
-
         eckey = conv_tkey2eckey(tkey, ctx);
         if (!eckey)
             return false;
@@ -138,7 +120,9 @@ valid_adv(const TANG_MSG_ADV_REP *rep, STACK_OF(TANG_KEY) *keys, BN_CTX *ctx)
         EC_KEY_free(eckey);
     }
 
-    return rcnt > 0 && acnt > 0 && sig;
+    return SKM_sk_num(TANG_KEY, rep->body->recs) > 0
+        && SKM_sk_num(TANG_KEY, rep->body->sigs) > 0
+        && sig;
 }
 
 TANG_MSG_ADV_REQ *
@@ -180,7 +164,7 @@ select_key(STACK_OF(TANG_KEY) *keys, int min, BN_CTX *ctx)
     	TANG_KEY *key = SKM_sk_value(TANG_KEY, keys, i);
     	EC_KEY *eckey = NULL;
 
-        if (!key || ASN1_ENUMERATED_get(key->use) != TANG_KEY_USE_REC)
+        if (!key)
             continue;
 
         eckey = conv_tkey2eckey(key, ctx);
@@ -213,7 +197,7 @@ adv_rep(const TANG_MSG_ADV_REP *adv, STACK_OF(TANG_KEY) *keys,
     	return NULL;
 
 
-    r = select_key(adv->body->keys, min, ctx);
+    r = select_key(adv->body->recs, min, ctx);
     if (!r)
     	return NULL;
     g = EC_KEY_get0_group(r);
@@ -241,7 +225,7 @@ adv_rep(const TANG_MSG_ADV_REP *adv, STACK_OF(TANG_KEY) *keys,
     if (!req)
         goto error;
 
-    if (conv_eckey2tkey(r, TANG_KEY_USE_REC, req->key, ctx) != 0)
+    if (conv_eckey2tkey(r, req->key, ctx) != 0)
     	goto error;
 
     if (conv_point2os(g, EC_KEY_get0_public_key(l), req->x, ctx) != 0)

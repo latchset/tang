@@ -49,20 +49,20 @@ get_adv(const char *name)
     return name[0] != '.';
 }
 
-static inline TANG_KEY_USE
+static inline db_use_t
 get_use(const char *name)
 {
     size_t len = strlen(name);
 
     if (len > 4) {
         if (strcmp(&name[len - 4], ".rec") == 0)
-            return TANG_KEY_USE_REC;
+            return db_use_rec;
 
         if (strcmp(&name[len - 4], ".sig") == 0)
-            return TANG_KEY_USE_SIG;
+            return db_use_sig;
     }
 
-    return TANG_KEY_USE_NONE;
+    return db_use_none;
 }
 
 static int
@@ -82,7 +82,7 @@ load(db_t *db, const char *name)
     if (!key)
         return errno;
 
-    strncpy(key->name, name, sizeof(key->name));
+    strncpy(key->name, name, sizeof(key->name) - 1);
     key->adv = get_adv(name);
     key->use = get_use(name);
 

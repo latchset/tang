@@ -26,6 +26,12 @@
 
 #include <openssl/ec.h>
 
+typedef enum {
+    db_use_none = 0,
+    db_use_rec,
+    db_use_sig
+} db_use_t;
+
 typedef struct {
     char path[PATH_MAX];
     list_t keys;
@@ -36,7 +42,7 @@ typedef struct {
     char name[PATH_MAX];
     list_t list;
     EC_KEY *key;
-    TANG_KEY_USE use;
+    db_use_t use;
     bool adv;
 } db_key_t;
 

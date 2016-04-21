@@ -37,15 +37,14 @@ rec_decrypt(const db_t *db, const TANG_MSG_REC_REQ *req, pkt_t *pkt,
     EC_POINT *x = NULL;
     int r;
 
-    if (!req || !req->x || !req->key ||
-        !req->key->grp || !req->key->key || !req->key->use)
+    if (!req || !req->x || !req->key || !req->key->grp || !req->key->key)
         return TANG_MSG_ERR_INVALID_REQUEST;
 
     LIST_FOREACH(&db->keys, db_key_t, k, list) {
         const EC_POINT *pub;
         int nid;
 
-        if (k->use != TANG_KEY_USE_REC)
+        if (k->use != db_use_rec)
             continue;
 
         grp = EC_KEY_get0_group(k->key);

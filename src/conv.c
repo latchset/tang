@@ -23,8 +23,8 @@
 #include <openssl/objects.h>
 
 int
-conv_point2tkey(const EC_GROUP *grp, const EC_POINT *pnt, TANG_KEY_USE use,
-                TANG_KEY *tkey, BN_CTX *ctx)
+conv_point2tkey(const EC_GROUP *grp, const EC_POINT *pnt, TANG_KEY *tkey,
+                BN_CTX *ctx)
 {
     int r;
 
@@ -40,19 +40,16 @@ conv_point2tkey(const EC_GROUP *grp, const EC_POINT *pnt, TANG_KEY_USE use,
     if (r != 0)
         return ENOMEM;
 
-    if (ASN1_ENUMERATED_set(tkey->use, use) <= 0)
-        return ENOMEM;
-
     return 0;
 }
 
 int
-conv_eckey2tkey(const EC_KEY *key, TANG_KEY_USE use, TANG_KEY *tkey,
+conv_eckey2tkey(const EC_KEY *key, TANG_KEY *tkey,
                 BN_CTX *ctx)
 {
     return conv_point2tkey(EC_KEY_get0_group(key),
                            EC_KEY_get0_public_key(key),
-                           use, tkey, ctx);
+                           tkey, ctx);
 }
 
 EC_KEY *
@@ -72,7 +69,7 @@ conv_tkey2eckey(const TANG_KEY *tkey, BN_CTX *ctx)
 
     p = EC_POINT_new(EC_KEY_get0_group(eckey));
     if (!p)
-        goto error; 
+        goto error;
 
     if (conv_os2point(EC_KEY_get0_group(eckey), tkey->key, p, ctx) != 0)
         goto error;
@@ -87,7 +84,7 @@ error:
     EC_POINT_free(p);
     EC_KEY_free(eckey);
     return NULL;
-}   
+}
 
 
 int

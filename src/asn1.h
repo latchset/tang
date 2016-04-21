@@ -23,16 +23,9 @@
 #include <openssl/ec.h>
 #include <stdbool.h>
 
-typedef enum {
-    TANG_KEY_USE_NONE = 0,
-    TANG_KEY_USE_SIG = 1,
-    TANG_KEY_USE_REC = 2,
-} TANG_KEY_USE;
-
 typedef struct {
     ASN1_OBJECT *grp;
     ASN1_OCTET_STRING *key;
-    ASN1_ENUMERATED *use;
 } TANG_KEY;
 
 typedef struct {
@@ -41,7 +34,8 @@ typedef struct {
 } TANG_SIG;
 
 typedef struct {
-    STACK_OF(TANG_KEY) *keys;
+    STACK_OF(TANG_KEY) *sigs;
+    STACK_OF(TANG_KEY) *recs;
 } TANG_MSG_ADV_REP_BDY;
 
 typedef struct {

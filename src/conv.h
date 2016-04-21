@@ -22,13 +22,12 @@
 #include "asn1.h"
 
 int
-conv_point2tkey(const EC_GROUP *grp, const EC_POINT *pnt, TANG_KEY_USE use,
+conv_point2tkey(const EC_GROUP *grp, const EC_POINT *pnt,
                 TANG_KEY *tkey, BN_CTX *ctx);
 
 /* Converts an EC_KEY into a TANG_KEY. */
 int
-conv_eckey2tkey(const EC_KEY *key, TANG_KEY_USE use, TANG_KEY *tkey,
-                BN_CTX *ctx);
+conv_eckey2tkey(const EC_KEY *key, TANG_KEY *tkey, BN_CTX *ctx);
 
 EC_KEY *
 conv_tkey2eckey(const TANG_KEY *tkey, BN_CTX *ctx);

@@ -39,8 +39,8 @@ TangMessageAdvertiseReply ::= SEQUENCE {
 }
 
 TangMessageAdvertiseReplyBody ::= SEQUENCE {
-  keys   [0] SET (SIZE(1..MAX)) OF TangKey,
-  host   [1] UTF8String OPTIONAL,
+  sigs   [0] SET (SIZE(1..MAX)) OF TangKey,
+  recs   [1] SET (SIZE(1..MAX)) OF TangKey,
   ...
 }
 
@@ -53,13 +53,6 @@ TangSignature ::= SEQUENCE {
 TangKey ::= SEQUENCE {
   grp  [0] OBJECT IDENTIFIER,
   key  [1] OCTET STRING,
-  use  [2] TangKeyUse,
-  ...
-}
-
-TangKeyUse ::= ENUMERATED {
-  signature (1),
-  recovery  (2),
   ...
 }
 

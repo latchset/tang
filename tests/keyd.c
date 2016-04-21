@@ -20,6 +20,7 @@
 #include "../src/conv.h"
 #include "../src/clt/adv.h"
 #include "../src/clt/msg.h"
+#include "../src/srv/db.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -57,7 +58,7 @@ static char tempdir[] = "/tmp/tangXXXXXX";
 static pid_t pid;
 
 static EC_KEY *
-keygen(const char *grpname, const char *name, TANG_KEY_USE use, bool adv)
+keygen(const char *grpname, const char *name, db_use_t use, bool adv)
 {
     char path[PATH_MAX] = {};
     EC_GROUP *grp = NULL;
@@ -98,8 +99,8 @@ keygen(const char *grpname, const char *name, TANG_KEY_USE use, bool adv)
     strcat(path, name);
 
     switch (use) {
-    case TANG_KEY_USE_SIG: strcat(path, ".sig"); break;
-    case TANG_KEY_USE_REC: strcat(path, ".rec"); break;
+    case db_use_sig: strcat(path, ".sig"); break;
+    case db_use_rec: strcat(path, ".rec"); break;
     default: goto error;
     }
 
@@ -178,19 +179,10 @@ adv(const msg_t *params, BN_CTX *ctx, ...)
     testg(req.val.adv.req, error);
 
     va_start(ap, ctx);
-    while (true) {
-        TANG_KEY_USE use = TANG_KEY_USE_NONE;
-        EC_KEY *key = NULL;
-
-        key = va_arg(ap, EC_KEY *);
-        if (!key)
-            break;
-
-        use = va_arg(ap, TANG_KEY_USE);
-
+    for (EC_KEY *key = va_arg(ap, EC_KEY *); key; key = va_arg(ap, EC_KEY *)) {
         tkey = TANG_KEY_new();
         testg(tkey, error);
-        testg(conv_eckey2tkey(key, use, tkey, ctx) == 0, error);
+        testg(conv_eckey2tkey(key, tkey, ctx) == 0, error);
         testg(SKM_sk_push(TANG_KEY, req.val.adv.req->keys, tkey) > 0, error);
         tkey = NULL;
     }
@@ -205,50 +197,62 @@ error:
 }
 
 static bool
+key_exists(const STACK_OF(TANG_KEY) *keys, const EC_KEY *key, BN_CTX *ctx)
+{
+    TANG_KEY *tkey = NULL;
+    bool found = false;
+    int num = 0;
+
+    tkey = TANG_KEY_new();
+    testg(tkey, egress);
+
+    testg(conv_eckey2tkey(key, tkey, ctx) == 0, egress);
+
+    num = SKM_sk_num(TANG_KEY, keys);
+    for (int i = 0; !found && i < num; i++) {
+        TANG_KEY *t = SKM_sk_value(TANG_KEY, keys, i);
+        found |= TANG_KEY_equals(tkey, t);
+    }
+
+egress:
+    TANG_KEY_free(tkey);
+    return found;
+}
+
+static bool
 adv_verify(TANG_MSG *rep, BN_CTX *ctx, ...)
 {
     TANG_KEY *tkey = NULL;
     bool success = false;
-    int nkeys = 0;
-    int nsigs = 0;
+    int cnt = 0;
     va_list ap;
 
     testg(rep, egress);
     testg(rep->type == TANG_MSG_TYPE_ADV_REP, egress);
 
     va_start(ap, ctx);
+    cnt = 0;
     for (EC_KEY *key = va_arg(ap, EC_KEY *); key; key = va_arg(ap, EC_KEY *)) {
-        TANG_KEY_USE use = TANG_KEY_USE_NONE;
-        bool found = false;
-        int num = 0;
-        nkeys++;
-
-        use = va_arg(ap, TANG_KEY_USE);
-        TANG_KEY_free(tkey);
-        tkey = TANG_KEY_new();
-        testg(tkey, egress);
-
-        testg(conv_eckey2tkey(key, use, tkey, ctx) == 0, egress);
-
-        num = SKM_sk_num(TANG_KEY, rep->val.adv.rep->body->keys);
-        for (int i = 0; !found && i < num; i++) {
-            TANG_KEY *t = NULL;
-            t = SKM_sk_value(TANG_KEY, rep->val.adv.rep->body->keys, i);
-            found |= TANG_KEY_equals(tkey, t);
-        }
-
-        testg(found, egress);
+        testg(key_exists(rep->val.adv.rep->body->sigs, key, ctx), egress);
+        cnt++;
     }
+    testg(SKM_sk_num(TANG_KEY, rep->val.adv.rep->body->sigs) == cnt, egress);
 
+    cnt = 0;
     for (EC_KEY *key = va_arg(ap, EC_KEY *); key; key = va_arg(ap, EC_KEY *)) {
-        nsigs++;
+        testg(key_exists(rep->val.adv.rep->body->recs, key, ctx), egress);
+        cnt++;
+    }
+    testg(SKM_sk_num(TANG_KEY, rep->val.adv.rep->body->recs) == cnt, egress);
 
+    cnt = 0;
+    for (EC_KEY *key = va_arg(ap, EC_KEY *); key; key = va_arg(ap, EC_KEY *)) {
         testg(adv_signed_by(rep->val.adv.rep, key, ctx), egress);
+        cnt++;
     }
+    testg(SKM_sk_num(TANG_SIG, rep->val.adv.rep->sigs) == cnt, egress);
     va_end(ap);
 
-    testg(SKM_sk_num(TANG_KEY, rep->val.adv.rep->body->keys) == nkeys, egress);
-    testg(SKM_sk_num(TANG_SIG, rep->val.adv.rep->sigs) == nsigs, egress);
 
     success = true;
 
@@ -259,7 +263,7 @@ egress:
 }
 
 static TANG_MSG *
-rec(const msg_t *params, BN_CTX *ctx, const EC_KEY *key, TANG_KEY_USE use)
+rec(const msg_t *params, BN_CTX *ctx, const EC_KEY *key)
 {
     TANG_MSG_REC_REQ *req = NULL;
     const EC_GROUP *grp = NULL;
@@ -271,7 +275,7 @@ rec(const msg_t *params, BN_CTX *ctx, const EC_KEY *key, TANG_KEY_USE use)
     req = TANG_MSG_REC_REQ_new();
     testg(req, error);
 
-    testg(conv_eckey2tkey(key, use, req->key, ctx) == 0, error);
+    testg(conv_eckey2tkey(key, req->key, ctx) == 0, error);
     testg(conv_point2os(grp, EC_GROUP_get0_generator(grp),
                         req->x, ctx) == 0, error);
 
@@ -319,7 +323,7 @@ stage0(const msg_t *params, BN_CTX *ctx)
 
     /* Make sure we get an empty advertisement when no keys exist. */
     rep = adv(params, ctx, NULL);
-    testb(adv_verify(rep, ctx, NULL, NULL));
+    testb(adv_verify(rep, ctx, NULL, NULL, NULL));
 
     return true;
 }
@@ -332,30 +336,22 @@ stage1(const msg_t *params, EC_KEY *reca, EC_KEY *siga, BN_CTX *ctx)
 
     /* Make sure the unadvertised keys aren't advertised. */
     rep = adv(params, ctx, NULL);
-    testb(adv_verify(rep, ctx, NULL, NULL));
+    testb(adv_verify(rep, ctx, NULL, NULL, NULL));
 
     /* Make sure the server won't sign with recovery keys. */
-    rep = adv(params, ctx, reca, TANG_KEY_USE_REC, NULL);
-    testb(adv_verify(rep, ctx, NULL, NULL));
-
-    /* Make sure changing the key use won't expose it. */
-    rep = adv(params, ctx, reca, TANG_KEY_USE_SIG, NULL);
-    testb(adv_verify(rep, ctx, NULL, NULL));
+    rep = adv(params, ctx, reca, NULL);
+    testb(adv_verify(rep, ctx, NULL, NULL, NULL));
 
     /* Request signature with a valid, unadvertised key. */
-    rep = adv(params, ctx, siga, TANG_KEY_USE_SIG, NULL);
-    testb(adv_verify(rep, ctx, NULL, siga, NULL));
+    rep = adv(params, ctx, siga, NULL);
+    testb(adv_verify(rep, ctx, NULL, NULL, siga, NULL));
 
     /* Test recovery of an unadvertised key. */
-    rep = rec(params, ctx, reca, TANG_KEY_USE_REC);
-    testb(rec_verify(rep, reca, ctx));
-
-    /* Test recovery of an unadvertised key with the wrong use. */
-    rep = rec(params, ctx, reca, TANG_KEY_USE_SIG);
+    rep = rec(params, ctx, reca);
     testb(rec_verify(rep, reca, ctx));
 
     /* Test recovery using an unadvertised signature key. */
-    rep = rec(params, ctx, siga, TANG_KEY_USE_REC);
+    rep = rec(params, ctx, siga);
     testb(rep);
     testb(rep->type == TANG_MSG_TYPE_ERR);
     testb(ASN1_ENUMERATED_get(rep->val.err) == TANG_MSG_ERR_NOTFOUND_KEY);
@@ -373,67 +369,39 @@ stage2(const msg_t *params, EC_KEY *reca, EC_KEY *siga,
 
     /* Make sure the unadvertised keys aren't advertised. */
     rep = adv(params, ctx, NULL);
-    testb(adv_verify(rep, ctx,
-                    recA, TANG_KEY_USE_REC, sigA, TANG_KEY_USE_SIG, NULL,
-                    sigA, NULL));
+    testb(adv_verify(rep, ctx, sigA, NULL, recA, NULL, sigA, NULL));
 
     /* Make sure the server won't sign with recovery keys. */
-    rep = adv(params, ctx, reca, TANG_KEY_USE_REC, NULL);
-    testb(adv_verify(rep, ctx,
-                    recA, TANG_KEY_USE_REC, sigA, TANG_KEY_USE_SIG, NULL,
-                    sigA, NULL));
-    rep = adv(params, ctx, recA, TANG_KEY_USE_REC, NULL);
-    testb(adv_verify(rep, ctx,
-                    recA, TANG_KEY_USE_REC, sigA, TANG_KEY_USE_SIG, NULL,
-                    sigA, NULL));
-
-    /* Make sure changing the key use won't expose it. */
-    rep = adv(params, ctx, reca, TANG_KEY_USE_SIG, NULL);
-    testb(adv_verify(rep, ctx,
-                    recA, TANG_KEY_USE_REC, sigA, TANG_KEY_USE_SIG, NULL,
-                    sigA, NULL));
-    rep = adv(params, ctx, recA, TANG_KEY_USE_SIG, NULL);
-    testb(adv_verify(rep, ctx,
-                    recA, TANG_KEY_USE_REC, sigA, TANG_KEY_USE_SIG, NULL,
-                    sigA, NULL));
+    rep = adv(params, ctx, reca, NULL);
+    testb(adv_verify(rep, ctx, sigA, NULL, recA, NULL, sigA, NULL));
+    rep = adv(params, ctx, recA, NULL);
+    testb(adv_verify(rep, ctx, sigA, NULL, recA, NULL, sigA, NULL));
 
     /* Request signature with a valid, unadvertised key. */
-    rep = adv(params, ctx, siga, TANG_KEY_USE_SIG, NULL);
-    testb(adv_verify(rep, ctx,
-                    recA, TANG_KEY_USE_REC, sigA, TANG_KEY_USE_SIG, NULL,
-                    sigA, siga, NULL));
+    rep = adv(params, ctx, siga, NULL);
+    testb(adv_verify(rep, ctx, sigA, NULL, recA, NULL, sigA, siga, NULL));
 
     /* Request signature with a valid, advertised key. */
-    rep = adv(params, ctx, sigA, TANG_KEY_USE_SIG, NULL);
-    testb(adv_verify(rep, ctx,
-                    recA, TANG_KEY_USE_REC, sigA, TANG_KEY_USE_SIG, NULL,
-                    sigA, NULL));
+    rep = adv(params, ctx, sigA, NULL);
+    testb(adv_verify(rep, ctx, sigA, NULL, recA, NULL, sigA, NULL));
 
     /* Test recovery of an unadvertised key. */
-    rep = rec(params, ctx, reca, TANG_KEY_USE_REC);
-    testb(rec_verify(rep, reca, ctx));
-
-    /* Test recovery of an unadvertised key with the wrong use. */
-    rep = rec(params, ctx, reca, TANG_KEY_USE_SIG);
+    rep = rec(params, ctx, reca);
     testb(rec_verify(rep, reca, ctx));
 
     /* Test recovery of an advertised key. */
-    rep = rec(params, ctx, recA, TANG_KEY_USE_REC);
-    testb(rec_verify(rep, recA, ctx));
-
-    /* Test recovery of an advertised key with the wrong use. */
-    rep = rec(params, ctx, recA, TANG_KEY_USE_REC);
+    rep = rec(params, ctx, recA);
     testb(rec_verify(rep, recA, ctx));
 
     /* Test recovery using an unadvertised signature key. */
-    rep = rec(params, ctx, siga, TANG_KEY_USE_REC);
+    rep = rec(params, ctx, siga);
     testb(rep);
     testb(rep->type == TANG_MSG_TYPE_ERR);
     testb(ASN1_ENUMERATED_get(rep->val.err) == TANG_MSG_ERR_NOTFOUND_KEY);
     TANG_MSG_free(rep);
 
     /* Test recovery using an advertised signature key. */
-    rep = rec(params, ctx, sigA, TANG_KEY_USE_REC);
+    rep = rec(params, ctx, sigA);
     testb(rep);
     testb(rep->type == TANG_MSG_TYPE_ERR);
     testb(ASN1_ENUMERATED_get(rep->val.err) == TANG_MSG_ERR_NOTFOUND_KEY);
@@ -500,8 +468,8 @@ main(int argc, char *argv[])
         teste(stage0(&ipv6, ctx));
 
     /* Make some unadvertised keys. */
-    reca = keygen("secp384r1", "reca", TANG_KEY_USE_REC, false);
-    siga = keygen("secp384r1", "siga", TANG_KEY_USE_SIG, false);
+    reca = keygen("secp384r1", "reca", db_use_rec, false);
+    siga = keygen("secp384r1", "siga", db_use_sig, false);
     teste(reca);
     teste(siga);
     usleep(100000); /* Let the daemon have time to pick up the new files. */
@@ -511,8 +479,8 @@ main(int argc, char *argv[])
         teste(stage1(&ipv6, reca, siga, ctx));
 
     /* Make some advertised keys. */
-    recA = keygen("secp384r1", "recA", TANG_KEY_USE_REC, true);
-    sigA = keygen("secp384r1", "sigA", TANG_KEY_USE_SIG, true);
+    recA = keygen("secp384r1", "recA", db_use_rec, true);
+    sigA = keygen("secp384r1", "sigA", db_use_sig, true);
     teste(recA);
     teste(sigA);
     usleep(100000); /* Let the daemon have time to pick up the new files. */

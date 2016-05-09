@@ -35,32 +35,3 @@ ASN1_SEQUENCE(TANG_LUKS) = {
 
 IMPLEMENT_ASN1_FUNCTIONS(TANG_LUKS)
 
-sbuf_t *
-TANG_LUKS_to_sbuf(TANG_LUKS *tl)
-{
-    sbuf_t *buf = NULL;
-    int len = 0;
-
-    len = i2d_TANG_LUKS(tl, NULL);
-    if (len <= 0)
-        return NULL;
-
-    buf = sbuf_new(len);
-    if (!buf)
-        return NULL;
-
-    len = i2d_TANG_LUKS(tl, &(uint8_t *) { buf->data });
-    if (len <= 0) {
-        sbuf_free(buf);
-        return NULL;
-    }
-
-    return buf;
-}
-
-TANG_LUKS *
-TANG_LUKS_from_sbuf(const sbuf_t *buf)
-{
-    return d2i_TANG_LUKS(NULL, &(const uint8_t *) { buf->data }, buf->size);
-}
-

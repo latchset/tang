@@ -18,11 +18,7 @@
  */
 
 #include "asn1.h"
-#include "luks.h"
-#include "meta.h"
 #include "../msg.h"
-
-#include <libcryptsetup.h>
 
 #include <argp.h>
 #include <string.h>
@@ -86,6 +82,31 @@ static const struct argp argp = {
     .args_doc = ""
 };
 
+static TANG_LUKS *
+load(struct crypt_device *cd, int slot)
+{
+    luksmeta_uuid_t uuid = {};
+    int r = 0;
+
+    switch (crypt_keyslot_status(cd, slot)) {
+    case CRYPT_SLOT_ACTIVE_LAST: break;
+    case CRYPT_SLOT_ACTIVE: break;
+    default: return NULL;
+    }
+
+    r = luksmeta_get(cd, slot, uuid, NULL, 0);
+    if (r < 0 || memcmp(uuid, TANG_LUKS_UUID, sizeof(uuid)) != 0)
+        return NULL;
+
+    uint8_t tmp[r];
+
+    r = luksmeta_get(cd, slot, uuid, tmp, r);
+    if (r < 0 || memcmp(uuid, TANG_LUKS_UUID, sizeof(uuid)) != 0)
+        return NULL;
+
+    return d2i_TANG_LUKS(NULL, &(const uint8_t *) { tmp }, r);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -96,31 +117,6 @@ main(int argc, char *argv[])
 
     if (argp_parse(&argp, argc, argv, 0, NULL, &opts) != 0)
         return EX_OSERR;
-
-    if (strlen(opts.params.hostname) == 0) {
-        for (int slot = 0; slot < LUKS_NUMKEYS; slot++) {
-            TANG_LUKS *tl = NULL;
-            sbuf_t *buf = NULL;
-
-            buf = meta_read(opts.device, slot);
-            if (!buf)
-                continue;
-
-            tl = TANG_LUKS_from_sbuf(buf);
-            sbuf_free(buf);
-            if (!tl)
-                continue;
-
-            fwrite(tl->hostname->data, tl->hostname->length, 1, stderr);
-            fwrite(":", 1, 1, stderr);
-            fwrite(tl->service->data, tl->service->length, 1, stderr);
-            fwrite("\n", 1, 1, stderr);
-
-            TANG_LUKS_free(tl);
-        }
-
-        return 0;
-    }
 
     nerr = crypt_init(&cd, opts.device);
     if (nerr != 0) {
@@ -148,40 +144,32 @@ main(int argc, char *argv[])
 
     for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
         TANG_LUKS *tl = NULL;
-        sbuf_t *buf = NULL;
+        bool matchh = false;
+        bool matchs = false;
 
-        switch (crypt_keyslot_status(cd, slot)) {
-        case CRYPT_SLOT_ACTIVE:
-        case CRYPT_SLOT_ACTIVE_LAST:
-            buf = meta_read(opts.device, slot);
-            if (!buf)
-                continue;
+        tl = load(cd, slot);
+        if (!tl)
+            continue;
 
-            tl = TANG_LUKS_from_sbuf(buf);
-            sbuf_free(buf);
-            if (!tl)
-                continue;
+        if (strlen(opts.params.hostname) == 0) {
+            fwrite(tl->hostname->data, tl->hostname->length, 1, stderr);
+            fwrite(":", 1, 1, stderr);
+            fwrite(tl->service->data, tl->service->length, 1, stderr);
+            fwrite("\n", 1, 1, stderr);
+        } else {
+            matchh = strncmp((char *) tl->hostname->data,
+                             opts.params.hostname,
+                             tl->hostname->length) == 0;
+            matchs = strncmp((char *) tl->service->data,
+                             opts.params.service,
+                             tl->service->length) == 0;
+        }
 
-            if (strncmp((char *) tl->hostname->data, opts.params.hostname,
-                        tl->hostname->length) != 0) {
-                TANG_LUKS_free(tl);
-                continue;
-            }
+        TANG_LUKS_free(tl);
 
-            if (strncmp((char *) tl->service->data, opts.params.service,
-                        tl->service->length) != 0) {
-                TANG_LUKS_free(tl);
-                continue;
-            }
-
-            TANG_LUKS_free(tl);
-
-            if (crypt_keyslot_destroy(cd, slot) == 0)
-                meta_erase(opts.device, slot);
-            break;
-
-        default:
-            break;
+        if (matchh && matchs) {
+            luksmeta_del(cd, slot, TANG_LUKS_UUID);
+            crypt_keyslot_destroy(cd, slot);
         }
     }
 

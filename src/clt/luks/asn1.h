@@ -28,6 +28,12 @@
 
 #include "../../asn1.h"
 #include "../sbuf.h"
+#include <luksmeta.h>
+
+static const luksmeta_uuid_t TANG_LUKS_UUID = {
+    0x08, 0x02, 0x32, 0x6e, 0xc7, 0x97, 0x2c, 0x59,
+    0x00, 0x61, 0x1b, 0xde, 0x16, 0x27, 0xbd, 0x83
+};
 
 typedef struct {
     TANG_MSG_REC_REQ *rec;
@@ -37,8 +43,3 @@ typedef struct {
 
 DECLARE_ASN1_FUNCTIONS(TANG_LUKS)
 
-sbuf_t *
-TANG_LUKS_to_sbuf(TANG_LUKS *tl);
-
-TANG_LUKS *
-TANG_LUKS_from_sbuf(const sbuf_t *buf);

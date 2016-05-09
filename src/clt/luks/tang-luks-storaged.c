@@ -21,8 +21,6 @@
 #include "../msg.h"
 #include "../rec.h"
 #include "asn1.h"
-#include "luks.h"
-#include "meta.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -34,6 +32,8 @@
 #include <glib-unix.h>
 
 #define MAX_UDP 65535
+
+typedef uint8_t pkt_t[MAX_UDP];
 
 struct context {
     StoragedClient *clt;
@@ -110,26 +110,26 @@ static sbuf_t *
 unlock_device_slot(struct context *ctx, const char *dev, int slot)
 {
     ssize_t len = strlen(dev) + 2;
-    uint8_t buf[MAX_UDP] = {};
     TANG_LUKS *tl = NULL;
     sbuf_t *key = NULL;
     sbuf_t *hex = NULL;
+    pkt_t pkt = {};
     msg_t p = {};
 
-    if (len > MAX_UDP)
+    if (len > (ssize_t) sizeof(pkt))
         return NULL;
 
-    buf[0] = slot;
-    memcpy(&buf[1], dev, len - 1);
+    pkt[0] = slot;
+    memcpy(&pkt[1], dev, len - 1);
 
     fprintf(stderr, "%s\tSLOT\t%d\n", dev, slot);
 
-    if (send(ctx->sock, buf, len, 0) != len) {
+    if (send(ctx->sock, pkt, len, 0) != len) {
         g_main_loop_quit(ctx->loop);
         return NULL;
     }
 
-    len = recv(ctx->sock, buf, sizeof(buf), 0);
+    len = recv(ctx->sock, pkt, sizeof(pkt), 0);
     if (len < 0) {
         g_main_loop_quit(ctx->loop);
         return NULL;
@@ -137,7 +137,7 @@ unlock_device_slot(struct context *ctx, const char *dev, int slot)
 
     fprintf(stderr, "%s\tMETA\t%d\n", dev, (int) len);
 
-    tl = d2i_TANG_LUKS(NULL, &(const uint8_t *) { buf }, len);
+    tl = d2i_TANG_LUKS(NULL, &(const uint8_t *) { pkt }, len);
     if (!tl)
         return NULL;
 
@@ -196,7 +196,7 @@ idle(gpointer misc)
         if (!dev)
             continue;
 
-        for (int slot = 0; slot < LUKS_NUMKEYS; slot++) {
+        for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
             gboolean success = FALSE;
             sbuf_t *key = NULL;
 
@@ -354,6 +354,39 @@ on_signal(int sig)
     safeclose(&pair[0]);
 }
 
+static int
+load(const char *dev, int slot, pkt_t pkt)
+{
+    struct crypt_device *cd = NULL;
+    luksmeta_uuid_t uuid = {};
+    int r = 0;
+
+    r = crypt_init(&cd, dev);
+    if (r < 0)
+        goto egress;
+
+    r = crypt_load(cd, CRYPT_LUKS1, NULL);
+    if (r < 0)
+        goto egress;
+
+    switch (crypt_keyslot_status(cd, slot)) {
+    case CRYPT_SLOT_ACTIVE:
+    case CRYPT_SLOT_ACTIVE_LAST:
+        break;
+    default:
+        r = -EBADSLT;
+        goto egress;
+    }
+
+    r = luksmeta_get(cd, slot, uuid, pkt, sizeof(pkt_t));
+    if (r >= 0 && memcmp(uuid, TANG_LUKS_UUID, sizeof(uuid)) != 0)
+        r = -EBADSLT;
+
+egress:
+    crypt_free(cd);
+    return r;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -394,22 +427,17 @@ main(int argc, char *argv[])
     if (setuid(geteuid()) == -1)
         goto error;
 
-    char buf[MAX_UDP] = {};
-    ssize_t len = 0;
+    pkt_t pkt = {};
+    int len = 0;
     while (true) {
-        sbuf_t *data = NULL;
-
-        len = recv(pair[0], buf, sizeof(buf), 0);
+        len = recv(pair[0], pkt, sizeof(pkt), 0);
         if (len < 2)
             goto error;
 
-        data = meta_read(&buf[1], buf[0]);
-        if (data) {
-            len = 0;
-            if (data->size < sizeof(buf))
-                len = send(pair[0], data->data, data->size, 0);
-
-            sbuf_free(data);
+        len = load((const char *) &pkt[1], pkt[0], pkt);
+        if (len >= 0) {
+            len = send(pair[0], pkt, len, 0);
+            memset(pkt, 0, sizeof(pkt));
             if (len > 0)
                 continue;
         }
@@ -420,8 +448,6 @@ main(int argc, char *argv[])
 
 error:
     safeclose(&pair[0]);
-    memset(buf, 0, sizeof(buf));
-
     kill(pid, SIGTERM);
     waitpid(pid, NULL, 0);
     return EXIT_FAILURE;

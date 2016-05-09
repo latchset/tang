@@ -20,7 +20,6 @@
 #include "../adv.h"
 #include "../msg.h"
 #include "asn1.h"
-#include "meta.h"
 
 #include <libcryptsetup.h>
 #include <openssl/sha.h>
@@ -142,26 +141,56 @@ error:
 
 /* Steals rec */
 static bool
-store(const struct options *opts, TANG_MSG_REC_REQ *rec, int slot)
+store(const struct options *opts, TANG_MSG_REC_REQ *rec,
+      struct crypt_device *cd, int slot)
 {
+    static const char *msg =
+        "The specified block device is not initialized for metadata storage. "
+        "Attempting to initialize it may result in data loss if data was "
+        "already written into the LUKS header gap in a different format."
+        "A backup is advised before initialization is performed.\n\n";
+
     TANG_LUKS *tl = NULL;
-    bool status = false;
-    sbuf_t *buf = NULL;
+    int r = 0;
 
     tl = TANG_LUKS_make(&opts->params, rec);
     if (!tl)
-        goto egress;
+        return false;
 
-    buf = TANG_LUKS_to_sbuf(tl);
-    if (!buf)
-        goto egress;
+    const int tsz = i2d_TANG_LUKS(tl, NULL);
+    if (tsz < 1)
+        return false;
 
-    status = meta_write(opts->device, slot, buf);
+    uint8_t tmp[tsz];
 
-egress:
-    TANG_LUKS_free(tl);
-    sbuf_free(buf);
-    return status;
+    r = i2d_TANG_LUKS(tl, &(uint8_t *) { tmp });
+    if (r != tsz)
+        return false;
+
+    r = luksmeta_set(cd, slot, TANG_LUKS_UUID, tmp, tsz);
+    if (r == -ENOENT) {
+        char c = 'X';
+
+        fprintf(stderr, "%s", msg);
+
+        while (!strchr("YyNn", c)) {
+            printf("Do you wish to initialize %s? [yn] ",
+                   crypt_get_device_name(cd));
+            c = getc(stdin);
+        }
+
+        if (strchr("Nn", c))
+            return false;
+
+        r = luksmeta_init(cd);
+        if (r >= 0)
+            r = luksmeta_set(cd, slot, TANG_LUKS_UUID, tmp, tsz);
+    }
+
+    if (r < 0)
+        fprintf(stderr, "Error during metadata write: %s\n", strerror(-r));
+
+    return r >= 0;
 }
 
 static error_t
@@ -291,7 +320,7 @@ main(int argc, char *argv[])
         goto egress;
     }
 
-    if (!store(&opts, rec, slot)) {
+    if (!store(&opts, rec, cd, slot)) {
         crypt_keyslot_destroy(cd, slot);
         goto egress;
     }

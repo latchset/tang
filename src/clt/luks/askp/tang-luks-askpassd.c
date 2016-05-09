@@ -21,8 +21,6 @@
 #include "askp.h"
 #include "iface.h"
 #include "../asn1.h"
-#include "../luks.h"
-#include "../meta.h"
 #include "../../rec.h"
 #include "../../msg.h"
 
@@ -77,9 +75,8 @@ TANG_LUKS_get_params(const TANG_LUKS *tl, msg_t *params)
 }
 
 static sbuf_t *
-get_key(const char *device, const sbuf_t *buf)
+get_key(const char *device, const TANG_LUKS *tl)
 {
-    TANG_LUKS *tl = NULL;
     EC_KEY *eckey = NULL;
     TANG_MSG *msg = NULL;
     sbuf_t *key = NULL;
@@ -89,12 +86,6 @@ get_key(const char *device, const sbuf_t *buf)
     ctx = BN_CTX_new();
     if (!ctx)
         goto error;
-
-    tl = TANG_LUKS_from_sbuf(buf);
-    if (!tl) {
-        fprintf(stderr, "Error parsing metadata from %s\n", device);
-        goto error;
-    }
 
     eckey = rec_req(tl->rec, ctx);
     if (!eckey)
@@ -117,7 +108,6 @@ get_key(const char *device, const sbuf_t *buf)
     key = rec_rep(msg->val.rec.rep, eckey, ctx);
 
 error:
-    TANG_LUKS_free(tl);
     EC_KEY_free(eckey);
     TANG_MSG_free(msg);
     BN_CTX_free(ctx);
@@ -127,22 +117,54 @@ error:
 static void
 answer_question(const question_t *q)
 {
-    for (int slot = 0; slot < LUKS_NUMKEYS; slot++) {
-        sbuf_t *key = NULL;
-        sbuf_t *buf = NULL;
+    struct crypt_device *cd = NULL;
+    int r = 0;
 
-        buf = meta_read(q->device, slot);
-        if (!buf)
+    r = crypt_init(&cd, q->device);
+    if (r < 0)
+        return;
+
+    r = crypt_load(cd, CRYPT_LUKS1, NULL);
+    if (r < 0) {
+        crypt_free(cd);
+        return;
+    }
+
+    for (int slot = 0; slot < crypt_keyslot_max(CRYPT_LUKS1); slot++) {
+        luksmeta_uuid_t uuid = {};
+        TANG_LUKS *tl = NULL;
+        sbuf_t *key = NULL;
+
+        switch (crypt_keyslot_status(cd, slot)) {
+        case CRYPT_SLOT_ACTIVE_LAST: break;
+        case CRYPT_SLOT_ACTIVE: break;
+        default: continue;
+        }
+
+        r = luksmeta_get(cd, slot, uuid, NULL, 0);
+        if (r < 0 || memcmp(uuid, TANG_LUKS_UUID, sizeof(uuid)) != 0)
             continue;
 
-        key = get_key(q->device, buf);
-        sbuf_free(buf);
+        uint8_t buf[r];
+
+        r = luksmeta_get(cd, slot, uuid, buf, sizeof(buf));
+        if (r < 0 || memcmp(uuid, TANG_LUKS_UUID, sizeof(uuid)) != 0)
+            continue;
+
+        tl = d2i_TANG_LUKS(NULL, &(const uint8_t *) { buf }, r);
+        if (!tl)
+            continue;
+
+        key = get_key(q->device, tl);
+        TANG_LUKS_free(tl);
         if (key) {
             question_answer(q, key);
             sbuf_free(key);
             break;
         }
     }
+
+    crypt_free(cd);
 }
 
 const char *argp_program_version = VERSION;

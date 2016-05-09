@@ -68,6 +68,21 @@ AM_CONDITIONAL([USE_STORAGED], [test "$with_storaged" != no -a "$HAVE_STORAGED" 
 
 
 AC_ARG_WITH(
+    [luksmeta],
+    [AS_HELP_STRING([--with-luksmeta], [build LUKS support @<:@default=check@:>@])],
+    [],
+    [with_luksmeta=check]
+)
+AS_CASE(
+    ["$with_luksmeta"],
+    [yes], [PKG_CHECK_MODULES([luksmeta], [luksmeta], [HAVE_LUKSMETA=1])],
+    [no], [HAVE_LUKSMETA=0],
+    [PKG_CHECK_MODULES([luksmeta], [luksmeta], [HAVE_LUKSMETA=1], [HAVE_LUKSMETA=0])]
+)
+AM_CONDITIONAL([USE_LUKSMETA], [test "$with_luksmeta" != no -a "$HAVE_LUKSMETA" -eq 1])
+
+
+AC_ARG_WITH(
     [clevis],
     [AS_HELP_STRING([--with-clevis], [build clevis pin @<:@default=check@:>@])],
     [],

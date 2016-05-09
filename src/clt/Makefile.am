@@ -7,6 +7,11 @@ noinst_LTLIBRARIES = libclt.la
 libclt_la_SOURCES = adv.c adv.h rec.c rec.h msg.c msg.h sbuf.c sbuf.h
 libclt_la_LIBADD = ../libcore.la
 
+nagiosdir = $(libdir)/nagios/plugins
+nagios_PROGRAMS = tang
+tang_SOURCES = nagios.c
+tang_LDADD = libclt.la
+
 if USE_CLEVIS
 clevispin_LTLIBRARIES = tang.la
 tang_la_SOURCES = clevis.c

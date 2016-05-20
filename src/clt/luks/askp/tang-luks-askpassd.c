@@ -30,6 +30,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <error.h>
+#include <resolv.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -175,6 +176,7 @@ main(int argc, char *argv[])
         fds.all[i].events |= POLLRDHUP;
 
     for (int events; (events = poll(fds.all, ALLCNT, timeout)) >= 0; ) {
+        res_init();
         bool process = false;
 
         for (size_t i = 0; i < ALLCNT; i++) {

@@ -27,6 +27,7 @@ This is precisely what Tang does.
 
 ##### Installation
 
+    $ autoreconf -fi
     $ ./configure
     $ make
     $ sudo make install

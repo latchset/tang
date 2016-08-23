@@ -1,5 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=tang-luks-storaged
-Exec=@libexecdir@/tang-luks-storaged
-NoDisplay=true

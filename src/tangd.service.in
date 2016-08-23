@@ -1,0 +1,6 @@
+[Unit]
+Description=Tang daemon
+ConditionDirectoryNotEmpty=@tangdbdir@/keys
+
+[Service]
+ExecStart=@libexecdir@/tangd @plugindir@/dbdir.so @tangdbdir@/keys @plugindir@/bldir.so @tangdbdir@/blst

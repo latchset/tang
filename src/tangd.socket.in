@@ -1,0 +1,10 @@
+[Unit]
+Description=Tang daemon socket
+ConditionDirectoryNotEmpty=@tangdbdir@/keys
+
+[Socket]
+ListenStream=80
+ListenDatagram=80
+
+[Install]
+WantedBy=multi-user.target

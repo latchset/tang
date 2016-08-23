@@ -1,6 +1,30 @@
-SUBDIRS = . srv clt
+AM_CFLAGS = @TANG_CFLAGS@ @jose_CFLAGS@ @jose_openssl_CFLAGS@ @libsystemd_CFLAGS@ -fvisibility=hidden
 
-noinst_LTLIBRARIES = libcore.la
-libcore_la_CFLAGS = @TANG_CFLAGS@ @libcrypto_CFLAGS@
-libcore_la_LIBADD = @libcrypto_LIBS@
-libcore_la_SOURCES = asn1.c asn1.h conv.c conv.h pkt.c pkt.h list.c list.h
+tangdbdir = $(localstatedir)/db/$(PACKAGE_NAME)
+plugindir = $(libdir)/tang/plugins
+
+systemdsystemunit_DATA = tangd.socket tangd.service
+EXTRA_DIST = tangd.socket.in tangd.service.in
+CLEANFILES = tangd.socket tangd.service
+
+libexec_PROGRAMS = tangd
+tangd_SOURCES = http.c http.h io.c io.h tangd.c plugin.h adv.c rec.c
+tangd_CFLAGS = $(AM_CFLAGS) -rdynamic
+tangd_LDADD = @libsystemd_LIBS@ @jose_LIBS@ @http_parser_LIBS@ @dl_LIBS@
+
+plugin_LTLIBRARIES = dbdir.la bldir.la blapi.la
+dbdir_la_LIBADD = @jose_openssl_LIBS@ @jose_zlib_LIBS@
+dbdir_la_LDFLAGS = -module -avoid-version
+bldir_la_LDFLAGS = -module -avoid-version
+blapi_la_LDFLAGS = -module -avoid-version
+
+install-data-hook:
+	mkdir -p $(DESTDIR)$(tangdbdir)/keys
+	mkdir -p $(DESTDIR)$(tangdbdir)/blst
+
+%: %.in
+	$(AM_V_GEN)$(SED) \
+		-e 's,@libexecdir\@,$(libexecdir),g' \
+		-e 's,@tangdbdir\@,$(tangdbdir),g' \
+		-e 's,@plugindir\@,$(plugindir),g' \
+		$(srcdir)/$@.in > $@

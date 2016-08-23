@@ -1,9 +1,0 @@
-[Unit]
-Description=Tang key daemon socket
-ConditionDirectoryNotEmpty=@TANG_DB@
-
-[Socket]
-ListenDatagram=@TANG_PORT@
-
-[Install]
-WantedBy=multi-user.target

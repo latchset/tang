@@ -1,6 +1,0 @@
-[Unit]
-Description=Tang key daemon
-ConditionDirectoryNotEmpty=@TANG_DB@
-
-[Service]
-ExecStart=@libexecdir@/tang-keyd

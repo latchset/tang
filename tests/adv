@@ -1,0 +1,73 @@
+#!/bin/bash -x
+
+function on_exit() {
+    if [ "$PID" ]; then kill $PID; wait $PID || true; fi
+    [ "$PROXY" ] && kill $PROXY
+    [ -d "$DB" ] && rm -rf $DB
+}
+
+trap 'on_exit' EXIT
+trap 'exit' ERR
+
+export DB=`mktemp -d`
+jose gen -t '{"alg": "ES256"}'                                         > $DB/sig.jwk
+jose gen -t '{"alg": "ES256"}'                                         > $DB/.sig.jwk
+jose gen -t '{"alg": "ES256"}'                                         > $DB/.oth.jwk
+jose gen -t '{"alg": "ECDH-ES+A128KW"}'                                > $DB/enc.jwk
+jose gen -t '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' > $DB/exc.jwk
+
+for addr in "127.0.0.1" "[::1]"; do
+  for flags in "-a" "" "-d"; do
+    port=`shuf -i 1024-65536 -n 1`
+    systemd-socket-activate -l "$addr:$port" $flags $VALGRIND ./src/tangd src/.libs/dbdir.so $DB &
+    export PID=$!
+
+    # If we're testing datagram, use socat to create a TCP<=>UDP proxy
+    if [ "$flags" == "-d" ]; then
+      prxy=$port
+      port=`shuf -i 1024-65536 -n 1`
+      [ "$addr" == "127.0.0.1" ] && ver=4
+      [ "$addr" == "[::1]" ] && ver=6
+      socat tcp${ver}-listen:$port,fork udp${ver}:$addr:$prxy &
+      export PROXY=$!
+    fi
+
+    sleep 0.1
+
+    # Make sure requests on the root fail
+    ! wget -O- http://$addr:$port/
+
+    # The request should fail (404) for non-signature key IDs
+    ! wget -O- http://$addr:$port/adv/`jose thp -i $DB/enc.jwk`
+    ! wget -O- http://$addr:$port/adv/`jose thp -H sha512 -i $DB/enc.jwk`
+
+    # The default advertisement fetch should succeed and pass verification
+    wget -O- http://$addr:$port/adv
+    wget -O- http://$addr:$port/adv | jose ver -i- -k $DB/sig.jwk
+    wget -O- http://$addr:$port/adv/ | jose ver -i- -k $DB/sig.jwk
+
+    # Fetching by any thumbprint should work
+    wget -O- http://$addr:$port/adv/`jose thp -i $DB/sig.jwk` | jose ver -i- -k $DB/sig.jwk
+    wget -O- http://$addr:$port/adv/`jose thp -H sha512 -i $DB/sig.jwk` | jose ver -i- -k $DB/sig.jwk
+
+    # Requesting an adv by an advertised key ID should't be signed by hidden keys
+    ! wget -O- http://$addr:$port/adv/`jose thp -i $DB/sig.jwk` | jose ver -i- -k $DB/.sig.jwk
+    ! wget -O- http://$addr:$port/adv/`jose thp -i $DB/sig.jwk` | jose ver -i- -k $DB/.oth.jwk
+
+    # Verify that the default advertisement is not signed with hidden signature keys
+    ! wget -O- http://$addr:$port/adv/ | jose ver -i- -k $DB/.oth.jwk
+    ! wget -O- http://$addr:$port/adv/ | jose ver -i- -k $DB/.sig.jwk
+
+    # A private key advertisement is signed by all advertised keys and the requested private key
+    wget -O- http://$addr:$port/adv/`jose thp -i $DB/.sig.jwk` | jose ver -i- -k $DB/sig.jwk
+    wget -O- http://$addr:$port/adv/`jose thp -i $DB/.sig.jwk` | jose ver -i- -k $DB/.sig.jwk
+    ! wget -O- http://$addr:$port/adv/`jose thp -i $DB/.sig.jwk` | jose ver -i- -k $DB/.oth.jwk
+
+    [ "$PROXY" ] && kill $PROXY
+    unset PROXY
+
+    kill $PID
+    wait $PID || true
+    unset PID
+  done
+done

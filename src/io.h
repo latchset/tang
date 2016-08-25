@@ -24,6 +24,9 @@
 
 #define _EXPORT_ __attribute__((visibility("default")))
 
+char *
+tang_io_thumbprint(const json_t *jwk);
+
 json_t *
 tang_io_get_adv(const char *thp);
 
@@ -31,7 +34,7 @@ json_t *
 tang_io_get_rec_jwk(const char *thp);
 
 bool
-tang_io_is_blocked(const char *bid);
+tang_io_is_blocked(const json_t *jwk);
 
 int _EXPORT_
 tang_io_add_jwk(bool adv, const json_t *jwk);

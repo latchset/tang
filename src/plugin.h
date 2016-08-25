@@ -37,7 +37,9 @@ struct tang_plugin_map {
     struct tang_plugin_map *next;
 };
 
+typedef void (*tang_plugin_epoll)(void);
+
 extern struct tang_plugin_map *tang_plugin_maps;
 
 extern int
-tang_plugin_init(const char *cfg);
+tang_plugin_init(int epoll, const char *cfg);

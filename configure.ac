@@ -21,11 +21,10 @@ AC_CHECK_LIB([http_parser], [http_parser_execute],
 	       [AC_SUBST(http_parser_LIBS, [-lhttp_parser])],
 	       [AC_MSG_ERROR([http-parser required!])])
 
-PKG_CHECK_MODULES([jose], [jose])
-PKG_CHECK_MODULES([jose_zlib], [jose-zlib])
-PKG_CHECK_MODULES([jose_openssl], [jose-openssl])
+PKG_CHECK_MODULES([jose], [jose >= 4])
+PKG_CHECK_MODULES([jose_zlib], [jose-zlib >= 4])
+PKG_CHECK_MODULES([jose_openssl], [jose-openssl >= 4])
 
-PKG_CHECK_MODULES([libsystemd], [libsystemd])
 AC_SUBST([systemdsystemunitdir], [${prefix}/lib/systemd/system])
 
 TANG_CFLAGS="\
@@ -46,8 +45,6 @@ TANG_CFLAGS="\
 -Wunused-function \
 -Wno-missing-field-initializers \
 -Wno-unused-parameter \
--fno-omit-frame-pointer \
--fsanitize=address \
 "
 AC_SUBST([TANG_CFLAGS])
 

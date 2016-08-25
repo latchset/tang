@@ -19,9 +19,6 @@
 
 #include "io.h"
 
-#include <systemd/sd-journal.h>
-#include <systemd/sd-event.h>
-
 #include <jose/b64.h>
 #include <jose/jwk.h>
 #include <jose/jws.h>
@@ -30,7 +27,7 @@
 #include <errno.h>
 #include <string.h>
 
-const char *hashes[] = {
+static const char *hashes[] = {
     "sha224", /* NOTE: the first hash type is the default hash. */
     "sha256",
     "sha384",
@@ -68,7 +65,6 @@ const char *hashes[] = {
  */
 
 static json_t *ctx;
-static bool regen;
 
 static json_t *
 make_jwkset(void)
@@ -107,16 +103,14 @@ make_jws(void)
         return NULL;
 
     json_object_foreach(json_object_get(ctx, "sig"), thp, jwk) {
-        json_t *sig = NULL;
+        json_auto_t *sig = NULL;
 
         if (!json_object_get(json_object_get(ctx, "pub"), thp))
             continue;
 
         sig = json_pack("{s:{s:s}}", "protected", "cty", "jwk-set+json");
-        if (!jose_jws_sign(jws, jwk, sig)) {
-            sd_journal_print(LOG_WARNING, "Signing failed for %s:%s!\n",
-                             hashes[0], thp);
-        }
+        if (!jose_jws_sign(jws, jwk, sig))
+            fprintf(stderr, "Signing failed for %s:%s!\n", hashes[0], thp);
     }
 
     return jws;
@@ -140,6 +134,7 @@ make_adv(void)
 
     json_object_foreach(json_object_get(ctx, "sig"), thp, jwk) {
         char pub[jose_jwk_thumbprint_len(hashes[0]) + 1];
+        json_auto_t *sigs = NULL;
         json_auto_t *sig = NULL;
 
         if (!jose_jwk_thumbprint_buf(jwk, hashes[0], pub))
@@ -150,31 +145,27 @@ make_adv(void)
             continue;
         }
 
-        sig = json_deep_copy(jws);
+        sigs = json_deep_copy(jws);
+        if (!sigs)
+            continue;
+
+        sig = json_pack("{s:{s:s}}", "protected", "cty", "jwk-set+json");
         if (!sig)
             continue;
 
-        if (!jose_jws_sign(sig, jwk, json_pack("{s:{s:s}}", "protected",
-                                               "cty", "jwk-set+json")))
+        if (!jose_jws_sign(sigs, jwk, sig))
             continue;
 
-        json_object_set(adv, thp, sig);
+        json_object_set(adv, thp, sigs);
     }
 
     return adv;
 }
 
-static int
-on_change(sd_event_source *s, void *userdata)
+char *
+tang_io_thumbprint(const json_t *jwk)
 {
-    if (json_object_set_new(ctx, "adv", make_adv()) == 0)
-        sd_journal_print(LOG_DEBUG, "Rebuilt advertisement");
-    else
-        sd_journal_print(LOG_ERR, "Rebuilding advertisment failed!");
-
-    sd_event_source_unref(s);
-    regen = false;
-    return 0;
+    return jose_jwk_thumbprint(jwk, hashes[0]);
 }
 
 json_t *
@@ -193,15 +184,24 @@ tang_io_get_rec_jwk(const char *thp)
 }
 
 bool
-tang_io_is_blocked(const char *bid)
+tang_io_is_blocked(const json_t *jwk)
 {
-    return json_object_get(json_object_get(ctx, "blk"), bid) != NULL;
+    for (size_t i = 0; hashes[i]; i++) {
+        char thp[jose_jwk_thumbprint_len(hashes[i]) + 1];
+
+        if (!jose_jwk_thumbprint_buf(jwk, hashes[i], thp))
+            return true;
+
+        if (json_object_get(json_object_get(ctx, "blk"), thp))
+            return true;
+    }
+
+    return false;
 }
 
 int
 tang_io_add_jwk(bool adv, const json_t *jwk)
 {
-    sd_event __attribute__((cleanup(sd_event_unrefp))) *e = NULL;
     json_auto_t *key = NULL;
     json_auto_t *pub = NULL;
 
@@ -220,15 +220,14 @@ tang_io_add_jwk(bool adv, const json_t *jwk)
         char thp[jose_jwk_thumbprint_len(hashes[i]) + 1];
 
         if (!jose_jwk_thumbprint_buf(key, hashes[i], thp)) {
-            sd_journal_print(LOG_WARNING, "Unable to make JWK thumbprint!");
+            fprintf(stderr, "Unable to make JWK thumbprint!\n");
             return -EINVAL;
         }
 
         if (i == 0) {
             if (json_object_set_new(key, "kid", json_string(thp)) != 0 ||
                 json_object_set_new(pub, "kid", json_string(thp)) != 0) {
-                sd_journal_print(LOG_WARNING,
-                                 "Error setting default thumbprint!");
+                fprintf(stderr, "Error setting default thumbprint!\n");
                 return -ENOMEM;
             }
         }
@@ -245,14 +244,14 @@ tang_io_add_jwk(bool adv, const json_t *jwk)
             if (json_object_set(json_object_get(ctx, "rec"), thp, key) < 0)
                 return -ENOMEM;
         } else {
-            sd_journal_print(LOG_WARNING, "JWK has invalid key_ops!");
+            fprintf(stderr, "JWK has invalid key_ops!\n");
             return -EINVAL;
         }
 
         if (i == 0)
-            sd_journal_print(LOG_DEBUG, "Added JWK: %s", thp);
+            fprintf(stderr, "Added JWK: %s\n", thp);
         else
-            sd_journal_print(LOG_DEBUG, "Alias JWK: %s", thp);
+            fprintf(stderr, "Alias JWK: %s\n", thp);
 
         if (adv && i == 0) {
             if (json_object_set(json_object_get(ctx, "pub"), thp, pub) < 0)
@@ -260,10 +259,10 @@ tang_io_add_jwk(bool adv, const json_t *jwk)
         }
     }
 
-    if (!regen) {
-        if (sd_event_default(&e) >= 0)
-            regen = sd_event_add_defer(e, NULL, on_change, NULL) == 0;
-    }
+    if (json_object_set_new(ctx, "adv", make_adv()) == 0)
+        fprintf(stderr, "Rebuilt advertisement\n");
+    else
+        fprintf(stderr, "Rebuilding advertisment failed!\n");
 
     return 0;
 }
@@ -271,14 +270,13 @@ tang_io_add_jwk(bool adv, const json_t *jwk)
 int
 tang_io_del_jwk(const json_t *jwk)
 {
-    sd_event __attribute__((cleanup(sd_event_unrefp))) *e = NULL;
     bool found = false;
 
     for (size_t i = 0; hashes[i]; i++) {
         char thp[jose_jwk_thumbprint_len(hashes[i]) + 1];
 
         if (!jose_jwk_thumbprint_buf(jwk, hashes[i], thp)) {
-            sd_journal_print(LOG_WARNING, "Unable to make JWK thumbprint!");
+            fprintf(stderr, "Unable to make JWK thumbprint!\n");
             return -EINVAL;
         }
 
@@ -292,13 +290,14 @@ tang_io_del_jwk(const json_t *jwk)
             found = true;
 
         if (i == 0)
-            sd_journal_print(LOG_DEBUG, "Deleted JWK: %s", thp);
+            fprintf(stderr, "Deleted JWK: %s\n", thp);
     }
 
-    if (!regen) {
-        if (sd_event_default(&e) >= 0)
-            regen = sd_event_add_defer(e, NULL, on_change, NULL) == 0;
-    }
+
+    if (json_object_set_new(ctx, "adv", make_adv()) == 0)
+        fprintf(stderr, "Rebuilt advertisement\n");
+    else
+        fprintf(stderr, "Rebuilding advertisment failed!\n");
 
     return found ? 0 : -ENOENT;
 }
@@ -314,7 +313,7 @@ tang_io_add_bid(const char *bid)
     if (json_object_set_new(json_object_get(ctx, "blk"), bid, json_true()) < 0)
         return -ENOMEM;
 
-    sd_journal_print(LOG_DEBUG, "Added Blacklist ID: %s", bid);
+    fprintf(stderr, "Added Blacklist ID: %s\n", bid);
 
     return 0;
 }
@@ -330,7 +329,7 @@ tang_io_del_bid(const char *bid)
     if (json_object_del(json_object_get(ctx, "blk"), bid) < 0)
         return -ENOENT;
 
-    sd_journal_print(LOG_DEBUG, "Deleted Blacklist ID: %s", bid);
+    fprintf(stderr, "Deleted Blacklist ID: %s\n", bid);
 
     return 0;
 }

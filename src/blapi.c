@@ -126,7 +126,7 @@ bllst(const char *path, regmatch_t matches[],
 }
 
 int __attribute__((visibility("default")))
-tang_plugin_init(const char *cfg)
+tang_plugin_init(int epoll, const char *cfg)
 {
     static struct tang_plugin_map maps[] = {
         { blmod, (1 << HTTP_DELETE) | (1 << HTTP_PUT),

@@ -4,7 +4,7 @@ ConditionDirectoryNotEmpty=@tangdbdir@/keys
 
 [Socket]
 ListenStream=80
-ListenDatagram=80
+Accept=true
 
 [Install]
 WantedBy=multi-user.target

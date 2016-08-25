@@ -19,9 +19,7 @@
 
 #include "plugin.h"
 
-#include <systemd/sd-event.h>
-#include <systemd/sd-journal.h>
-
+#include <sys/epoll.h>
 #include <sys/inotify.h>
 #include <dirent.h>
 #include <errno.h>
@@ -29,7 +27,9 @@
 #include <string.h>
 #include <unistd.h>
 
-static json_t *ctx;
+static const char *path = NULL;
+static json_t *ctx = NULL;
+static int fd = -1;
 
 static void
 load_jwks(const char *db, const char *name)
@@ -44,7 +44,7 @@ load_jwks(const char *db, const char *name)
 
     jwkset = json_load_file(fn, 0, NULL);
     if (!jwkset) {
-        sd_journal_print(LOG_WARNING, "Error loading JWK(Set): %s!\n", fn);
+        fprintf(stderr, "Error loading JWK(Set): %s!\n", fn);
         return;
     }
 
@@ -64,8 +64,8 @@ load_jwks(const char *db, const char *name)
     return;
 }
 
-static int
-on_change(sd_event_source *s, int fd, uint32_t revents, void *userdata)
+static void
+on_change(void)
 {
     unsigned char buf[sizeof(struct inotify_event) + NAME_MAX + 1] = {};
     const struct inotify_event *ev;
@@ -73,7 +73,7 @@ on_change(sd_event_source *s, int fd, uint32_t revents, void *userdata)
 
     bytes = read(fd, buf, sizeof(buf));
     if (bytes < 0)
-        return -errno;
+        return;
 
     for (ssize_t i = 0; i < bytes; i += sizeof(*ev) + ev->len) {
         const json_t *jwk = NULL;
@@ -89,18 +89,20 @@ on_change(sd_event_source *s, int fd, uint32_t revents, void *userdata)
         }
 
         if (ev->mask & (IN_MOVED_TO | IN_CREATE | IN_CLOSE_WRITE))
-            load_jwks(userdata, ev->name);
+            load_jwks(path, ev->name);
     }
-
-    return 0;
 }
 
 int __attribute__((visibility("default")))
-tang_plugin_init(const char *cfg)
+tang_plugin_init(int epoll, const char *cfg)
 {
-    sd_event __attribute__((cleanup(sd_event_unrefp))) *e = NULL;
     DIR *dir = NULL;
-    int fd = -1;
+
+    errno = 0;
+
+    ctx = json_object();
+    if (!ctx)
+        return -ENOMEM;
 
     dir = opendir(cfg);
     if (!dir) {
@@ -110,19 +112,18 @@ tang_plugin_init(const char *cfg)
 
     fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
     if (fd < 0)
-        goto error;
+        goto egress;
 
     if (inotify_add_watch(fd, cfg, IN_ONLYDIR | IN_CLOSE_WRITE | IN_MOVE |
                                    IN_CREATE  | IN_DELETE) < 0)
-        goto error;
+        goto egress;
 
-    errno = -sd_event_default(&e);
-    if (errno > 0)
-        goto error;
-
-    errno = -sd_event_add_io(e, NULL, fd, EPOLLIN, on_change, (void *) cfg);
-    if (errno > 0)
-        goto error;
+    if (epoll_ctl(epoll, EPOLL_CTL_ADD, fd,
+                  &(struct epoll_event) {
+                      .events = EPOLLIN,
+                      .data.ptr = on_change
+                  }) < 0)
+        goto egress;
 
     for (struct dirent *de = readdir(dir); de; de = readdir(dir)) {
         if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
@@ -131,25 +132,18 @@ tang_plugin_init(const char *cfg)
         load_jwks(cfg, de->d_name);
     }
 
+egress:
     closedir(dir);
-    return 0;
-
-error:
-    closedir(dir);
-    if (fd >= 0)
-        close(fd);
+    path = cfg;
     return -errno;
 }
-
-static void __attribute__((constructor))
-constructor(void)
-{
-    ctx = json_object();
-}
-
 
 static void __attribute__((destructor))
 destructor(void)
 {
     json_decref(ctx);
+    if (fd >= 0) {
+        close(fd);
+        fd = -1;
+    }
 }

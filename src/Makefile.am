@@ -1,4 +1,4 @@
-AM_CFLAGS = @TANG_CFLAGS@ @jose_CFLAGS@ @jose_openssl_CFLAGS@ @libsystemd_CFLAGS@ -fvisibility=hidden
+AM_CFLAGS = @TANG_CFLAGS@ @jose_CFLAGS@ @jose_openssl_CFLAGS@ -fvisibility=hidden
 
 tangdbdir = $(localstatedir)/db/$(PACKAGE_NAME)
 plugindir = $(libdir)/tang/plugins
@@ -8,9 +8,9 @@ EXTRA_DIST = tangd.socket.in tangd.service.in
 CLEANFILES = tangd.socket tangd.service
 
 libexec_PROGRAMS = tangd
-tangd_SOURCES = http.c http.h io.c io.h tangd.c plugin.h adv.c rec.c
+tangd_SOURCES = io.c io.h tangd.c plugin.h adv.c rec.c
 tangd_CFLAGS = $(AM_CFLAGS) -rdynamic
-tangd_LDADD = @libsystemd_LIBS@ @jose_LIBS@ @http_parser_LIBS@ @dl_LIBS@
+tangd_LDADD = @jose_LIBS@ @http_parser_LIBS@ @dl_LIBS@
 
 plugin_LTLIBRARIES = dbdir.la bldir.la blapi.la
 dbdir_la_LIBADD = @jose_openssl_LIBS@ @jose_zlib_LIBS@

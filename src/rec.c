@@ -19,8 +19,6 @@
 
 #include "plugin.h"
 
-#include <systemd/sd-journal.h>
-
 #include <jose/b64.h>
 #include <jose/jwk.h>
 #include <jose/jwe.h>
@@ -28,88 +26,148 @@
 #include <errno.h>
 #include <string.h>
 
+static jose_buf_t *
+decrypt(json_t *jwe, bool *forbidden, const char *fmt, ...)
+{
+    const json_t *jwk = NULL;
+    const char *addr = NULL;
+    json_auto_t *arr = NULL;
+    json_auto_t *cek = NULL;
+    const char *kid = NULL;
+
+    addr = getenv("REMOTE_ADDR");
+
+    arr = json_incref(json_object_get(jwe, "recipients"));
+    if (!arr) {
+        arr = json_pack("[O]", jwe);
+        if (!arr)
+            return NULL;
+    }
+
+    for (size_t i = 0; i < json_array_size(arr); i++) {
+        json_t *rcp = json_array_get(arr, i);
+        jose_buf_auto_t *tmp = NULL;
+        json_auto_t *hdr = NULL;
+        char *thp = NULL;
+        va_list ap;
+
+        hdr = jose_jwe_merge_header(jwe, rcp);
+        if (!hdr)
+            return NULL;
+
+        if (json_unpack(hdr, "{s:s}", "kid", &kid) != 0)
+            return NULL;
+
+        jwk = tang_io_get_rec_jwk(kid);
+        if (!jwk)
+            continue;
+
+        *forbidden = !jose_jwk_allowed(jwk, true, NULL, "unwrapKey");
+        if (*forbidden)
+            return NULL;
+
+        cek = jose_jwe_unwrap(jwe, jwk, NULL);
+        if (!cek)
+            return NULL;
+
+        thp = tang_io_thumbprint(cek);
+        if (!thp)
+            return NULL;
+
+        *forbidden = tang_io_is_blocked(cek);
+        fprintf(stderr, "%s %s from %s\n",
+                *forbidden ? "Denied" : "Decrypted", thp,
+                addr ? addr : "<unknown>");
+        free(thp);
+        if (*forbidden)
+            return NULL;
+
+        tmp = jose_jwe_decrypt(jwe, cek);
+        if (tmp) {
+            if (fmt) {
+                va_start(ap, fmt);
+                if (json_vunpack_ex(hdr, NULL, 0, fmt, ap) != 0) {
+                    va_end(ap);
+                    return NULL;
+                }
+                va_end(ap);
+            }
+
+            return jose_buf_incref(tmp);
+        }
+    }
+
+    return NULL;
+}
+
 static ssize_t
-rec(const char *path, regmatch_t matches[],
+rec(const char *path, regmatch_t matchez[],
     const char *body, enum http_method method,
     char pkt[], size_t pktl)
 {
     json_auto_t *req = NULL;
     json_auto_t *rep = NULL;
-    const json_t *jwk = NULL;
+    const char *kid = NULL;
+    const char *kty = NULL;
     const char *ct = NULL;
-    char *thp = NULL;
     char *enc = NULL;
     int r = 0;
-
-    if (matches[1].rm_so >= matches[1].rm_eo)
-        return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
-
-    thp = strndup(&path[matches[1].rm_so],
-                  matches[1].rm_eo - matches[1].rm_so);
-    if (!thp)
-        return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
-
-    jwk = tang_io_get_rec_jwk(thp);
-    free(thp);
-    if (!jwk)
-        return snprintf(pkt, pktl, ERR_TMPL, 404, "Not Found");
 
     req = json_loads(body, 0, NULL);
     if (!req)
         return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
 
-    if (jose_jwk_allowed(jwk, true, NULL, "deriveKey")) {
-        ct = "application/jwk+json";
+    /* Perform outer decryption if necessary. */
+    if (json_object_get(req, "ciphertext")) {
+        jose_buf_auto_t *pt = NULL;
+        bool forbidden = false;
+
+        pt = decrypt(req, &forbidden, NULL);
+        if (!pt)
+            return snprintf(pkt, pktl, ERR_TMPL, forbidden ? 403 : 400,
+                            forbidden ? "Forbidden" : "Bad Request");
+
+        json_decref(req);
+        req = json_loadb((char *) pt->data, pt->size, 0, NULL);
+        if (!req)
+            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
+    }
+
+    /* Anonymous mode */
+    if (json_unpack(req, "{s:s,s:s}", "kty", &kty, "kid", &kid) == 0) {
+        const json_t *jwk = NULL;
+
+        if (strcmp(kty, "EC") != 0)
+            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
+
+        jwk = tang_io_get_rec_jwk(kid);
+        if (!jwk)
+            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
+
+        if (!jose_jwk_allowed(jwk, true, NULL, "deriveKey"))
+            return snprintf(pkt, pktl, ERR_TMPL, 403, "Forbidden");
 
         rep = jose_jwk_exchange(jwk, req);
         if (!rep)
             return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
-    } else if (jose_jwk_allowed(jwk, true, NULL, "unwrapKey")) {
+
+        ct = "application/jwk+json";
+
+    /* Wrap mode */
+    } else if (json_object_get(req, "ciphertext")) {
         jose_buf_auto_t *pt = NULL;
-        json_auto_t *hdr = NULL;
-        json_auto_t *jwe = NULL;
+        json_auto_t *jwk = NULL;
         json_auto_t *cek = NULL;
-        const char *bid = NULL;
+        bool forbidden = false;
         bool ret = false;
 
-        ct = "application/jose+json";
-
-        /* Perform outer decryption. */
-        cek = jose_jwe_unwrap(req, NULL, jwk);
-        if (!cek)
-            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
-
-        jwe = jose_jwe_decrypt_json(req, cek);
-        if (!jwe)
-            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
-
-        /* Verify tang.bid in the protected header isn't blocked. */
-        hdr = jose_b64_decode_json_load(json_object_get(jwe, "protected"));
-        if (!hdr)
-            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
-
-        if (json_unpack(hdr, "{s:s}", "tang.bid", &bid) != 0)
-            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
-
-        if (tang_io_is_blocked(bid))
-            return snprintf(pkt, pktl, ERR_TMPL, 403, "Forbidden");
-
         /* Perform inner decryption. */
-        json_decref(cek);
-        cek = jose_jwe_unwrap(jwe, NULL, jwk);
-        if (!cek)
-            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
-
-        pt = jose_jwe_decrypt(jwe, cek);
+        pt = decrypt(req, &forbidden, "{s:O}", "tang.jwk", &jwk);
         if (!pt)
-            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
+            return snprintf(pkt, pktl, ERR_TMPL, forbidden ? 403 : 400,
+                            forbidden ? "Forbidden" : "Bad Request");
 
         /* Perform re-encryption. */
-        if (json_unpack(jwe, "{s:{s:o}}",
-                        "unprotected", "tang.jwk", &jwk) != 0)
-            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
-
-        json_decref(cek);
         cek = json_object();
         rep = json_object();
         if (!jose_jwe_wrap(rep, cek, jwk, NULL))
@@ -118,6 +176,10 @@ rec(const char *path, regmatch_t matches[],
         ret = jose_jwe_encrypt(rep, cek, pt->data, pt->size);
         if (!ret)
             return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
+
+        ct = "application/jose+json";
+    } else {
+        return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
     }
 
     /* Dump output. */
@@ -138,7 +200,7 @@ static void __attribute__((constructor))
 constructor(void)
 {
     static struct tang_plugin_map map = {
-        rec, 1 << HTTP_POST, 2, "^/+rec/+([0-9A-Za-z_-]+)$"
+        rec, 1 << HTTP_POST, 1, "^/+rec/*$"
     };
 
     map.next = tang_plugin_maps;

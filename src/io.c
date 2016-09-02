@@ -70,18 +70,11 @@ const char *hashes[] = {
 static json_t *ctx;
 static bool regen;
 
-static void
-json_decrefp(json_t **json)
-{
-    if (json)
-        json_decref(*json);
-}
-
 static json_t *
 make_jwkset(void)
 {
+    json_auto_t *jwkset = NULL;
     const char *thp = NULL;
-    json_t *jwkset = NULL;
     json_t *jwk = NULL;
 
     jwkset = json_pack("{s:[]}", "keys");
@@ -89,13 +82,11 @@ make_jwkset(void)
         return NULL;
 
     json_object_foreach(json_object_get(ctx, "pub"), thp, jwk) {
-        if (json_array_append(json_object_get(jwkset, "keys"), jwk) < 0) {
-            json_decref(jwkset);
+        if (json_array_append(json_object_get(jwkset, "keys"), jwk) < 0)
             return NULL;
-        }
     }
 
-    return jwkset;
+    return json_incref(jwkset);
 }
 
 static json_t *
@@ -148,8 +139,8 @@ make_adv(void)
         return NULL;
 
     json_object_foreach(json_object_get(ctx, "sig"), thp, jwk) {
-        json_t __attribute__((cleanup(json_decrefp))) *sig = NULL;
         char pub[jose_jwk_thumbprint_len(hashes[0]) + 1];
+        json_auto_t *sig = NULL;
 
         if (!jose_jwk_thumbprint_buf(jwk, hashes[0], pub))
             continue;
@@ -211,8 +202,8 @@ int
 tang_io_add_jwk(bool adv, const json_t *jwk)
 {
     sd_event __attribute__((cleanup(sd_event_unrefp))) *e = NULL;
-    json_t __attribute__((cleanup(json_decrefp))) *key = NULL;
-    json_t __attribute__((cleanup(json_decrefp))) *pub = NULL;
+    json_auto_t *key = NULL;
+    json_auto_t *pub = NULL;
 
     key = json_deep_copy(jwk);
     if (!key)

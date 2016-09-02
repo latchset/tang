@@ -28,20 +28,13 @@
 #include <errno.h>
 #include <string.h>
 
-static void
-json_decrefp(json_t **json)
-{
-    if (json)
-        json_decref(*json);
-}
-
 static ssize_t
 rec(const char *path, regmatch_t matches[],
     const char *body, enum http_method method,
     char pkt[], size_t pktl)
 {
-    json_t __attribute__((cleanup(json_decrefp))) *req = NULL;
-    json_t __attribute__((cleanup(json_decrefp))) *rep = NULL;
+    json_auto_t *req = NULL;
+    json_auto_t *rep = NULL;
     const json_t *jwk = NULL;
     const char *ct = NULL;
     char *thp = NULL;
@@ -72,13 +65,12 @@ rec(const char *path, regmatch_t matches[],
         if (!rep)
             return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
     } else if (jose_jwk_allowed(jwk, true, NULL, "unwrapKey")) {
-        json_t __attribute__((cleanup(json_decrefp))) *hdr = NULL;
-        json_t __attribute__((cleanup(json_decrefp))) *jwe = NULL;
-        json_t __attribute__((cleanup(json_decrefp))) *cek = NULL;
+        jose_buf_auto_t *pt = NULL;
+        json_auto_t *hdr = NULL;
+        json_auto_t *jwe = NULL;
+        json_auto_t *cek = NULL;
         const char *bid = NULL;
-        uint8_t *pt = NULL;
         bool ret = false;
-        size_t ptl = 0;
 
         ct = "application/jose+json";
 
@@ -108,30 +100,22 @@ rec(const char *path, regmatch_t matches[],
         if (!cek)
             return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
 
-        pt = jose_jwe_decrypt(jwe, cek, &ptl);
+        pt = jose_jwe_decrypt(jwe, cek);
         if (!pt)
             return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
 
         /* Perform re-encryption. */
         if (json_unpack(jwe, "{s:{s:o}}",
-                        "unprotected", "tang.jwk", &jwk) != 0) {
-            memset(pt, 0, ptl);
-            free(pt);
+                        "unprotected", "tang.jwk", &jwk) != 0)
             return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
-        }
 
         json_decref(cek);
         cek = json_object();
         rep = json_object();
-        if (!jose_jwe_wrap(rep, cek, jwk, NULL)) {
-            memset(pt, 0, ptl);
-            free(pt);
+        if (!jose_jwe_wrap(rep, cek, jwk, NULL))
             return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
-        }
 
-        ret = jose_jwe_encrypt(rep, cek, pt, ptl);
-        memset(pt, 0, ptl);
-        free(pt);
+        ret = jose_jwe_encrypt(rep, cek, pt->data, pt->size);
         if (!ret)
             return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
     }

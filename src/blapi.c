@@ -85,7 +85,7 @@ bllst(const char *path, regmatch_t matches[],
       const char *body, enum http_method method,
       char pkt[], size_t pktl)
 {
-    json_t *arr = NULL;
+    json_auto_t *arr = NULL;
     char *out = NULL;
     DIR *d = NULL;
     int r = 0;
@@ -95,10 +95,8 @@ bllst(const char *path, regmatch_t matches[],
         return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
 
     d = opendir(dir);
-    if (!d) {
-        json_decref(arr);
+    if (!d)
         return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
-    }
 
     for (struct dirent *de = readdir(d); de; de = readdir(d)) {
         bool valid = true;
@@ -111,7 +109,6 @@ bllst(const char *path, regmatch_t matches[],
     }
 
     out = json_dumps(arr, JSON_COMPACT);
-    json_decref(arr);
     closedir(d);
     if (!out)
         return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");

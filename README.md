@@ -263,7 +263,7 @@ The stored metadata is:
 1. the `sJWK` (public key)
 2. the `cJWK` (public key)
 
-Expressed mathimatically (capital = private key):
+Expressed mathematically (capital = private key):
 
     s = g * S # sJWK (Server operation)
     c = g * C # cJWK
@@ -282,7 +282,7 @@ The server then performs its half of the ECDH key exchange using `xJWK` and
 The client then performs half of an ECDH key exchange between `eJWK` and
 `sJWK`, producing `zJWK`. Subtracing `zJWK` from `yJWK` produces `dJWK` again.
 
-Expressed mathimatically (capital = private key):
+Expressed mathematically (capital = private key):
 
     e = g * E # eJWK
     x = c + e # xJWK

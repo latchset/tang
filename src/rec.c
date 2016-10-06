@@ -55,7 +55,7 @@ decrypt(json_t *jwe, bool *forbidden, const char *fmt, ...)
         if (json_unpack(hdr, "{s:s}", "kid", &kid) != 0)
             return NULL;
 
-        jwk = tang_io_get_rec_jwk(kid);
+        jwk = tang_db_get_rec_jwk(kid);
         if (!jwk)
             continue;
 
@@ -67,13 +67,13 @@ decrypt(json_t *jwe, bool *forbidden, const char *fmt, ...)
         if (!cek)
             return NULL;
 
-        thp = tang_io_thumbprint(cek);
+        thp = tang_db_thumbprint(cek);
         if (!thp)
             return NULL;
 
         fprintf(stderr, " => %s", thp);
 
-        *forbidden = tang_io_is_blocked(cek);
+        *forbidden = tang_db_is_blocked(cek);
         free(thp);
         if (*forbidden)
             return NULL;
@@ -137,7 +137,7 @@ rec(enum http_method method, const char *path, const char *body,
         if (strcmp(kty, "EC") != 0)
             return tang_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 
-        jwk = tang_io_get_rec_jwk(kid);
+        jwk = tang_db_get_rec_jwk(kid);
         if (!jwk)
             return tang_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 

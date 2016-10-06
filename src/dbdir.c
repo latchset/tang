@@ -59,7 +59,7 @@ load_jwks(const char *db, const char *name)
         return;
 
     json_array_foreach(arr, i, jwk)
-        tang_io_add_jwk(name[0] != '.', jwk);
+        tang_db_add_jwk(name[0] != '.', jwk);
 
     return;
 }
@@ -84,7 +84,7 @@ on_change(void)
 
         jwk = json_object_get(ctx, ev->name);
         if (jwk) {
-            tang_io_del_jwk(jwk);
+            tang_db_del_jwk(jwk);
             json_object_del(ctx, ev->name);
         }
 

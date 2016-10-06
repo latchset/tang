@@ -8,7 +8,7 @@ EXTRA_DIST = tangd.socket.in tangd.service.in
 CLEANFILES = tangd.socket tangd.service
 
 libexec_PROGRAMS = tangd
-tangd_SOURCES = io.c io.h plugin.c plugin.h tangd.c adv.c rec.c
+tangd_SOURCES = db.c db.h plugin.c plugin.h tangd.c adv.c rec.c
 tangd_CFLAGS = $(AM_CFLAGS) -rdynamic
 tangd_LDADD = @jose_LIBS@ @http_parser_LIBS@ @dl_LIBS@
 

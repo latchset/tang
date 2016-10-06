@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "io.h"
+#include "db.h"
 
 #include <jose/b64.h>
 #include <jose/jwk.h>
@@ -49,7 +49,7 @@ static const char *hashes[] = {
  *   },
  * }
  *
- * The "blk" subtree is managed by tang_io_add_bid() and tang_io_del_bid().
+ * The "blk" subtree is managed by tang_db_add_bid() and tang_db_del_bid().
  *
  * The "pub" subtree contains all advertised keys indexed by their thumbprints
  * using the default hash.
@@ -57,7 +57,7 @@ static const char *hashes[] = {
  * The "sig" and "rec" subtrees contain the signing and recovery keys,
  * respectively, indexed by thumbprints calculated using all supported hashes.
  *
- * Whenever tang_io_add_jwk() or tang_io_del_jwk() are called, a transient
+ * Whenever tang_db_add_jwk() or tang_db_del_jwk() are called, a transient
  * defer event is created to create all possible advertisements in the "adv"
  * portion of the tree. This way, whenever we receive an advertisement request,
  * we can just hand off the pre-calculated advertisement rather than performing
@@ -163,13 +163,13 @@ make_adv(void)
 }
 
 char *
-tang_io_thumbprint(const json_t *jwk)
+tang_db_thumbprint(const json_t *jwk)
 {
     return jose_jwk_thumbprint(jwk, hashes[0]);
 }
 
 json_t *
-tang_io_get_adv(const char *thp)
+tang_db_get_adv(const char *thp)
 {
     if (!thp)
         thp = "default";
@@ -178,13 +178,13 @@ tang_io_get_adv(const char *thp)
 }
 
 json_t *
-tang_io_get_rec_jwk(const char *thp)
+tang_db_get_rec_jwk(const char *thp)
 {
     return json_object_get(json_object_get(ctx, "rec"), thp);
 }
 
 bool
-tang_io_is_blocked(const json_t *jwk)
+tang_db_is_blocked(const json_t *jwk)
 {
     for (size_t i = 0; hashes[i]; i++) {
         char thp[jose_jwk_thumbprint_len(hashes[i]) + 1];
@@ -200,7 +200,7 @@ tang_io_is_blocked(const json_t *jwk)
 }
 
 int
-tang_io_add_jwk(bool adv, const json_t *jwk)
+tang_db_add_jwk(bool adv, const json_t *jwk)
 {
     json_auto_t *key = NULL;
     json_auto_t *pub = NULL;
@@ -268,7 +268,7 @@ tang_io_add_jwk(bool adv, const json_t *jwk)
 }
 
 int
-tang_io_del_jwk(const json_t *jwk)
+tang_db_del_jwk(const json_t *jwk)
 {
     bool found = false;
 
@@ -303,7 +303,7 @@ tang_io_del_jwk(const json_t *jwk)
 }
 
 int
-tang_io_add_bid(const char *bid)
+tang_db_add_bid(const char *bid)
 {
     for (size_t i = 0; bid[i]; i++) {
         if (!isalnum(bid[i]) && !strchr("-_", bid[i]))
@@ -319,7 +319,7 @@ tang_io_add_bid(const char *bid)
 }
 
 int
-tang_io_del_bid(const char *bid)
+tang_db_del_bid(const char *bid)
 {
     for (size_t i = 0; bid[i]; i++) {
         if (!isalnum(bid[i]) && !strchr("-_", bid[i]))

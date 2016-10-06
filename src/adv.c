@@ -38,7 +38,7 @@ adv(enum http_method method, const char *path, const char *body,
             return tang_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
     }
 
-    jws = tang_io_get_adv(thp);
+    jws = tang_db_get_adv(thp);
     free(thp);
     if (!jws)
         return tang_reply(HTTP_STATUS_NOT_FOUND, NULL);

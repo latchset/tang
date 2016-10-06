@@ -25,25 +25,25 @@
 #define _EXPORT_ __attribute__((visibility("default")))
 
 char *
-tang_io_thumbprint(const json_t *jwk);
+tang_db_thumbprint(const json_t *jwk);
 
 json_t *
-tang_io_get_adv(const char *thp);
+tang_db_get_adv(const char *thp);
 
 json_t *
-tang_io_get_rec_jwk(const char *thp);
+tang_db_get_rec_jwk(const char *thp);
 
 bool
-tang_io_is_blocked(const json_t *jwk);
+tang_db_is_blocked(const json_t *jwk);
 
 int _EXPORT_
-tang_io_add_jwk(bool adv, const json_t *jwk);
+tang_db_add_jwk(bool adv, const json_t *jwk);
 
 int _EXPORT_
-tang_io_del_jwk(const json_t *jwk);
+tang_db_del_jwk(const json_t *jwk);
 
 int _EXPORT_
-tang_io_add_bid(const char *bid);
+tang_db_add_bid(const char *bid);
 
 int _EXPORT_
-tang_io_del_bid(const char *bid);
+tang_db_del_bid(const char *bid);

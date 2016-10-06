@@ -45,9 +45,9 @@ on_change(void)
         if (ev->len == 0)
             continue;
 
-        tang_io_del_bid(ev->name);
+        tang_db_del_bid(ev->name);
         if (ev->mask & (IN_MOVED_TO | IN_CREATE))
-            tang_io_add_bid(ev->name);
+            tang_db_add_bid(ev->name);
     }
 }
 
@@ -80,7 +80,7 @@ tang_plugin_init(int epoll, const char *cfg)
         goto egress;
 
     for (struct dirent *de = readdir(dir); de; de = readdir(dir))
-        tang_io_add_bid(de->d_name);
+        tang_db_add_bid(de->d_name);
 
 egress:
     closedir(dir);

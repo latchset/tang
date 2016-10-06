@@ -1,0 +1,39 @@
+#!/bin/bash -ex
+
+case "$1" in
+  centos:7)
+    curl -o /etc/yum.repos.d/npmccallum-jansson-epel-7.repo \
+      https://copr.fedorainfracloud.org/coprs/npmccallum/jansson/repo/epel-7/npmccallum-jansson-epel-7.repo
+    curl -o /etc/yum.repos.d/npmccallum-jose-epel-7.repo \
+      https://copr.fedorainfracloud.org/coprs/npmccallum/jose/repo/epel-7/npmccallum-jose-epel-7.repo
+    curl -o /etc/yum.repos.d/npmccallum-http-parser-epel-7.repo \
+      https://copr.fedorainfracloud.org/coprs/npmccallum/http-parser/repo/epel-7/npmccallum-http-parser-epel-7.repo
+    ;;
+
+  fedora:23)
+    ;;
+
+  fedora:*)
+    rt=compiler-rt
+    ;;
+esac
+
+yum -y clean all
+yum -y --setopt=deltarpm=0 update
+yum -y install automake autoconf libtool pkgconfig openssl-devel zlib-devel jansson-devel jose libjose*devel http-parser-devel wget git gcc make file clang systemd which $rt
+
+autoreconf -if
+
+if ! CFLAGS=-coverage LDFLAGS=-lgcov ./configure --prefix=/usr; then
+  cat ./config.log
+  exit 1
+fi
+
+make -j8 -k check V=1 TESTS=
+
+if ! make -j8 check; then
+  cat ./test-suite.log
+  exit 1
+fi
+
+bash <(curl -s https://codecov.io/bash)

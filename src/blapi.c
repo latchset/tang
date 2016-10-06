@@ -29,20 +29,18 @@
 
 static const char *dir;
 
-static ssize_t
-blmod(const char *path, regmatch_t matches[],
-      const char *body, enum http_method method,
-      char pkt[], size_t pktl)
+static int
+blmod(enum http_method method, const char *path, const char *body,
+      regmatch_t matches[])
 {
     size_t size = matches[1].rm_eo - matches[1].rm_so;
-    char *msg = NULL;
     char *id = NULL;
     int status = 0;
     int r = -1;
 
     id = malloc(strlen(dir) + size + 2);
     if (!id)
-        return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
+        return tang_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
     strcpy(id, dir);
     strcat(id, "/");
@@ -67,23 +65,18 @@ blmod(const char *path, regmatch_t matches[],
     free(id);
 
     switch (r >= 0 ? 0 : errno) {
-    case 0:      status = 200; msg = "OK"; break;
-    case ENOENT: status = 404; msg = "Not Found"; break;
-    case EEXIST: status = 409; msg = "Conflict"; break;
-    default:     status = 500; msg = "Internal Server Error"; break;
+    case 0:      status = HTTP_STATUS_OK;                    break;
+    case ENOENT: status = HTTP_STATUS_NOT_FOUND;             break;
+    case EEXIST: status = HTTP_STATUS_CONFLICT;              break;
+    default:     status = HTTP_STATUS_INTERNAL_SERVER_ERROR; break;
     }
 
-    return snprintf(pkt, pktl,
-                    "HTTP/1.1 %d %s\r\n"
-                    "Content-Length: 0\r\n"
-                    "Connection: close\r\n"
-                    "\r\n", status, msg);
+    return tang_reply(status, NULL);
 }
 
-static ssize_t
-bllst(const char *path, regmatch_t matches[],
-      const char *body, enum http_method method,
-      char pkt[], size_t pktl)
+static int
+bllst(enum http_method method, const char *path, const char *body,
+      regmatch_t matches[])
 {
     json_auto_t *arr = NULL;
     char *out = NULL;
@@ -92,11 +85,11 @@ bllst(const char *path, regmatch_t matches[],
 
     arr = json_array();
     if (!arr)
-        return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
+        return tang_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
     d = opendir(dir);
     if (!d)
-        return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
+        return tang_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
     for (struct dirent *de = readdir(d); de; de = readdir(d)) {
         bool valid = true;
@@ -111,17 +104,13 @@ bllst(const char *path, regmatch_t matches[],
     out = json_dumps(arr, JSON_COMPACT);
     closedir(d);
     if (!out)
-        return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
+        return tang_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
-    r = snprintf(pkt, pktl,
-                 "HTTP/1.1 200 OK\r\n"
-                 "Content-Length: %zu\r\n"
-                 "Content-Type: application/json\r\n"
-                 "Connection: close\r\n"
-                 "\r\n%s", strlen(out), out);
+    r = tang_reply(HTTP_STATUS_OK,
+                   "Content-Length: %zu\r\n"
+                   "Content-Type: application/json\r\n"
+                   "\r\n%s", strlen(out), out);
     free(out);
-    if (r < 0 || r > (int) pktl)
-        return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
     return r;
 }
 

@@ -30,12 +30,9 @@ static jose_buf_t *
 decrypt(json_t *jwe, bool *forbidden, const char *fmt, ...)
 {
     const json_t *jwk = NULL;
-    const char *addr = NULL;
     json_auto_t *arr = NULL;
     json_auto_t *cek = NULL;
     const char *kid = NULL;
-
-    addr = getenv("REMOTE_ADDR");
 
     arr = json_incref(json_object_get(jwe, "recipients"));
     if (!arr) {
@@ -74,10 +71,9 @@ decrypt(json_t *jwe, bool *forbidden, const char *fmt, ...)
         if (!thp)
             return NULL;
 
+        fprintf(stderr, " => %s", thp);
+
         *forbidden = tang_io_is_blocked(cek);
-        fprintf(stderr, "%s %s from %s\n",
-                *forbidden ? "Denied" : "Decrypted", thp,
-                addr ? addr : "<unknown>");
         free(thp);
         if (*forbidden)
             return NULL;
@@ -100,10 +96,9 @@ decrypt(json_t *jwe, bool *forbidden, const char *fmt, ...)
     return NULL;
 }
 
-static ssize_t
-rec(const char *path, regmatch_t matchez[],
-    const char *body, enum http_method method,
-    char pkt[], size_t pktl)
+static int
+rec(enum http_method method, const char *path, const char *body,
+    regmatch_t matches[])
 {
     json_auto_t *req = NULL;
     json_auto_t *rep = NULL;
@@ -115,7 +110,7 @@ rec(const char *path, regmatch_t matchez[],
 
     req = json_loads(body, 0, NULL);
     if (!req)
-        return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
+        return tang_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 
     /* Perform outer decryption if necessary. */
     if (json_object_get(req, "ciphertext")) {
@@ -123,14 +118,16 @@ rec(const char *path, regmatch_t matchez[],
         bool forbidden = false;
 
         pt = decrypt(req, &forbidden, NULL);
-        if (!pt)
-            return snprintf(pkt, pktl, ERR_TMPL, forbidden ? 403 : 400,
-                            forbidden ? "Forbidden" : "Bad Request");
+        if (!pt) {
+            if (forbidden)
+                return tang_reply(HTTP_STATUS_FORBIDDEN, NULL);
+            return tang_reply(HTTP_STATUS_BAD_REQUEST, NULL);
+        }
 
         json_decref(req);
         req = json_loadb((char *) pt->data, pt->size, 0, NULL);
         if (!req)
-            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
+            return tang_reply(HTTP_STATUS_BAD_REQUEST, NULL);
     }
 
     /* Anonymous mode */
@@ -138,18 +135,18 @@ rec(const char *path, regmatch_t matchez[],
         const json_t *jwk = NULL;
 
         if (strcmp(kty, "EC") != 0)
-            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
+            return tang_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 
         jwk = tang_io_get_rec_jwk(kid);
         if (!jwk)
-            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
+            return tang_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 
         if (!jose_jwk_allowed(jwk, true, NULL, "deriveKey"))
-            return snprintf(pkt, pktl, ERR_TMPL, 403, "Forbidden");
+            return tang_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
         rep = jose_jwk_exchange(jwk, req);
         if (!rep)
-            return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
+            return tang_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 
         ct = "application/jwk+json";
 
@@ -163,35 +160,36 @@ rec(const char *path, regmatch_t matchez[],
 
         /* Perform inner decryption. */
         pt = decrypt(req, &forbidden, "{s:O}", "tang.jwk", &jwk);
-        if (!pt)
-            return snprintf(pkt, pktl, ERR_TMPL, forbidden ? 403 : 400,
-                            forbidden ? "Forbidden" : "Bad Request");
+        if (!pt) {
+            if (forbidden)
+                return tang_reply(HTTP_STATUS_FORBIDDEN, NULL);
+            return tang_reply(HTTP_STATUS_BAD_REQUEST, NULL);
+        }
 
         /* Perform re-encryption. */
         cek = json_object();
         rep = json_object();
         if (!jose_jwe_wrap(rep, cek, jwk, NULL))
-            return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
+            return tang_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
         ret = jose_jwe_encrypt(rep, cek, pt->data, pt->size);
         if (!ret)
-            return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
+            return tang_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
         ct = "application/jose+json";
     } else {
-        return snprintf(pkt, pktl, ERR_TMPL, 400, "Bad Request");
+        return tang_reply(HTTP_STATUS_BAD_REQUEST, NULL);
     }
 
     /* Dump output. */
     enc = json_dumps(rep, JSON_SORT_KEYS | JSON_COMPACT);
     if (!enc)
-        return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
+        return tang_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
-    r = snprintf(pkt, pktl, "HTTP/1.1 200 OK\r\n"
-                            "Content-Type: %s\r\n"
-                            "Connection: close\r\n"
-                            "Content-Length: %zu\r\n"
-                            "\r\n%s", ct, strlen(enc), enc);
+    r = tang_reply(HTTP_STATUS_OK,
+                   "Content-Type: %s\r\n"
+                   "Content-Length: %zu\r\n"
+                   "\r\n%s", ct, strlen(enc), enc);
     free(enc);
     return r;
 }

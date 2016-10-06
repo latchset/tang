@@ -22,10 +22,9 @@
 #include <errno.h>
 #include <string.h>
 
-static ssize_t
-adv(const char *path, regmatch_t matches[],
-    const char *body, enum http_method method,
-    char pkt[], size_t pktl)
+static int
+adv(enum http_method method, const char *path, const char *body,
+    regmatch_t matches[])
 {
     const json_t *jws = NULL;
     char *adv = NULL;
@@ -36,24 +35,22 @@ adv(const char *path, regmatch_t matches[],
         size_t size = matches[1].rm_eo - matches[1].rm_so;
         thp = strndup(&path[matches[1].rm_so], size);
         if (!thp)
-            return -ENOMEM;
+            return tang_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
     }
 
     jws = tang_io_get_adv(thp);
     free(thp);
     if (!jws)
-        return snprintf(pkt, pktl, ERR_TMPL, 404, "Not Found");
+        return tang_reply(HTTP_STATUS_NOT_FOUND, NULL);
 
     adv = json_dumps(jws, JSON_SORT_KEYS | JSON_COMPACT);
     if (!adv)
-        return snprintf(pkt, pktl, ERR_TMPL, 500, "Internal Server Error");
+        return tang_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
-    r = snprintf(pkt, pktl,
-                 "HTTP/1.1 200 OK\r\n"
-                 "Content-Type: application/jose+json\r\n"
-                 "Content-Length: %zu\r\n"
-                 "Connection: close\r\n"
-                 "\r\n%s", strlen(adv), adv);
+    r = tang_reply(HTTP_STATUS_OK,
+                   "Content-Type: application/jose+json\r\n"
+                   "Content-Length: %zu\r\n"
+                   "\r\n%s", strlen(adv), adv);
     free(adv);
     return r;
 }

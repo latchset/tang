@@ -19,9 +19,7 @@
 
 #include "db.h"
 
-#include <jose/b64.h>
-#include <jose/jwk.h>
-#include <jose/jws.h>
+#include <jose/jose.h>
 
 #include <ctype.h>
 #include <errno.h>
@@ -40,7 +38,6 @@ static const char *hashes[] = {
  *   "pub": { <thumbprint(default hash)>: <jwk> },
  *   "sig": { <thumbprint(hashes)>: <jwk> },
  *   "rec": { <thumbprint(hashes)>: <jwk> },
- *   "blk": { <bid>: true, ... },
  *
  *   "adv": {
  *     "default": <adv>,
@@ -49,19 +46,17 @@ static const char *hashes[] = {
  *   },
  * }
  *
- * The "blk" subtree is managed by tang_db_add_bid() and tang_db_del_bid().
- *
  * The "pub" subtree contains all advertised keys indexed by their thumbprints
  * using the default hash.
  *
  * The "sig" and "rec" subtrees contain the signing and recovery keys,
  * respectively, indexed by thumbprints calculated using all supported hashes.
  *
- * Whenever tang_db_add_jwk() or tang_db_del_jwk() are called, a transient
- * defer event is created to create all possible advertisements in the "adv"
- * portion of the tree. This way, whenever we receive an advertisement request,
- * we can just hand off the pre-calculated advertisement rather than performing
- * signatures during the request itself.
+ * Whenever tang_db_add_jwk() or tang_db_del_jwk() are called, all possible
+ * advertisements are computed in the "adv" portion of the tree. This way,
+ * whenever we receive an advertisement request, we can just hand off the
+ * pre-calculated advertisement rather than performing signatures during the
+ * request itself.
  */
 
 static json_t *ctx;
@@ -300,38 +295,6 @@ tang_db_del_jwk(const json_t *jwk)
         fprintf(stderr, "Rebuilding advertisment failed!\n");
 
     return found ? 0 : -ENOENT;
-}
-
-int
-tang_db_add_bid(const char *bid)
-{
-    for (size_t i = 0; bid[i]; i++) {
-        if (!isalnum(bid[i]) && !strchr("-_", bid[i]))
-            return -EINVAL;
-    }
-
-    if (json_object_set_new(json_object_get(ctx, "blk"), bid, json_true()) < 0)
-        return -ENOMEM;
-
-    fprintf(stderr, "Added Blacklist ID: %s\n", bid);
-
-    return 0;
-}
-
-int
-tang_db_del_bid(const char *bid)
-{
-    for (size_t i = 0; bid[i]; i++) {
-        if (!isalnum(bid[i]) && !strchr("-_", bid[i]))
-            return -EINVAL;
-    }
-
-    if (json_object_del(json_object_get(ctx, "blk"), bid) < 0)
-        return -ENOENT;
-
-    fprintf(stderr, "Deleted Blacklist ID: %s\n", bid);
-
-    return 0;
 }
 
 static void __attribute__((constructor))

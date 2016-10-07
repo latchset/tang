@@ -12,11 +12,9 @@ tangd_SOURCES = db.c db.h plugin.c plugin.h tangd.c adv.c rec.c
 tangd_CFLAGS = $(AM_CFLAGS) -rdynamic
 tangd_LDADD = @jose_LIBS@ @http_parser_LIBS@ @dl_LIBS@
 
-plugin_LTLIBRARIES = dbdir.la bldir.la blapi.la
+plugin_LTLIBRARIES = dbdir.la
 dbdir_la_LIBADD = @jose_openssl_LIBS@ @jose_zlib_LIBS@
 dbdir_la_LDFLAGS = -module -avoid-version
-bldir_la_LDFLAGS = -module -avoid-version
-blapi_la_LDFLAGS = -module -avoid-version
 
 install-data-hook:
 	mkdir -p $(DESTDIR)$(tangdbdir)/keys

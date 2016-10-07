@@ -41,9 +41,3 @@ tang_db_add_jwk(bool adv, const json_t *jwk);
 
 int _EXPORT_
 tang_db_del_jwk(const json_t *jwk);
-
-int _EXPORT_
-tang_db_add_bid(const char *bid);
-
-int _EXPORT_
-tang_db_del_bid(const char *bid);

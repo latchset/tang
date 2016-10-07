@@ -18,7 +18,6 @@ export DB=`mktemp -d`
 jose gen -t '{"alg": "ES256"}'                                         > $DB/sig.jwk
 jose gen -t '{"alg": "ES256"}'                                         > $DB/.sig.jwk
 jose gen -t '{"alg": "ES256"}'                                         > $DB/.oth.jwk
-jose gen -t '{"alg": "ECDH-ES+A128KW"}'                                > $DB/enc.jwk
 jose gen -t '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' > $DB/exc.jwk
 
 for addr in "127.0.0.1" "[::1]"; do
@@ -32,8 +31,8 @@ for addr in "127.0.0.1" "[::1]"; do
   ! wget -t 1 -O- http://$addr:$port/
 
   # The request should fail (404) for non-signature key IDs
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $DB/enc.jwk`
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -H sha512 -i $DB/enc.jwk`
+  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $DB/exc.jwk`
+  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -H sha512 -i $DB/exc.jwk`
 
   # The default advertisement fetch should succeed and pass verification
   wget -t 1 -O- http://$addr:$port/adv

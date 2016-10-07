@@ -1,6 +1,6 @@
 # Tang
 
-#### Welcome to Tang!
+## Welcome to Tang!
 Tang is a server for binding data to network presence.
 
 This sounds fancy, but the concept is simple. You have some data, but you only
@@ -43,8 +43,7 @@ certificates, which bring their own complexity.
 
 In contrast, Tang is stateless and doesn't require TLS or authentication. Tang
 also has limited knowledge. Unlike escrows, where the server has knowledge of
-every key ever used, Tang never sees a single client key. Further, Tang even
-supports a fully anonymous mode where the server never even gains any
+every key ever used, Tang never sees a single client key. Tang never gains any
 identifying information from the client.
 
 |                |   Escrow   |   Tang   |
@@ -53,10 +52,10 @@ identifying information from the client.
 |          X.509 |  Required  | Optional |
 |        SSL/TLS |  Required  | Optional |
 | Authentication |  Required  | Optional |
-|      Anonymous | Impossible | Possible |
+|      Anonymous |     No     |    Yes   |
 
-#### Getting Started
-##### Dependencies
+## Getting Started
+### Dependencies
 
 Tang requires a few other software libraries:
 
@@ -64,7 +63,7 @@ Tang requires a few other software libraries:
 2. systemd - https://github.com/systemd/systemd
 3. jose - https://github.com/latchset/jose
 
-##### Building and Installing from Source
+### Building and Installing from Source
 
 Building Tang is fairly straightforward:
 
@@ -77,17 +76,14 @@ You can even run the tests if you'd like:
 
     $ make check
 
-##### Server Enablement
+### Server Enablement
 
 Enabling a Tang server is a simple two-step process.
 
-First, we need to generate a signing key and at least one encryption or exchange key.
+First, we need to generate a signing key and an exchange key.
 
     # jose gen -t '{"alg": "ES256"}' \
       > /var/db/tang/keys/sig.jwk
-
-    # jose gen -t '{"alg": "ECDH-ES"}' \
-      > /var/db/tang/keys/enc.jwk
 
     # jose gen -t '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"]}' \
       > /var/db/tang/keys/exc.jwk
@@ -99,7 +95,7 @@ Second, enable the service using systemd socket activation.
 
 That's it! You're up and running!
 
-##### Key Rotation
+### Key Rotation
 It is important to periodically rotate your keys. This is a simple three step
 process. In this example, we will rotate only a signing key; but all key types
 should be rotated.
@@ -117,7 +113,7 @@ Third, after some reasonable period of time you may delete the old keys. You
 should only delete the old keys when you are sure that no client require them
 anymore. You have been warned.
 
-#### Tang Protocol
+## Tang Protocol
 
 Tang relies on the JSON Object Signing and Encryption (JOSE) standards.
 All messages in the Tang protocol are valid JOSE objects. Because of this,
@@ -132,12 +128,9 @@ All Tang messages are transported using a simple HTTP REST API.
 |---------:|:-------------|:----------------------------------------------|
 |    `GET` | `/adv`       | Fetch public keys                             |
 |    `GET` | `/adv/{kid}` | Fetch public keys using specified signing key |
-|   `POST` | `/rec/{kid}` | Recover key using specified recovery key      |
-|    `GET` | `/blk`       | List blacklisted BIDs                         |
-|    `PUT` | `/blk/{bid}` | Add a BID to the blacklist                    |
-| `DELETE` | `/blk/{bid}` | Remove a BID from the blacklist               |
+|   `POST` | `/rec/{kid}` | Perform recovery using specified exchange key |
 
-##### Advertisement
+### Advertisement
 
 The advertisement reply message contains a JWS-signed JWKSet.
 
@@ -151,106 +144,21 @@ server's advertisement. However, once the client trusts at least one signing
 JWK, further advertisements can be requested using that signing JWK. This
 allows clients to upgrade their chain of trust.
 
-##### Wrapping Mode
+### Binding
 
-Wrapping mode provides an experience similar to escrows using standard
-off-the-shelf encryption. It is accomplished by simply nesting JWE objects.
+Tang implements the McCallum-Relyea exchange as described below.
 
-In wrapping mode, the POST request and reply bodies are JWE objects.
+The basic idea of a McCallum-Relyea exchange is that the client performs an
+ECDH key exchange in order to produce the binding key, but then discards its
+own private key so that the Tang server is the only party that can reconstitute
+the binding key. Additionally, a third, ephemeral key is used to blind the
+client's public key and the binding key so that only the client can unblind
+them. In short, blinding makes the recovery request and response
+indistinguishable from random to both eavesdroppers and the Tang server itself.
 
-###### Provisioning
+The POST request and reply bodies are JWK objects.
 
-The client selects one of the server's encryption JWKs (henceforth: `wJWK`;
-identified by the use of `wrapKey` in the `wJWK`'s `key_ops` attribute) and
-generates:
-
-1. a unique, collision resistant, base64url-encoded binding identifier (`BID`)
-2. a protection JWK (`pJWK`)
-3. a data JWK (`dJWK`)
-
-After data has been encrypted using the `dJWK`, the `dJWK` is itself encrypted
-using the `pJWK`, producing an inner JWE. This inner JWE is encrypted again
-using the `wJWK`, producing a middle JWE. The `BID` is specified in the
-`tang.bid` attribute of the JWE protected header of the middle JWE. Finally,
-the `dJWK` is discarded. The stored metadata consists of:
-
-1. the `wJWK`
-2. the `pJWK`
-3. the middle JWE
-
-The middle JWE might conceptually look like this:
-
-    JWE(wJWK, {"prot": {"tang.bid": BID}},
-        JWE(pJWK, {}, dJWK))
-
-###### Recovery
-
-When the client wishes to recover the `dJWK`, a new ephemeral JWK (`eJWK`) is
-generated and stored in the `tang.jwk` attribute of the JWE shared header
-in the middle JWE. The middle JWE is then encrypted - again, using the `wJWK` -
-producing an outer JWE. It is this outer JWE that is POSTed to the server
-(using the KID of `wJWK` in the path of the request).
-
-The outer JWE might conceptually look like this:
-
-    JWE(wJWK, {},
-        JWE(wJWK, {"prot": {"tang.bid": BID}, "unprot": {"tang.jwk": eJWK}},
-            JWE(pJWK, {}, dJWK)))
-
-The server decrypts the outer and middle JWEs and verifies the `BID` against a
-blacklist to determine if the binding has been revoked. Then, the server
-re-encrypts the inner JWE using the `eJWK`, creating an ephemeral JWE, and
-returns it to the client.
-
-The client then decrypts the ephemeral JWE using the `eJWK`, producing the
-inner JWE. Finally, the client decrypts the inner JWE using the `pJWK`,
-producing the recovered `dJWK`.
-
-###### Security Considerations
-Let's think about the security of this system. We presume that the client's
-proper mode of operation is that it has the unrevoked, stored binding metadata
-in the presence of Tang server. Further, we presume the underlying cryptosystem
-is secure. Therefore, our attack model is that the attacker has either the
-stored metadata or Tang server access (possibly compromised), but not both.
-
-In the first case, since the attacker does not have the private key required
-to decrypt the middle JWE the attack fails. In the second case, the attacker
-doesn't have any access to the encrypted `eJWK` unless the Tang server is
-compromised. But even in this case, a compromised Tang server sees only the
-inner JWE. While this can be used to uniquely identify the client, the `eJWK`
-cannot be recovered without the `pJWK` (which the attacker doesn't have).
-
-Since the use of the blacklist artificially restricts presence, an attacker
-might have possession of a revoked metadata and network access to the Tang
-server. In this case, the attacker wants to bypass the blacklist. A
-compromised server cannot protect against this attack. However, if the server
-is uncompromised, the only possible attack is to modify the `BID` after the
-middle JWE is created. Since the `BID` is stored exclusively in the JWE
-protected header -- which by definition prevents modification -- the attack
-fails.
-
-##### Anonymous Mode
-
-Tang provides a secondary mode of operation called anonymous mode which is an
-implementation of the McCallum-Relyea exchange.
-
-Anonymous mode is anonymous (duh!). The Tang server never sees any information
-that can be used to identify the client. The downside to this anonymity is
-that since the binding cannot be identified, it cannot be revoked. Therefore,
-there is no binding identifier and no blacklist check.
-
-Anonymous mode is fast. Since it is essentially a key exchange, it is far less
-CPU intensive than Wrapping Mode.
-
-The basic idea of anonymous mode is that the client performs an ECDH key
-exchange in order to produce the binding key, but then discards its own private
-key so that the Tang server is the only party that can reconstitute the
-binding key. Additionally, a third, ephemeral key is used to blind the client's
-public key and the binding key so that only the client can unblind them.
-
-In wrapping mode, the POST request and reply bodies are JWK objects.
-
-###### Provisioning
+#### Provisioning
 
 The client selects one of the Tang server's exchange keys (`sJWK`; identified
 by the use of `deriveKey` in the `sJWK`'s `key_ops` attribute). The client
@@ -258,10 +166,9 @@ generates a new (random) JWK (`cJWK`). The client performs its half of a
 standard ECDH exchange producing `dJWK` which it uses to encrypt the data.
 Afterwards, it discards `dJWK` and the private key from `cJWK`.
 
-The stored metadata is:
-
-1. the `sJWK` (public key)
-2. the `cJWK` (public key)
+The client then stores `cJWK` for later use in the recovery step. Generally
+speaking, the client may also store other data, such as the URL of the Tang
+server or the trusted advertisement signing keys.
 
 Expressed mathematically (capital = private key):
 
@@ -269,12 +176,11 @@ Expressed mathematically (capital = private key):
     c = g * C # cJWK
     K = s * C # dJWK
 
-###### Recovery
+#### Recovery
 
-To recover the session key, the client generates a third ephemeral key
-(`eJWK`). Using `eJWK`, the client performs elliptic curve group addition of
-`eJWK` and `cJWK`, producing `xJWK`. The client POSTs `xJWK` to the server
-(using the `kid` of `sJWK` in the path of the request).
+To recover `dJWK` after discarding it, the client generates a third ephemeral
+key (`eJWK`). Using `eJWK`, the client performs elliptic curve group addition
+of `eJWK` and `cJWK`, producing `xJWK`. The client POSTs `xJWK` to the server.
 
 The server then performs its half of the ECDH key exchange using `xJWK` and
 `sJWK`, producing `yJWK`. The server returns `yJWK` to the client.
@@ -290,15 +196,16 @@ Expressed mathematically (capital = private key):
     z = s * E # zJWK
     K = y - z # dJWK
 
-###### Security Considerations
+##### Understanding the Algorithm
 
-To understand this algorithm, let us consider it without the ephemeral `eJWK`:
+To understand this algorithm, let us consider it without the ephemeral `eJWK`.
+The math in this example depicts a standard ECDH.
 
-    s = g * S # sJWK (Server operation)
-    c = g * C # cJWK
-    K = s * C # dJWK
+    s = g * S # sJWK (Server advertisement)
+    c = g * C # cJWK (Client provisioning)
+    K = s * C # dJWK (Client provisioning)
 
-    K = c * S # dJWK (Server operation)
+    K = c * S # dJWK (Server recovery)
 
 In the above case, the provisioning step is identical and the recovery step
 does not use `eJWK`. Here, it becomes obvious that the client could simply send
@@ -309,23 +216,32 @@ This example has a serious problem, however: both the identity of the client
 and any eavesdroppers. To overcome this problem, we use the ephemeral key
 (`eJWK`) to blind both values.
 
-Thus, we have a similar threat model as in wrapping mode.
+#### Security Considerations
 
-First, since the client discarded the private key of `cJWK`, the attacker
-cannot recover `dJWK` without the Tang server.
+Let's think about the security of this system.
 
-Second, an attacker cannot observe any identifying information or recover
-`dJWK`; even if the Tang server is compromised.
+So long as the client discards its private key, the client cannot recover
+`dJWK` without the Tang server. This is fundamentally the same assumption used
+by Diffie-Hellman (and ECDH).
 
-##### Blacklist Management
+There are thus three avenues of attack which we will consider in turn:
 
-Although the blacklist management plugin is installed by default, it is not
-enabled. The reason for this is that remote blacklist management absolutely
-does require authentication (you don't want attackers freely able to manage
-the blacklist!). However, the Tang server does not provide support for this
-authentication.
+1. Man-in-the-Middle
+2. Compromise the client to gain access to `cJWK`
+3. Compromise the server to gain access to `sJWK`'s private key
 
-Thus, if you wish to enable blacklist management, simply put the Tang server
-behind Apache or some other web server and properly authenticate access to
-these APIs. Then, edit the systemd service unit file to instantiate the
-blacklist management plugin during startup.
+In the first case, the eavesdropper in this case sees the client send `xJWK`
+and receive `yJWK`. Since, these packets are blinded by `eJWK`, only the party
+that can unblind these values is the client itself (since only it has `eJWK`'s
+private key). Thus, the MitM attack fails.
+
+In the second case, it is of utmost importance that the client protect `cJWK`
+from prying eyes. This may include device permissions, filesystem permissions,
+security frameworks (such as SELinux) or even the use of hardware encryption
+such as a TPM. How precisely this is accomplished is an exercise left to the
+client implementation.
+
+In the third case, the Tang server must protect the private key for `sJWK`.
+In this implementation, access is controlled by filesystem permissions and
+the service's policy. An alternative implementation might use hardware
+cryptography (for example, an HSM) to protect the private key.

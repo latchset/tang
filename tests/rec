@@ -25,14 +25,9 @@ export PID=$!
 
 # Generate the server keys (note: the server picks them up automatically)
 jose gen -t '{"alg": "ES256"}' -o $TMP/db/sig.jwk
-jose gen -t '{"alg": "ECDH-ES+A128KW"}' -o $TMP/db/enc.jwk
 jose gen -t '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' -o $TMP/db/exc.jwk
 
-# Generate the client keys for the wrap test
-enc_kid=`jose thp -i $TMP/db/enc.jwk`
-jose gen -t '{"alg": "ECDH-ES+A128KW"}' -o $TMP/jwk.jwk
-
-# Generate the client keys for the anon test
+# Generate the client keys
 exc_kid=`jose thp -i $TMP/db/exc.jwk`
 exc_tmp=`printf '{"kty":"EC","crv":"P-256","kid":"%s"}' $exc_kid`
 jose gen -t "$exc_tmp" -o $TMP/exc.jwk
@@ -41,13 +36,6 @@ jose pub -i $TMP/exc.jwk -o $TMP/exc.pub.jwk
 # Make sure that GET fails
 ! wget -t1 -O- http://127.0.0.1:$port/rec
 ! wget -t1 -O- http://127.0.0.1:$port/rec/
-
-# Make a wrap recovery request
-ins=$(printf '{"protected":{"kid":"%s"},"unprotected":{"tang.jwk":%s}}' $enc_kid "`cat $TMP/jwk.jwk`")
-out=$(printf '{"protected":{"kid":"%s"}}' $enc_kid)
-jwe=`echo -e foo | jose enc -i- -t "$ins" -k $TMP/db/enc.jwk | jose enc -i- -t "$out" -k $TMP/db/enc.jwk`
-val=`wget -t1 -O- --post-data="$jwe" http://127.0.0.1:$port/rec | jose dec -i- -k $TMP/jwk.jwk`
-[ "$val" == "foo" ]
 
 # Make an anon recovery request (NOTE: this is insecure! Don't do this in real code!)
 good=`jose exc -l $TMP/exc.jwk -r $TMP/db/exc.jwk`

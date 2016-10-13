@@ -37,54 +37,16 @@
 #include <time.h>
 #include <unistd.h>
 
-#define UDP_MAX 65507
-
-struct http_request {
-    char *path;
-    size_t plen;
-
-    char *body;
-    size_t blen;
-
-    bool  done;
+struct buffer {
+    uint8_t *data;
+    size_t size;
+    size_t used;
 };
 
-static int
-on_url(http_parser *parser, const char *at, size_t length)
-{
-    struct http_request *req = parser->data;
-
-    if (!req->path)
-        req->path = (char *) at;
-
-    req->plen += length;
-    return 0;
-}
-
-static int
-on_body(http_parser *parser, const char *at, size_t length)
-{
-    struct http_request *req = parser->data;
-
-    if (!req->body)
-        req->body = (char *) at;
-
-    req->blen += length;
-    return 0;
-}
-
-static int
-on_message_complete(http_parser *parser)
-{
-    struct http_request *req = parser->data;
-    req->done = true;
-    return 0;
-}
-
-static const http_parser_settings parser_settings = {
-    .on_url = on_url,
-    .on_body = on_body,
-    .on_message_complete = on_message_complete,
+struct request {
+    int status;
+    char path[1024 * 4];
+    char body[1024 * 64];
 };
 
 _EXPORT_ struct tang_plugin_map *tang_plugin_maps = NULL;
@@ -96,15 +58,56 @@ HTTP_METHOD_MAP(XX)
     NULL
 };
 
-static void
-on_http(enum http_method method, struct http_request *request)
+static int
+on_url(http_parser *parser, const char *at, size_t length)
 {
+    struct request *req = parser->data;
+
+    if (req->status == 0) {
+        if (strlen(req->path) + length >= sizeof(req->path))
+            req->status = HTTP_STATUS_URI_TOO_LONG;
+        else
+            strncat(req->path, at, length);
+    }
+
+    return 0;
+}
+
+static int
+on_body(http_parser *parser, const char *at, size_t length)
+{
+    struct request *req = parser->data;
+
+    if (req->status == 0) {
+        if (strlen(req->body) + length >= sizeof(req->body))
+            req->status = HTTP_STATUS_PAYLOAD_TOO_LARGE;
+        else
+            strncat(req->body, at, length);
+    }
+
+    return 0;
+}
+
+static int
+on_message_complete(http_parser *parser)
+{
+    struct request *req = parser->data;
+    const char *addr = NULL;
     bool pathmatch = false;
     bool methmatch = false;
-    int status = 0;
     int r = 0;
 
-    for (struct tang_plugin_map *m = tang_plugin_maps; m && r == 0; m = m->next) {
+    if (req->status != 0)
+        goto error;
+
+    addr = getenv("REMOTE_ADDR");
+    fprintf(stderr, "%s %s %s",
+            addr ? addr : "<unknown>",
+            METHOD_NAMES[parser->method],
+            req->path);
+
+    for (struct tang_plugin_map *m = tang_plugin_maps;
+         m && r == 0; m = m->next) {
         regmatch_t match[m->nmatches];
         regex_t re = {};
 
@@ -112,13 +115,13 @@ on_http(enum http_method method, struct http_request *request)
 
         r = regcomp(&re, m->re, REG_EXTENDED) == 0 ? 0 : -EINVAL;
         if (r == 0) {
-            if (regexec(&re, request->path, m->nmatches, match, 0) == 0) {
+            if (regexec(&re, req->path, m->nmatches, match, 0) == 0) {
                 pathmatch = true;
 
-                if (((1 << method) & m->methods) != 0) {
+                if (((1 << parser->method) & m->methods) != 0) {
                     methmatch = true;
 
-                    r = m->func(method, request->path, request->body, match);
+                    r = m->func(parser->method, req->path, req->body, match);
                 }
             }
 
@@ -127,21 +130,32 @@ on_http(enum http_method method, struct http_request *request)
     }
 
     if (r > 0)
-        return;
+        goto egress;
 
     if (r == 0) {
         if (!pathmatch)
-            status = HTTP_STATUS_NOT_FOUND;
+            req->status = HTTP_STATUS_NOT_FOUND;
         else if (!methmatch)
-            status = HTTP_STATUS_METHOD_NOT_ALLOWED;
+            req->status = HTTP_STATUS_METHOD_NOT_ALLOWED;
         else
-            status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+            req->status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
     } else {
-        status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+        req->status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
     }
 
-    tang_reply(status, NULL);
+error:
+    tang_reply(req->status, NULL);
+
+egress:
+    memset(req, 0, sizeof(*req));
+    return 0;
 }
+
+static const http_parser_settings parser_settings = {
+    .on_url = on_url,
+    .on_body = on_body,
+    .on_message_complete = on_message_complete,
+};
 
 static int
 plugin_load(int epoll, const char *path, const char *cfg, void **dll)
@@ -173,17 +187,19 @@ int
 main(int argc, char *argv[])
 {
     static const int sigs[] = { SIGTERM, SIGINT };
+    struct http_parser parser = {};
+    struct request request = {};
     void *dlls[argc / 2 + 1];
-    const char *addr = NULL;
-    char req[UDP_MAX] = {};
+    char req[4096] = {};
     size_t rcvd = 0;
-    size_t prsd = 0;
     int epoll = -1;
     sigset_t ss;
     int r = 0;
 
     memset(dlls, 0, sizeof(dlls));
-    addr = getenv("REMOTE_ADDR");
+
+    http_parser_init(&parser, HTTP_REQUEST);
+    parser.data = &request;
 
     if (argc < 2 || argc % 2 != 1) {
         fprintf(stderr, "Usage: %s MOD CFG [MOD CFG ...]\n", argv[0]);
@@ -221,9 +237,6 @@ main(int argc, char *argv[])
     for (struct epoll_event event = {};
          epoll_pwait(epoll, &event, 1, -1, &ss) == 1; ) {
         tang_plugin_epoll func = event.data.ptr;
-        struct http_request request = {};
-        struct http_parser parser = {};
-        ssize_t bytes = 0;
 
         if (func) {
             func();
@@ -231,46 +244,27 @@ main(int argc, char *argv[])
         }
 
         if (event.events & EPOLLIN) {
-            if (sizeof(req) - rcvd - 1 == 0)
-                break;
-
-            bytes = read(STDIN_FILENO, &req[rcvd], sizeof(req) - rcvd - 1);
-            if (r < 0) {
-                r = -errno;
+            r = read(STDIN_FILENO, &req[rcvd], sizeof(req) - rcvd - 1);
+            if (r <= 0) {
+                if (r < 0)
+                    r = -errno;
+                else if (rcvd > 0)
+                    r = -EIO;
                 break;
             }
-            rcvd += bytes;
 
-            http_parser_init(&parser, HTTP_REQUEST);
-            parser.data = &request;
-            bytes = http_parser_execute(&parser, &parser_settings,
-                                        &req[prsd], rcvd - prsd);
+            rcvd += r;
+
+            r = http_parser_execute(&parser, &parser_settings, req, rcvd);
             if (parser.http_errno != 0) {
                 fprintf(stderr, "HTTP Parsing Error: %s\n",
                         http_errno_description(parser.http_errno));
                 r = -EINVAL;
                 break;
             }
-            prsd += bytes;
 
-            if (!request.done)
-                continue;
-
-            if (request.path)
-                request.path[request.plen] = 0;
-
-            if (request.body)
-                request.body[request.blen] = 0;
-
-            fprintf(stderr, "%s %s %s",
-                    addr ? addr : "<unknown>",
-                    METHOD_NAMES[parser.method],
-                    request.path);
-
-            on_http(parser.method, &request);
-
-            rcvd -= prsd;
-            memmove(req, &req[prsd], rcvd);
+            memmove(req, &req[r], rcvd - r);
+            rcvd -= r;
         }
 
         if (event.events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {

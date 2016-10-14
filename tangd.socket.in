@@ -1,6 +1,6 @@
 [Unit]
 Description=Tang daemon socket
-ConditionDirectoryNotEmpty=@tangdbdir@/keys
+ConditionDirectoryNotEmpty=@cachedir@
 
 [Socket]
 ListenStream=80

@@ -1,0 +1,6 @@
+[Unit]
+Description=Tang Update script
+
+[Service]
+Type=oneshot
+ExecStart=@libexecdir@/tangd-update @jwkdir@ @cachedir@

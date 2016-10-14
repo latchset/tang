@@ -1,0 +1,72 @@
+#!/bin/bash
+# vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:
+#
+# Copyright (c) 2016 Red Hat, Inc.
+# Author: Nathaniel McCallum <npmccallum@redhat.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+trap 'exit' ERR
+
+HASHES=`jose sup | sed -n 's|^jwk_hasher: ||p' | sed 's|,||g'`
+
+if [ $# -ne 2 ]; then
+    echo "Usage: $0 <jwkdir> <cachedir>" >&2
+    exit 1
+fi
+
+[ ! -d $2 ] && mkdir -p -m 0700 $2
+
+for jwk in `find "$1" -type f -regex '.*/[^./][^/]*.jwk'`; do
+    pub=`jose pub -i "$jwk"`
+
+    if jose use -i "$jwk" -r -o sign -o verify; then
+        payl="$payl,$pub"
+        skey="$skey -k $jwk"
+    elif jose use -i "$jwk" -r -o deriveKey; then
+        payl="$payl,$pub"
+    else
+        echo "Skipping invalid key: $jwk" >&2
+    fi
+done
+
+payl="{\"keys\":[${payl:1}]}"
+
+if [ "$skey" ]; then
+    echo "$payl" | jose sig -i- $skey -o "$2/.default.jws"
+    mv -f "$2/.default.jws" "$2/default.jws"
+    new=default.jws
+fi
+
+for jwk in `find "$1" -type f -name '*.jwk'`; do
+    for hsh in $HASHES; do
+        thp=`jose thp -i "$jwk" -H $hsh`
+
+        if jose use -i "$jwk" -r -o deriveKey; then
+            ln -sf "$jwk" "$2/.$thp.jwk"
+            mv -f "$2/.$thp.jwk" "$2/$thp.jwk"
+            new="$new\n$thp.jwk"
+        elif jose use -i "$jwk" -r -o sign; then
+            echo "$payl" | jose sig -i- $skey -k "$jwk" -o "$2/.$thp.jws"
+            mv -f "$2/.$thp.jws" "$2/$thp.jws"
+            new="$new\n$thp.jws"
+        fi
+    done
+done
+
+for f in "$2"/*; do
+    b=`basename "$f"`
+    echo -e "$new" | grep -q "^$b\$" || rm -f "$f"
+done

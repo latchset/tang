@@ -82,16 +82,17 @@ Enabling a Tang server is a simple two-step process.
 
 First, we need to generate a signing key and an exchange key.
 
-    # jose gen -t '{"alg": "ES256"}' \
-      > /var/db/tang/keys/sig.jwk
+    # sudo jose gen -t '{"alg":"ES256"}' -o /var/db/tang/sig.jwk
 
-    # jose gen -t '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"]}' \
-      > /var/db/tang/keys/exc.jwk
+    # sudo jose gen -t '{"kty":"EC","crv":"P-256","key_ops":["deriveKey"]}' \
+      -o /var/db/tang/exc.jwk
 
-Second, enable the service using systemd socket activation.
+Second, enable and start the service using systemd.
 
-    # systemctl enable tangd.socket
-    # systemctl start tangd.socket
+    # sudo systemctl enable tangd-update.path
+    # sudo systemctl start tangd-update.path
+    # sudo systemctl enable tangd.socket
+    # sudo systemctl start tangd.socket
 
 That's it! You're up and running!
 
@@ -102,12 +103,11 @@ should be rotated.
 
 First, generate a new key:
 
-    # jose gen -t '{"alg": "ES256"}' \
-      > /var/db/tang/keys/newsig.jwk
+    # sudo jose gen -t '{"alg":"ES256"}' -o /var/db/tang/newsig.jwk
 
 Second, disable advertisement of the previous key:
 
-    # mv /var/db/tang/keys/sig.jwk /var/db/tang/keys/.sig.jwk
+    # sudo mv /var/db/tang/sig.jwk /var/db/tang/.sig.jwk
 
 Third, after some reasonable period of time you may delete the old keys. You
 should only delete the old keys when you are sure that no client require them

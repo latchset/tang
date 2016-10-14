@@ -5,7 +5,10 @@
 *.lo
 *.log
 *.m4
+*.path
+*.service
 *.so
+*.socket
 *.swp
 *.swo
 *.trs
@@ -35,4 +38,5 @@ Makefile.in
 Makefile
 missing
 tags
+tangd
 test-driver

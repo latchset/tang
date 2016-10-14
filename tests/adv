@@ -1,8 +1,26 @@
 #!/bin/bash -x
+# vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:
+#
+# Copyright (c) 2016 Red Hat, Inc.
+# Author: Nathaniel McCallum <npmccallum@redhat.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 
 function on_exit() {
   if [ "$PID" ]; then kill $PID; wait $PID || true; fi
-  [ -d "$DB" ] && rm -rf $DB
+  [ -d "$TMP" ] && rm -rf $TMP
 }
 
 trap 'on_exit' EXIT
@@ -14,15 +32,19 @@ else
   SD_ACTIVATE=/usr/lib/systemd/systemd-activate
 fi
 
-export DB=`mktemp -d`
-jose gen -t '{"alg": "ES256"}'                                         > $DB/sig.jwk
-jose gen -t '{"alg": "ES256"}'                                         > $DB/.sig.jwk
-jose gen -t '{"alg": "ES256"}'                                         > $DB/.oth.jwk
-jose gen -t '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' > $DB/exc.jwk
+export TMP=`mktemp -d`
+mkdir -p $TMP/db
+mkdir -p $TMP/cache
+
+jose gen -t '{"alg": "ES256"}'                                         -o $TMP/db/sig.jwk
+jose gen -t '{"alg": "ES256"}'                                         -o $TMP/db/.sig.jwk
+jose gen -t '{"alg": "ES256"}'                                         -o $TMP/db/.oth.jwk
+jose gen -t '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' -o $TMP/db/exc.jwk
+./tangd-update $TMP/db $TMP/cache
 
 for addr in "127.0.0.1" "[::1]"; do
   port=`shuf -i 1024-65536 -n 1`
-  $SD_ACTIVATE $INET -l "$addr:$port" -a $VALGRIND ./src/tangd src/.libs/dbdir.so $DB &
+  $SD_ACTIVATE $INET -l "$addr:$port" -a $VALGRIND ./tangd $TMP/cache &
   export PID=$!
 
   sleep 0.1
@@ -31,30 +53,30 @@ for addr in "127.0.0.1" "[::1]"; do
   ! wget -t 1 -O- http://$addr:$port/
 
   # The request should fail (404) for non-signature key IDs
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $DB/exc.jwk`
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -H sha512 -i $DB/exc.jwk`
+  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/exc.jwk`
+  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -H sha512 -i $TMP/db/exc.jwk`
 
   # The default advertisement fetch should succeed and pass verification
   wget -t 1 -O- http://$addr:$port/adv
-  wget -t 1 -O- http://$addr:$port/adv | jose ver -i- -k $DB/sig.jwk
-  wget -t 1 -O- http://$addr:$port/adv/ | jose ver -i- -k $DB/sig.jwk
+  wget -t 1 -O- http://$addr:$port/adv | jose ver -i- -k $TMP/db/sig.jwk
+  wget -t 1 -O- http://$addr:$port/adv/ | jose ver -i- -k $TMP/db/sig.jwk
 
   # Fetching by any thumbprint should work
-  wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $DB/sig.jwk` | jose ver -i- -k $DB/sig.jwk
-  wget -t 1 -O- http://$addr:$port/adv/`jose thp -H sha512 -i $DB/sig.jwk` | jose ver -i- -k $DB/sig.jwk
+  wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/sig.jwk` | jose ver -i- -k $TMP/db/sig.jwk
+  wget -t 1 -O- http://$addr:$port/adv/`jose thp -H sha512 -i $TMP/db/sig.jwk` | jose ver -i- -k $TMP/db/sig.jwk
 
   # Requesting an adv by an advertised key ID should't be signed by hidden keys
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $DB/sig.jwk` | jose ver -i- -k $DB/.sig.jwk
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $DB/sig.jwk` | jose ver -i- -k $DB/.oth.jwk
+  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/sig.jwk` | jose ver -i- -k $TMP/db/.sig.jwk
+  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/sig.jwk` | jose ver -i- -k $TMP/db/.oth.jwk
 
   # Verify that the default advertisement is not signed with hidden signature keys
-  ! wget -t 1 -O- http://$addr:$port/adv/ | jose ver -i- -k $DB/.oth.jwk
-  ! wget -t 1 -O- http://$addr:$port/adv/ | jose ver -i- -k $DB/.sig.jwk
+  ! wget -t 1 -O- http://$addr:$port/adv/ | jose ver -i- -k $TMP/db/.oth.jwk
+  ! wget -t 1 -O- http://$addr:$port/adv/ | jose ver -i- -k $TMP/db/.sig.jwk
 
   # A private key advertisement is signed by all advertised keys and the requested private key
-  wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $DB/.sig.jwk` | jose ver -i- -k $DB/sig.jwk
-  wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $DB/.sig.jwk` | jose ver -i- -k $DB/.sig.jwk
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $DB/.sig.jwk` | jose ver -i- -k $DB/.oth.jwk
+  wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/.sig.jwk` | jose ver -i- -k $TMP/db/sig.jwk
+  wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/.sig.jwk` | jose ver -i- -k $TMP/db/.sig.jwk
+  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/.sig.jwk` | jose ver -i- -k $TMP/db/.oth.jwk
 
   kill $PID
   wait $PID || true

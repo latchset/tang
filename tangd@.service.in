@@ -1,0 +1,9 @@
+[Unit]
+Description=Tang daemon
+ConditionDirectoryNotEmpty=@cachedir@
+
+[Service]
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+ExecStart=@libexecdir@/tangd @cachedir@

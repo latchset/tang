@@ -30,8 +30,12 @@ trap 'exit' ERR
 
 if SD_ACTIVATE=`which systemd-socket-activate`; then
   INET=--inet
+elif SD_ACTIVATE=`which /usr/lib/systemd/systemd-activate`; then
+  :
+elif SD_ACTIVATE=`which /lib/systemd/systemd-activate`; then
+  :
 else
-  SD_ACTIVATE=/usr/lib/systemd/systemd-activate
+  exit 1
 fi
 
 export TMP=`mktemp -d`

@@ -18,6 +18,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+srcdir=${srcdir:-.}
+
 function on_exit() {
     if [ "$PID" ]; then kill $PID; wait $PID || true; fi
     [ -d "$TMP" ] && rm -rf $TMP
@@ -39,7 +41,7 @@ mkdir -p $TMP/cache
 # Generate the server keys
 jose gen -t '{"alg": "ES256"}' -o $TMP/db/sig.jwk
 jose gen -t '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' -o $TMP/db/exc.jwk
-./tangd-update $TMP/db $TMP/cache
+${srcdir}/tangd-update $TMP/db $TMP/cache
 
 # Generate the client keys
 exc_kid=`jose thp -i $TMP/db/exc.jwk`

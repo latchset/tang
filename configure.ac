@@ -24,9 +24,15 @@ AC_CHECK_LIB([http_parser], [http_parser_execute],
 PKG_CHECK_MODULES([jose_zlib], [jose-zlib >= 5])
 PKG_CHECK_MODULES([jose_openssl], [jose-openssl >= 5])
 
-PKG_CHECK_MODULES([systemd], [systemd],
-		  [AC_SUBST([systemdsystemunitdir], [$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])],
-		  [AC_SUBST([systemdsystemunitdir], [${prefix}/lib/systemd/system])])
+PKG_CHECK_MODULES([systemd], [systemd])
+
+AC_ARG_WITH([systemdsystemunitdir],
+            [AS_HELP_STRING([--with-systemdsystemunitdir=DIR], [Directory for systemd service files])],
+            [],
+            [with_systemdsystemunitdir=$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])
+
+AC_SUBST([systemdsystemunitdir], [$with_systemdsystemunitdir])
+
 
 TANG_CFLAGS="\
 -Wall \

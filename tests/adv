@@ -18,6 +18,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+srcdir=${srcdir:-.}
+
 function on_exit() {
   if [ "$PID" ]; then kill $PID; wait $PID || true; fi
   [ -d "$TMP" ] && rm -rf $TMP
@@ -40,7 +42,7 @@ jose gen -t '{"alg": "ES256"}'                                         -o $TMP/d
 jose gen -t '{"alg": "ES256"}'                                         -o $TMP/db/.sig.jwk
 jose gen -t '{"alg": "ES256"}'                                         -o $TMP/db/.oth.jwk
 jose gen -t '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' -o $TMP/db/exc.jwk
-./tangd-update $TMP/db $TMP/cache
+$srcdir/tangd-update $TMP/db $TMP/cache
 
 for addr in "127.0.0.1" "[::1]"; do
   port=`shuf -i 1024-65536 -n 1`

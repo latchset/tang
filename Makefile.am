@@ -1,6 +1,8 @@
+DISTCHECK_CONFIGURE_FLAGS = --with-systemdsystemunitdir=$$dc_install_base/$(systemdsystemunitdir)
+
 TESTS = tests/adv tests/rec
 EXTRA_DIST = COPYING $(TESTS) tangd@.service.in tangd.socket.in tangd-update.path.in tangd-update.service.in
-CLEANFILES = tangd.serivce tangd.socket tangd-update.path tangd-update.service
+CLEANFILES = $(systemdsystemunit_DATA)
 
 systemdsystemunit_DATA = tangd@.service tangd.socket tangd-update.path tangd-update.service
 dist_libexec_SCRIPTS = tangd-update

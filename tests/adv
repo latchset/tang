@@ -21,22 +21,24 @@
 srcdir=${srcdir:-.}
 
 function on_exit() {
-  if [ "$PID" ]; then kill $PID; wait $PID || true; fi
-  [ -d "$TMP" ] && rm -rf $TMP
+    if [ "$PID" ]; then kill $PID; wait $PID || true; fi
+    [ -d "$TMP" ] && rm -rf $TMP
 }
 
 trap 'on_exit' EXIT
 trap 'exit' ERR
 
-if SD_ACTIVATE=`which systemd-socket-activate`; then
-  INET=--inet
-elif SD_ACTIVATE=`which /usr/lib/systemd/systemd-activate`; then
-  :
-elif SD_ACTIVATE=`which /lib/systemd/systemd-activate`; then
-  :
-else
-  exit 1
-fi
+for cmd in systemd-socket-activate \
+    `pkg-config --variable=systemdutildir systemd`/systemd-activate; do
+    if SD_ACTIVATE=`which $cmd`; then
+        if $SD_ACTIVATE --help | grep -q inetd; then
+            SD_ACTIVATE="$SD_ACTIVATE --inetd"
+        fi
+        break
+    fi
+done
+
+[ ! "$SD_ACTIVATE" ] && exit 1
 
 export TMP=`mktemp -d`
 mkdir -p $TMP/db
@@ -50,7 +52,7 @@ $srcdir/tangd-update $TMP/db $TMP/cache
 
 for addr in "127.0.0.1" "[::1]"; do
   port=`shuf -i 1024-65536 -n 1`
-  $SD_ACTIVATE $INET -l "$addr:$port" -a $VALGRIND ./tangd $TMP/cache &
+  $SD_ACTIVATE -l "$addr:$port" -a $VALGRIND ./tangd $TMP/cache &
   export PID=$!
 
   sleep 0.1

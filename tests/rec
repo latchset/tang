@@ -28,15 +28,17 @@ function on_exit() {
 trap 'on_exit' EXIT
 trap 'exit' ERR
 
-if SD_ACTIVATE=`which systemd-socket-activate`; then
-  INET=--inet
-elif SD_ACTIVATE=`which /usr/lib/systemd/systemd-activate`; then
-  :
-elif SD_ACTIVATE=`which /lib/systemd/systemd-activate`; then
-  :
-else
-  exit 1
-fi
+for cmd in systemd-socket-activate \
+    `pkg-config --variable=systemdutildir systemd`/systemd-activate; do
+    if SD_ACTIVATE=`which $cmd`; then
+        if $SD_ACTIVATE --help | grep -q inetd; then
+            SD_ACTIVATE="$SD_ACTIVATE --inetd"
+        fi
+        break
+    fi
+done
+
+[ ! "$SD_ACTIVATE" ] && exit 1
 
 export TMP=`mktemp -d`
 mkdir -p $TMP/db
@@ -54,7 +56,7 @@ jose pub -i $TMP/exc.jwk -o $TMP/exc.pub.jwk
 
 # Start the server
 port=`shuf -i 1024-65536 -n 1`
-$SD_ACTIVATE $INET -l 127.0.0.1:$port -a $VALGRIND ./tangd $TMP/cache &
+$SD_ACTIVATE -l 127.0.0.1:$port -a $VALGRIND ./tangd $TMP/cache &
 export PID=$!
 
 # Make sure that GET fails

@@ -80,19 +80,19 @@ You can even run the tests if you'd like:
 
 Enabling a Tang server is a simple two-step process.
 
-First, we need to generate a signing key and an exchange key.
-
-    # sudo jose gen -t '{"alg":"ES256"}' -o /var/db/tang/sig.jwk
-
-    # sudo jose gen -t '{"kty":"EC","crv":"P-256","key_ops":["deriveKey"]}' \
-      -o /var/db/tang/exc.jwk
-
-Second, enable and start the service using systemd.
+First, enable and start the service using systemd.
 
     # sudo systemctl enable tangd-update.path
     # sudo systemctl start tangd-update.path
     # sudo systemctl enable tangd.socket
     # sudo systemctl start tangd.socket
+
+Second, generate a signing key and an exchange key.
+
+    # sudo jose gen -t '{"alg":"ES256"}' -o /var/db/tang/sig.jwk
+
+    # sudo jose gen -t '{"kty":"EC","crv":"P-256","key_ops":["deriveKey"]}' \
+      -o /var/db/tang/exc.jwk
 
 That's it! You're up and running!
 

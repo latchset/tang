@@ -1,13 +1,12 @@
 #!/bin/bash -ex
 
+COPRS=npmccallum/jose
+CDIST=`echo $1 | sed 's|:|-|'`
+
 case "$1" in
   centos:7)
-    curl -o /etc/yum.repos.d/npmccallum-jansson-epel-7.repo \
-      https://copr.fedorainfracloud.org/coprs/npmccallum/jansson/repo/epel-7/npmccallum-jansson-epel-7.repo
-    curl -o /etc/yum.repos.d/npmccallum-jose-epel-7.repo \
-      https://copr.fedorainfracloud.org/coprs/npmccallum/jose/repo/epel-7/npmccallum-jose-epel-7.repo
-    curl -o /etc/yum.repos.d/npmccallum-http-parser-epel-7.repo \
-      https://copr.fedorainfracloud.org/coprs/npmccallum/http-parser/repo/epel-7/npmccallum-http-parser-epel-7.repo
+    COPRS="$COPRS npmccallum/jansson npmccallum/http-parser"
+    CDIST=epel-7
     ;;
 
   fedora:23)
@@ -18,9 +17,15 @@ case "$1" in
     ;;
 esac
 
-yum -y clean all
-yum -y --setopt=deltarpm=0 update
-yum -y install automake autoconf libtool pkgconfig openssl-devel zlib-devel jansson-devel jose libjose*devel http-parser-devel wget git gcc make file clang systemd which $rt
+for copr in $COPRS; do
+    dash=`echo $copr | sed 's|/|-|'`
+    curl -o /etc/yum.repos.d/$dash-$CDIST.repo https://copr.fedorainfracloud.org/coprs/$copr/repo/$CDIST/$dash-$CDIST.repo
+done
+
+BUILDENV="automake autoconf libtool pkgconfig git gcc make file clang $rt"
+BUILDDEP="openssl-devel zlib-devel jansson-devel jose libjose*devel http-parser-devel wget systemd which"
+
+yum -y install $BUILDENV $BUILDDEP
 
 autoreconf -if
 

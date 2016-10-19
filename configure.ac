@@ -24,7 +24,6 @@ AC_CHECK_LIB([http_parser], [http_parser_execute],
 PKG_CHECK_MODULES([jose_zlib], [jose-zlib >= 5])
 PKG_CHECK_MODULES([jose_openssl], [jose-openssl >= 5])
 
-
 PKG_CHECK_MODULES([systemd], [systemd],
 		  [AC_SUBST([systemdsystemunitdir], [$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])],
 		  [AC_SUBST([systemdsystemunitdir], [${prefix}/lib/systemd/system])])
@@ -50,5 +49,5 @@ TANG_CFLAGS="\
 "
 AC_SUBST([TANG_CFLAGS])
 
-AC_CONFIG_FILES([Makefile src/Makefile])
+AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

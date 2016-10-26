@@ -16,10 +16,17 @@ AC_CHECK_LIB([dl], [dlopen], [AC_SUBST([dl_LIBS], [-ldl])],
              [AC_CHECK_LIB([dl], [dlopen], [AC_SUBST([dl_LIBS], [-ldl])],
 	                   [AC_MSG_ERROR([unable to find dlopen])])])
 
-AC_CHECK_HEADER([http_parser.h], [], [AC_MSG_ERROR([http-parser required!])])
+AC_CHECK_HEADER([http_parser.h], [],
+		[AC_MSG_ERROR([http-parser required!])], [
+#include <http_parser.h>
+#ifndef HTTP_STATUS_MAP
+#error HTTP_STATUS_MAP not defined!
+#endif
+])
+
 AC_CHECK_LIB([http_parser], [http_parser_execute],
-	       [AC_SUBST(http_parser_LIBS, [-lhttp_parser])],
-	       [AC_MSG_ERROR([http-parser required!])])
+             [AC_SUBST(http_parser_LIBS, [-lhttp_parser])],
+             [AC_MSG_ERROR([http-parser required!])])
 
 PKG_CHECK_MODULES([jose_zlib], [jose-zlib >= 5])
 PKG_CHECK_MODULES([jose_openssl], [jose-openssl >= 5])

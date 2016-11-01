@@ -8,8 +8,6 @@ AM_INIT_AUTOMAKE([subdir-objects foreign no-dist-gzip dist-bzip2 parallel-tests]
 AM_SILENT_RULES([yes])
 AM_PROG_CC_C_O
 
-LT_INIT([disable-static])
-
 PKG_PROG_PKG_CONFIG([0.25])
 
 AC_CHECK_LIB([dl], [dlopen], [AC_SUBST([dl_LIBS], [-ldl])],

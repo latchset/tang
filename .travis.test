@@ -1,12 +1,12 @@
 #!/bin/bash -ex
 
-COPRS=npmccallum/jose
-CDIST=`echo $1 | sed 's|:|-|'`
+PM=dnf
 
 case "$1" in
   centos:7)
-    COPRS="$COPRS npmccallum/jansson npmccallum/http-parser"
-    CDIST=epel-7
+    curl -o /etc/yum.repos.d/npmccallum-nbde-epel-7.repo \
+      https://copr.fedorainfracloud.org/coprs/npmccallum/nbde/repo/epel-7/npmccallum-nbde-epel-7.repo
+    PM=yum
     ;;
 
   fedora:23)
@@ -17,15 +17,10 @@ case "$1" in
     ;;
 esac
 
-for copr in $COPRS; do
-    dash=`echo $copr | sed 's|/|-|'`
-    curl -o /etc/yum.repos.d/$dash-$CDIST.repo https://copr.fedorainfracloud.org/coprs/$copr/repo/$CDIST/$dash-$CDIST.repo
-done
-
 BUILDENV="automake autoconf libtool pkgconfig git gcc make file clang $rt"
 BUILDDEP="openssl-devel zlib-devel jansson-devel jose libjose*devel http-parser-devel wget systemd which"
 
-yum -y install $BUILDENV $BUILDDEP
+$PM -y install $BUILDENV $BUILDDEP
 
 autoreconf -if
 

@@ -63,6 +63,14 @@ Tang requires a few other software libraries:
 2. systemd - https://github.com/systemd/systemd
 3. jose - https://github.com/latchset/jose
 
+#### Fedora
+
+Package requirements for building on Fedora:
+
+1. http-parser - ``http-parser-devel``
+2. systemd - ``systemd``
+3. jose - ``jose``, ``libjose-zlib-devel``, ``libjose-openssl-devel``
+
 ### Building and Installing from Source
 
 Building Tang is fairly straightforward:

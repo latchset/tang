@@ -65,7 +65,17 @@ Tang requires a few other software libraries:
 
 #### Fedora
 
-Package requirements for building on Fedora:
+Tang is packaged for Fedora. This package should be used as it contains
+additional settings (such as SETGID directories) out of the box. To install it:
+
+    $ sudo dnf install tang
+
+Fedora also packages the nagios plugin for monitoring the Tang server:
+
+    $ sudo dnf install tang-nagios
+
+If you really want to build from source on Fedora, you will need the following
+packages:
 
 1. http-parser - ``http-parser-devel``
 2. systemd - ``systemd``

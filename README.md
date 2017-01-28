@@ -100,10 +100,8 @@ Enabling a Tang server is a simple two-step process.
 
 First, enable and start the service using systemd.
 
-    # sudo systemctl enable tangd-update.path
-    # sudo systemctl start tangd-update.path
-    # sudo systemctl enable tangd.socket
-    # sudo systemctl start tangd.socket
+    # sudo systemctl enable tangd-update.path --now
+    # sudo systemctl enable tangd.socket --now
 
 Second, generate a signing key and an exchange key.
 

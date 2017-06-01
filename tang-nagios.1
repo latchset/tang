@@ -1,0 +1,70 @@
+.\" generated with Ronn/v0.7.3
+.\" http://github.com/rtomayko/ronn/tree/0.7.3
+.
+.TH "TANG\-NAGIOS" "1" "June 2017" "" ""
+.
+.SH "NAME"
+\fBtang\-nagios\fR \- A Nagios plugin for Tang
+.
+.SH "SYNOPSIS"
+\fBtang\fR \-u URL
+.
+.SH "OVERVIEW"
+This Nagios plugin for Tang enables Nagios to monitor a Tang server for its basic functionality as well as performance metrics\. The plugin is executed simply by providing the base URL to the Tang service\.
+.
+.P
+The plugin will test the following functionality:
+.
+.IP "1." 4
+Downloading the advertisement\.
+.
+.IP "2." 4
+Verification of advertisement semantics\.
+.
+.IP "3." 4
+Verification of signatures for all advertised signing keys\.
+.
+.IP "4." 4
+Verification of key exchanges for all advertised exchange keys\.
+.
+.IP "" 0
+.
+.P
+If any of these tests fail, an error will be generated\. Upon success, the plugin will output the following performance metrics:
+.
+.IP "\(bu" 4
+\fBadv\fR : Time it took to fetch the advertisement (in μs)\.
+.
+.IP "\(bu" 4
+\fBexc\fR : Average time of all key exchange operations (in μs)\.
+.
+.IP "\(bu" 4
+\fBnkeys\fR : Number of keys in the advertisement\.
+.
+.IP "\(bu" 4
+\fBnsigk\fR : Number of signing keys in the advertisement\.
+.
+.IP "\(bu" 4
+\fBnexck\fR : Number of exchange keys in the advertisement\.
+.
+.IP "" 0
+.
+.SH "EXAMPLES"
+A simple test against a localhost Tang server:
+.
+.IP "" 4
+.
+.nf
+
+$ \./tang \-u http://localhost/
+OK|adv=21430 exc=44587 nkeys=2 nsigk=1 nexck=1
+.
+.fi
+.
+.IP "" 0
+.
+.SH "AUTHOR"
+Nathaniel McCallum <npmccallum@redhat\.com>
+.
+.SH "SEE ALSO"
+\fBtang\fR(8)

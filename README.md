@@ -61,7 +61,7 @@ Tang requires a few other software libraries:
 
 1. http-parser - https://github.com/nodejs/http-parser
 2. systemd - https://github.com/systemd/systemd
-3. jose - https://github.com/latchset/jose
+3. jose >= 8 - https://github.com/latchset/jose
 
 #### Fedora
 
@@ -96,19 +96,13 @@ You can even run the tests if you'd like:
 
 ### Server Enablement
 
-Enabling a Tang server is a simple two-step process.
+Once installed, starting a Tang server is simple:
 
-First, enable and start the service using systemd.
+    $ sudo systemctl enable tangd.socket --now
 
-    # sudo systemctl enable tangd-update.path --now
-    # sudo systemctl enable tangd.socket --now
-
-Second, generate a signing key and an exchange key.
-
-    # sudo jose gen -t '{"alg":"ES256"}' -o /var/db/tang/sig.jwk
-
-    # sudo jose gen -t '{"kty":"EC","crv":"P-256","key_ops":["deriveKey"]}' \
-      -o /var/db/tang/exc.jwk
+This command will enable Tang for startup at boot and will additionally start
+it immediately. During the first startup, your initial signing and exchange
+keys will be generated automatically.
 
 That's it! You're up and running!
 
@@ -117,13 +111,14 @@ It is important to periodically rotate your keys. This is a simple three step
 process. In this example, we will rotate only a signing key; but all key types
 should be rotated.
 
-First, generate a new key:
+First, generate the new keys (see jose documentation for more options):
 
-    # sudo jose gen -t '{"alg":"ES256"}' -o /var/db/tang/newsig.jwk
+    $ sudo jose jwk gen -i '{"alg":"ES512"}' -o /var/db/tang/newsig.jwk
+    $ sudo jose jwk gen -i '{"alg":"ECDH"}' -o /var/db/tang/newexc.jwk
 
 Second, disable advertisement of the previous key:
 
-    # sudo mv /var/db/tang/sig.jwk /var/db/tang/.sig.jwk
+    # sudo mv /var/db/tang/oldsig.jwk /var/db/tang/.oldsig.jwk
 
 Third, after some reasonable period of time you may delete the old keys. You
 should only delete the old keys when you are sure that no client require them

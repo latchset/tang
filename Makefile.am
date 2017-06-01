@@ -8,6 +8,7 @@ CLEANFILES = $(systemdsystemunit_DATA)
 EXTRA_DIST = \
     COPYING \
     $(TESTS) \
+    $(man8_MANS) \
     tangd@.service.in \
     tangd.socket.in \
     tangd-update.path.in \
@@ -26,6 +27,8 @@ systemdsystemunit_DATA = \
 dist_libexec_SCRIPTS = tangd-update tangd-keygen
 libexec_PROGRAMS = tangd
 nagios_PROGRAMS = tang
+
+man8_MANS = tang.8
 
 tangd_SOURCES = http.c http.h tangd.c
 tang_SOURCES = nagios.c

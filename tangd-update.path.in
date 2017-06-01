@@ -2,6 +2,3 @@
 PathChanged=@jwkdir@
 MakeDirectory=true
 DirectoryMode=0700
-
-[Install]
-WantedBy=multi-user.target

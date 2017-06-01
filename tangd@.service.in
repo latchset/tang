@@ -1,6 +1,7 @@
 [Unit]
-Description=Tang daemon
-ConditionDirectoryNotEmpty=@cachedir@
+Description=Tang Server
+Requires=tangd-update.path
+Requires=tangd-keygen.service
 
 [Service]
 StandardInput=socket

@@ -24,7 +24,7 @@ shopt -s nullglob
 
 HASHES=`jose alg -k hash`
 
-if [ $# -ne 2 ]; then
+if [ $# -ne 2 ] || [ ! -d "$1" ]; then
     echo "Usage: $0 <jwkdir> <cachedir>" >&2
     exit 1
 fi

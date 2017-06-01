@@ -1,5 +1,5 @@
 [Unit]
-Description=Tang Update script
+Description=Tang Server key update script
 
 [Service]
 Type=oneshot

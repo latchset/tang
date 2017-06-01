@@ -4,13 +4,26 @@ AM_CFLAGS = @TANG_CFLAGS@ @jose_CFLAGS@
 LDADD = @jose_LIBS@ @http_parser_LIBS@
 
 TESTS = test-adv test-rec test-nagios
-EXTRA_DIST = COPYING $(TESTS) tangd@.service.in tangd.socket.in tangd-update.path.in tangd-update.service.in
 CLEANFILES = $(systemdsystemunit_DATA)
+EXTRA_DIST = \
+    COPYING \
+    $(TESTS) \
+    tangd@.service.in \
+    tangd.socket.in \
+    tangd-update.path.in \
+    tangd-update.service.in \
+    tangd-keygen.service.in
 
 nagiosdir = $(libdir)/nagios/plugins
 
-systemdsystemunit_DATA = tangd@.service tangd.socket tangd-update.path tangd-update.service
-dist_libexec_SCRIPTS = tangd-update
+systemdsystemunit_DATA = \
+    tangd@.service \
+    tangd.socket \
+    tangd-update.path \
+    tangd-update.service \
+    tangd-keygen.service
+
+dist_libexec_SCRIPTS = tangd-update tangd-keygen
 libexec_PROGRAMS = tangd
 nagios_PROGRAMS = tang
 

@@ -26,9 +26,7 @@ AC_CHECK_LIB([http_parser], [http_parser_execute],
              [AC_SUBST(http_parser_LIBS, [-lhttp_parser])],
              [AC_MSG_ERROR([http-parser required!])])
 
-PKG_CHECK_MODULES([jose_zlib], [jose-zlib >= 5])
-PKG_CHECK_MODULES([jose_openssl], [jose-openssl >= 5])
-
+PKG_CHECK_MODULES([jose], [jose >= 8])
 PKG_CHECK_MODULES([systemd], [systemd])
 
 AC_ARG_WITH([systemdsystemunitdir],

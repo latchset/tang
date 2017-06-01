@@ -59,8 +59,6 @@ adv(enum http_method method, const char *path, const char *body,
         thp = strndup(&path[matches[1].rm_so], size);
         if (!thp)
             return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
-        if (strlen(thp) < 32)
-            return http_reply(HTTP_STATUS_NOT_FOUND, NULL);
     }
 
     if (snprintf(filename, sizeof(filename),
@@ -122,10 +120,10 @@ rec(enum http_method method, const char *path, const char *body,
     if (!jwk)
         return http_reply(HTTP_STATUS_NOT_FOUND, NULL);
 
-    if (!jose_jwk_allowed(jwk, true, "deriveKey"))
+    if (!jose_jwk_prm(NULL, jwk, true, "deriveKey"))
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
-    rep = jose_jwk_exchange(jwk, req);
+    rep = jose_jwk_exc(NULL, jwk, req);
     if (!rep)
         return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 

@@ -32,10 +32,10 @@ export TMP=`mktemp -d`
 mkdir -p $TMP/db
 mkdir -p $TMP/cache
 
-jose gen -t '{"alg": "ES256"}'                                         -o $TMP/db/sig.jwk
-jose gen -t '{"alg": "ES256"}'                                         -o $TMP/db/.sig.jwk
-jose gen -t '{"alg": "ES256"}'                                         -o $TMP/db/.oth.jwk
-jose gen -t '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' -o $TMP/db/exc.jwk
+jose jwk gen -i '{"alg": "ES256"}'                                         -o $TMP/db/sig.jwk
+jose jwk gen -i '{"alg": "ES256"}'                                         -o $TMP/db/.sig.jwk
+jose jwk gen -i '{"alg": "ES256"}'                                         -o $TMP/db/.oth.jwk
+jose jwk gen -i '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' -o $TMP/db/exc.jwk
 $srcdir/tangd-update $TMP/db $TMP/cache
 
 for addr in "127.0.0.1" "[::1]"; do
@@ -49,30 +49,30 @@ for addr in "127.0.0.1" "[::1]"; do
   ! wget -t 1 -O- http://$addr:$port/
 
   # The request should fail (404) for non-signature key IDs
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/exc.jwk`
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -H sha512 -i $TMP/db/exc.jwk`
+  ! wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/exc.jwk`
+  ! wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -a S512 -i $TMP/db/exc.jwk`
 
   # The default advertisement fetch should succeed and pass verification
   wget -t 1 -O- http://$addr:$port/adv
-  wget -t 1 -O- http://$addr:$port/adv | jose ver -i- -k $TMP/db/sig.jwk
-  wget -t 1 -O- http://$addr:$port/adv/ | jose ver -i- -k $TMP/db/sig.jwk
+  wget -t 1 -O- http://$addr:$port/adv | jose jws ver -i- -k $TMP/db/sig.jwk
+  wget -t 1 -O- http://$addr:$port/adv/ | jose jws ver -i- -k $TMP/db/sig.jwk
 
   # Fetching by any thumbprint should work
-  wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/sig.jwk` | jose ver -i- -k $TMP/db/sig.jwk
-  wget -t 1 -O- http://$addr:$port/adv/`jose thp -H sha512 -i $TMP/db/sig.jwk` | jose ver -i- -k $TMP/db/sig.jwk
+  wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/sig.jwk` | jose jws ver -i- -k $TMP/db/sig.jwk
+  wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -a S512 -i $TMP/db/sig.jwk` | jose jws ver -i- -k $TMP/db/sig.jwk
 
   # Requesting an adv by an advertised key ID should't be signed by hidden keys
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/sig.jwk` | jose ver -i- -k $TMP/db/.sig.jwk
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/sig.jwk` | jose ver -i- -k $TMP/db/.oth.jwk
+  ! wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/sig.jwk` | jose jws ver -i- -k $TMP/db/.sig.jwk
+  ! wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/sig.jwk` | jose jws ver -i- -k $TMP/db/.oth.jwk
 
   # Verify that the default advertisement is not signed with hidden signature keys
-  ! wget -t 1 -O- http://$addr:$port/adv/ | jose ver -i- -k $TMP/db/.oth.jwk
-  ! wget -t 1 -O- http://$addr:$port/adv/ | jose ver -i- -k $TMP/db/.sig.jwk
+  ! wget -t 1 -O- http://$addr:$port/adv/ | jose jws ver -i- -k $TMP/db/.oth.jwk
+  ! wget -t 1 -O- http://$addr:$port/adv/ | jose jws ver -i- -k $TMP/db/.sig.jwk
 
   # A private key advertisement is signed by all advertised keys and the requested private key
-  wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/.sig.jwk` | jose ver -i- -k $TMP/db/sig.jwk
-  wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/.sig.jwk` | jose ver -i- -k $TMP/db/.sig.jwk
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose thp -i $TMP/db/.sig.jwk` | jose ver -i- -k $TMP/db/.oth.jwk
+  wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | jose jws ver -i- -k $TMP/db/sig.jwk
+  wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | jose jws ver -i- -k $TMP/db/.sig.jwk
+  ! wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | jose jws ver -i- -k $TMP/db/.oth.jwk
 
   kill $PID
   wait $PID || true

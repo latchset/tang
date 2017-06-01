@@ -22,7 +22,7 @@ trap 'exit' ERR
 
 shopt -s nullglob
 
-HASHES=`jose sup | sed -n 's|^jwk_hasher: ||p' | sed 's|,||g'`
+HASHES=`jose alg -k hash`
 
 if [ $# -ne 2 ]; then
     echo "Usage: $0 <jwkdir> <cachedir>" >&2
@@ -35,12 +35,12 @@ src=`realpath "$1"`
 dst=`realpath "$2"`
 
 for jwk in $src/*.jwk; do
-    pub=`jose pub -i "$jwk"`
+    pub=`jose jwk pub -i "$jwk"`
 
-    if jose use -i "$jwk" -r -o sign -o verify; then
+    if jose jwk use -i "$jwk" -r -u sign -u verify; then
         payl="$payl,$pub"
         skey="$skey -k $jwk"
-    elif jose use -i "$jwk" -r -o deriveKey; then
+    elif jose jwk use -i "$jwk" -r -u deriveKey; then
         payl="$payl,$pub"
     else
         echo "Skipping invalid key: $jwk" >&2
@@ -50,7 +50,7 @@ done
 payl="{\"keys\":[${payl:1}]}"
 
 if [ "$skey" ]; then
-    echo "$payl" | jose sig -i- $skey -o "$dst/.default.jws"
+    echo "$payl" | jose jws sig -I- $skey -o "$dst/.default.jws"
     mv -f "$dst/.default.jws" "$dst/default.jws"
     new=default.jws
 fi
@@ -59,14 +59,14 @@ shopt -s dotglob
 
 for jwk in $src/*.jwk; do
     for hsh in $HASHES; do
-        thp=`jose thp -i "$jwk" -H $hsh`
+        thp=`jose jwk thp -i "$jwk" -a $hsh`
 
-        if jose use -i "$jwk" -r -o deriveKey; then
+        if jose jwk use -i "$jwk" -r -u deriveKey; then
             ln -sf "$jwk" "$dst/.$thp.jwk"
             mv -f "$dst/.$thp.jwk" "$dst/$thp.jwk"
             new="$new\n$thp.jwk"
-        elif jose use -i "$jwk" -r -o sign; then
-            echo "$payl" | jose sig -i- $skey -k "$jwk" -o "$dst/.$thp.jws"
+        elif jose jwk use -i "$jwk" -r -u sign; then
+            echo "$payl" | jose jws sig -I- $skey -k "$jwk" -o "$dst/.$thp.jws"
             mv -f "$dst/.$thp.jws" "$dst/$thp.jws"
             new="$new\n$thp.jws"
         fi

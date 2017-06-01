@@ -301,7 +301,7 @@ validate(const json_t *jws)
     json_t *keys = NULL;
     size_t sigs = 0;
 
-    jwkset = jose_b64_decode_json_load(json_object_get(jws, "payload"));
+    jwkset = jose_b64_dec_load(json_object_get(jws, "payload"));
     if (!jwkset)
         return NULL;
 
@@ -312,10 +312,10 @@ validate(const json_t *jws)
     for (size_t i = 0; i < json_array_size(keys); i++) {
         json_t *key = json_array_get(keys, i);
 
-        if (!jose_jwk_allowed(key, true, "verify"))
+        if (!jose_jwk_prm(NULL, key, true, "verify"))
             continue;
 
-        if (!jose_jws_verify(jws, key, NULL))
+        if (!jose_jws_ver(NULL, jws, NULL, key, true))
             return NULL;
 
         sigs++;
@@ -340,15 +340,15 @@ nagios_recover(conn_t *con, const char *host, const char *path,
     double e = 0;
     int r = 0;
 
-    if (jose_jwk_allowed(jwk, true, "verify")) {
+    if (jose_jwk_prm(NULL, jwk, true, "verify")) {
         *sig += 1;
         return true;
     }
 
-    if (!jose_jwk_allowed(jwk, true, "deriveKey"))
+    if (!jose_jwk_prm(NULL, jwk, true, "deriveKey"))
         return true;
 
-    kid = jose_jwk_thumbprint_json(jwk, NULL);
+    kid = jose_jwk_thp(NULL, jwk, "S256");
     if (!kid)
         return true;
 
@@ -358,14 +358,14 @@ nagios_recover(conn_t *con, const char *host, const char *path,
     if (!lcl)
         return false;
 
-    if (!jose_jwk_generate(lcl))
+    if (!jose_jwk_gen(NULL, lcl))
         return false;
 
-    exc = jose_jwk_exchange(lcl, jwk);
+    exc = jose_jwk_exc(NULL, lcl, jwk);
     if (!exc)
         return false;
 
-    if (!jose_jwk_clean(lcl))
+    if (!jose_jwk_pub(NULL, lcl))
         return false;
 
     body = json_dumps(lcl, JSON_SORT_KEYS | JSON_COMPACT);

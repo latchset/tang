@@ -33,14 +33,14 @@ mkdir -p $TMP/db
 mkdir -p $TMP/cache
 
 # Generate the server keys
-jose gen -t '{"alg": "ES256"}' -o $TMP/db/sig.jwk
-jose gen -t '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' -o $TMP/db/exc.jwk
+jose jwk gen -i '{"alg": "ES256"}' -o $TMP/db/sig.jwk
+jose jwk gen -i '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' -o $TMP/db/exc.jwk
 ${srcdir}/tangd-update $TMP/db $TMP/cache
 
 # Generate the client keys
-exc_kid=`jose thp -i $TMP/db/exc.jwk`
-jose gen -t '{"kty":"EC","crv":"P-256"}' -o $TMP/exc.jwk
-jose pub -i $TMP/exc.jwk -o $TMP/exc.pub.jwk
+exc_kid=`jose jwk thp -i $TMP/db/exc.jwk`
+jose jwk gen -i '{"kty":"EC","crv":"P-256"}' -o $TMP/exc.jwk
+jose jwk pub -i $TMP/exc.jwk -o $TMP/exc.pub.jwk
 
 # Start the server
 port=`shuf -i 1024-65536 -n 1`
@@ -52,6 +52,6 @@ export PID=$!
 ! wget -t1 -O- http://127.0.0.1:$port/rec/
 
 # Make an anon recovery request (NOTE: this is insecure! Don't do this in real code!)
-good=`jose exc -l $TMP/exc.jwk -r $TMP/db/exc.jwk`
+good=`jose jwk exc -l $TMP/exc.jwk -r $TMP/db/exc.jwk`
 test=$(wget -t1 -O- --post-data="`cat $TMP/exc.pub.jwk`" http://127.0.0.1:$port/rec/${exc_kid})
 [ "$good" == "$test" ]

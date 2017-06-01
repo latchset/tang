@@ -1,7 +1,7 @@
 DISTCHECK_CONFIGURE_FLAGS = --with-systemdsystemunitdir=$$dc_install_base/$(systemdsystemunitdir)
 
-AM_CFLAGS = @TANG_CFLAGS@ @jose_zlib_CFLAGS@ @jose_openssl_CFLAGS@
-LDADD = @jose_zlib_LIBS@ @jose_openssl_LIBS@ @http_parser_LIBS@
+AM_CFLAGS = @TANG_CFLAGS@ @jose_CFLAGS@
+LDADD = @jose_LIBS@ @http_parser_LIBS@
 
 TESTS = test-adv test-rec test-nagios
 EXTRA_DIST = COPYING $(TESTS) tangd@.service.in tangd.socket.in tangd-update.path.in tangd-update.service.in

@@ -162,7 +162,7 @@ http_reply(const char *file, int line,
         return a;
 
     va_start(ap, fmt);
-    b = vdprintf(STDOUT_FILENO, fmt ? fmt : "\r\n", ap);
+    b = vdprintf(STDOUT_FILENO, fmt ? fmt : "Content-Length: 0\r\n\r\n", ap);
     va_end(ap);
     return b < 0 ? b : a + b;
 }

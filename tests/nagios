@@ -37,21 +37,11 @@ jose jwk gen -i '{"alg": "ES256"}' -o $TMP/db/sig.jwk
 jose jwk gen -i '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' -o $TMP/db/exc.jwk
 ${srcdir}/tangd-update $TMP/db $TMP/cache
 
-# Generate the client keys
-exc_kid=`jose jwk thp -i $TMP/db/exc.jwk`
-jose jwk gen -i '{"kty":"EC","crv":"P-256"}' -o $TMP/exc.jwk
-jose jwk pub -i $TMP/exc.jwk -o $TMP/exc.pub.jwk
-
 # Start the server
 port=`shuf -i 1024-65536 -n 1`
-@SD_ACTIVATE@ -l 127.0.0.1:$port -a $VALGRIND ./tangd $TMP/cache &
+$SD_ACTIVATE -l 127.0.0.1:$port -a $VALGRIND ./tangd $TMP/cache &
 export PID=$!
 
-# Make sure that GET fails
-! wget -t1 -O- http://127.0.0.1:$port/rec
-! wget -t1 -O- http://127.0.0.1:$port/rec/
+sleep 0.5
 
-# Make an anon recovery request (NOTE: this is insecure! Don't do this in real code!)
-good=`jose jwk exc -l $TMP/exc.jwk -r $TMP/db/exc.jwk`
-test=$(wget -t1 -O- --post-data="`cat $TMP/exc.pub.jwk`" http://127.0.0.1:$port/rec/${exc_kid})
-[ "$good" == "$test" ]
+./tang -u http://127.0.0.1:$port

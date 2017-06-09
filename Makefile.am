@@ -1,9 +1,10 @@
 DISTCHECK_CONFIGURE_FLAGS = --with-systemdsystemunitdir=$$dc_install_base/$(systemdsystemunitdir)
 
+AM_TESTS_ENVIRONMENT = SD_ACTIVATE="@SD_ACTIVATE@"
 AM_CFLAGS = @TANG_CFLAGS@ @jose_CFLAGS@
 LDADD = @jose_LIBS@ @http_parser_LIBS@
 
-TESTS = test-adv test-rec test-nagios
+TESTS = tests/adv tests/rec tests/nagios
 CLEANFILES = $(systemdsystemunit_DATA)
 EXTRA_DIST = \
     COPYING \

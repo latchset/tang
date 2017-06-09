@@ -75,7 +75,4 @@ TANG_CFLAGS="\
 AC_SUBST([TANG_CFLAGS])
 
 AC_CONFIG_FILES([Makefile])
-AC_CONFIG_FILES([test-adv], [chmod +x test-adv])
-AC_CONFIG_FILES([test-rec], [chmod +x test-rec])
-AC_CONFIG_FILES([test-nagios], [chmod +x test-nagios])
 AC_OUTPUT

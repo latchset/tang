@@ -1,47 +1,43 @@
 DISTCHECK_CONFIGURE_FLAGS = --with-systemdsystemunitdir=$$dc_install_base/$(systemdsystemunitdir)
 
-AM_TESTS_ENVIRONMENT = SD_ACTIVATE="@SD_ACTIVATE@"
 AM_CFLAGS = @TANG_CFLAGS@ @jose_CFLAGS@
 LDADD = @jose_LIBS@ @http_parser_LIBS@
 
-TESTS = tests/adv tests/rec tests/nagios
-CLEANFILES = $(systemdsystemunit_DATA)
-EXTRA_DIST = \
-    COPYING \
-    $(TESTS) \
-    $(man1_MANS) \
-    $(man8_MANS) \
-    tangd@.service.in \
-    tangd.socket.in \
-    tangd-update.path.in \
-    tangd-update.service.in \
-    tangd-keygen.service.in
-
 nagiosdir = $(libdir)/nagios/plugins
-
-systemdsystemunit_DATA = \
-    tangd@.service \
-    tangd.socket \
-    tangd-update.path \
-    tangd-update.service \
-    tangd-keygen.service
-
-dist_libexec_SCRIPTS = tangd-update tangd-keygen
-libexec_PROGRAMS = tangd
-nagios_PROGRAMS = tang
-
-man1_MANS = tang-nagios.1
-man8_MANS = tang.8
-
-tangd_SOURCES = http.c http.h tangd.c
-tang_SOURCES = nagios.c
-
-jwkdir = $(localstatedir)/db/$(PACKAGE_NAME)
 cachedir = $(localstatedir)/cache/$(PACKAGE_NAME)
+jwkdir = $(localstatedir)/db/$(PACKAGE_NAME)
+
+nodist_systemdsystemunit_DATA = \
+    units/tangd@.service \
+    units/tangd.socket \
+    units/tangd-update.path \
+    units/tangd-update.service \
+    units/tangd-keygen.service
+
+dist_libexec_SCRIPTS = src/tangd-update src/tangd-keygen
+libexec_PROGRAMS = src/tangd
+nagios_PROGRAMS = src/tang
+man1_MANS = doc/tang-nagios.1
+man8_MANS = doc/tang.8
+
+src_tangd_SOURCES = src/http.c src/http.h src/tangd.c
+src_tang_SOURCES = src/nagios.c
 
 %: %.in
+	$(AM_V_GEN)mkdir -p "`dirname "$@"`"
 	$(AM_V_GEN)$(SED) \
 		-e 's,@libexecdir\@,$(libexecdir),g' \
 		-e 's,@jwkdir\@,$(jwkdir),g' \
 		-e 's,@cachedir\@,$(cachedir),g' \
 		$(srcdir)/$@.in > $@
+
+AM_TESTS_ENVIRONMENT = SD_ACTIVATE="@SD_ACTIVATE@"
+TESTS = tests/adv tests/rec tests/nagios
+
+CLEANFILES = $(nodist_systemdsystemunit_DATA)
+EXTRA_DIST = \
+    $(foreach unit,$(nodist_systemdsystemunit_DATA),$(unit).in) \
+    COPYING \
+    $(TESTS) \
+    $(man1_MANS) \
+    $(man8_MANS)

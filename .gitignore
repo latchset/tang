@@ -40,5 +40,6 @@ Makefile.in
 Makefile
 missing
 tags
-tangd
+src/tangd
+src/tang
 test-driver

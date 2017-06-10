@@ -30,10 +30,9 @@ export TMP=`mktemp -d`
 mkdir -p $TMP/db
 mkdir -p $TMP/cache
 
-jose jwk gen -i '{"alg": "ES256"}'                                         -o $TMP/db/sig.jwk
-jose jwk gen -i '{"alg": "ES256"}'                                         -o $TMP/db/.sig.jwk
-jose jwk gen -i '{"alg": "ES256"}'                                         -o $TMP/db/.oth.jwk
-jose jwk gen -i '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' -o $TMP/db/exc.jwk
+tangd-keygen $TMP/db sig exc
+jose jwk gen -i '{"alg": "ES512"}' -o $TMP/db/.sig.jwk
+jose jwk gen -i '{"alg": "ES512"}' -o $TMP/db/.oth.jwk
 tangd-update $TMP/db $TMP/cache
 
 for addr in "127.0.0.1" "[::1]"; do

@@ -31,13 +31,13 @@ mkdir -p $TMP/db
 mkdir -p $TMP/cache
 
 # Generate the server keys
-jose jwk gen -i '{"alg": "ES256"}' -o $TMP/db/sig.jwk
-jose jwk gen -i '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' -o $TMP/db/exc.jwk
+tangd-keygen $TMP/db sig exc
 tangd-update $TMP/db $TMP/cache
 
 # Generate the client keys
 exc_kid=`jose jwk thp -i $TMP/db/exc.jwk`
-jose jwk gen -i '{"kty":"EC","crv":"P-256"}' -o $TMP/exc.jwk
+tmp=`jose fmt -j $TMP/db/exc.jwk -Od x -d y -d d -o-`
+jose jwk gen -i "$tmp" -o $TMP/exc.jwk
 jose jwk pub -i $TMP/exc.jwk -o $TMP/exc.pub.jwk
 
 # Start the server

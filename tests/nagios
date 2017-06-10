@@ -31,8 +31,7 @@ mkdir -p $TMP/db
 mkdir -p $TMP/cache
 
 # Generate the server keys
-jose jwk gen -i '{"alg": "ES256"}' -o $TMP/db/sig.jwk
-jose jwk gen -i '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' -o $TMP/db/exc.jwk
+tangd-keygen $TMP/db
 tangd-update $TMP/db $TMP/cache
 
 # Start the server

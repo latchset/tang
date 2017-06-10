@@ -31,7 +31,7 @@ src_tang_SOURCES = src/nagios.c
 		-e 's,@cachedir\@,$(cachedir),g' \
 		$(srcdir)/$@.in > $@
 
-AM_TESTS_ENVIRONMENT = SD_ACTIVATE="@SD_ACTIVATE@"
+AM_TESTS_ENVIRONMENT = SD_ACTIVATE="@SD_ACTIVATE@" PATH=$(srcdir)/src:$(builddir)/src:$(PATH)
 TESTS = tests/adv tests/rec tests/nagios
 
 CLEANFILES = $(nodist_systemdsystemunit_DATA)

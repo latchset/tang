@@ -18,8 +18,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-srcdir=${srcdir:-.}
-
 function on_exit() {
     if [ "$PID" ]; then kill $PID; wait $PID || true; fi
     [ -d "$TMP" ] && rm -rf $TMP
@@ -35,13 +33,13 @@ mkdir -p $TMP/cache
 # Generate the server keys
 jose jwk gen -i '{"alg": "ES256"}' -o $TMP/db/sig.jwk
 jose jwk gen -i '{"kty": "EC", "crv": "P-256", "key_ops": ["deriveKey"] }' -o $TMP/db/exc.jwk
-${srcdir}/tangd-update $TMP/db $TMP/cache
+tangd-update $TMP/db $TMP/cache
 
 # Start the server
 port=`shuf -i 1024-65536 -n 1`
-$SD_ACTIVATE -l 127.0.0.1:$port -a $VALGRIND ./tangd $TMP/cache &
+$SD_ACTIVATE -l 127.0.0.1:$port -a $VALGRIND tangd $TMP/cache &
 export PID=$!
 
 sleep 0.5
 
-./tang -u http://127.0.0.1:$port
+tang -u http://127.0.0.1:$port

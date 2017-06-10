@@ -79,14 +79,15 @@ packages:
 
 1. http-parser - ``http-parser-devel``
 2. systemd - ``systemd``
-3. jose - ``jose``, ``libjose-zlib-devel``, ``libjose-openssl-devel``
+3. jose >= 8 - ``jose``, ``libjose-devel``
+4. curl - curl (only needed for running tests)
 
 ### Building and Installing from Source
 
 Building Tang is fairly straightforward:
 
     $ autoreconf -if
-    $ ./configure --prefix=/usr
+    $ ./configure --prefix=/usr --libdir=/usr/lib64
     $ make
     $ sudo make install
 
@@ -107,6 +108,7 @@ keys will be generated automatically.
 That's it! You're up and running!
 
 ### Key Rotation
+
 It is important to periodically rotate your keys. This is a simple three step
 process. In this example, we will rotate only a signing key; but all key types
 should be rotated.
@@ -114,11 +116,11 @@ should be rotated.
 First, generate the new keys (see jose documentation for more options):
 
     $ sudo jose jwk gen -i '{"alg":"ES512"}' -o /var/db/tang/newsig.jwk
-    $ sudo jose jwk gen -i '{"alg":"ECDH"}' -o /var/db/tang/newexc.jwk
+    $ sudo jose jwk gen -i '{"alg":"ECMR"}' -o /var/db/tang/newexc.jwk
 
 Second, disable advertisement of the previous key:
 
-    # sudo mv /var/db/tang/oldsig.jwk /var/db/tang/.oldsig.jwk
+    $ sudo mv /var/db/tang/oldsig.jwk /var/db/tang/.oldsig.jwk
 
 Third, after some reasonable period of time you may delete the old keys. You
 should only delete the old keys when you are sure that no client require them

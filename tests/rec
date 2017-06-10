@@ -46,10 +46,13 @@ $SD_ACTIVATE -l 127.0.0.1:$port -a $VALGRIND tangd $TMP/cache &
 export PID=$!
 
 # Make sure that GET fails
-! wget -t1 -O- http://127.0.0.1:$port/rec
-! wget -t1 -O- http://127.0.0.1:$port/rec/
+! curl -sf http://127.0.0.1:$port/rec
+! curl -sf http://127.0.0.1:$port/rec/
 
-# Make an anon recovery request (NOTE: this is insecure! Don't do this in real code!)
-good=`jose jwk exc -l $TMP/exc.jwk -r $TMP/db/exc.jwk`
-test=$(wget -t1 -O- --post-data="`cat $TMP/exc.pub.jwk`" http://127.0.0.1:$port/rec/${exc_kid})
+# Make a recovery request (NOTE: this is insecure! Don't do this in real code!)
+good=`jose jwk exc -i '{"alg":"ECMR","key_ops":["deriveKey"]}' -l $TMP/exc.jwk -r $TMP/db/exc.jwk`
+test=`curl -sf -X POST \
+           -H "Content-Type: application/jwk+json" \
+           --data-binary @- \
+           http://127.0.0.1:$port/rec/${exc_kid} < $TMP/exc.pub.jwk`
 [ "$good" == "$test" ]

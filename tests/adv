@@ -43,33 +43,33 @@ for addr in "127.0.0.1" "[::1]"; do
   sleep 0.1
 
   # Make sure requests on the root fail
-  ! wget -t 1 -O- http://$addr:$port/
+  ! curl -sf http://$addr:$port/
 
   # The request should fail (404) for non-signature key IDs
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/exc.jwk`
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -a S512 -i $TMP/db/exc.jwk`
+  ! curl -sf http://$addr:$port/adv/`jose jwk thp -i $TMP/db/exc.jwk`
+  ! curl -sf http://$addr:$port/adv/`jose jwk thp -a S512 -i $TMP/db/exc.jwk`
 
   # The default advertisement fetch should succeed and pass verification
-  wget -t 1 -O- http://$addr:$port/adv
-  wget -t 1 -O- http://$addr:$port/adv | jose jws ver -i- -k $TMP/db/sig.jwk
-  wget -t 1 -O- http://$addr:$port/adv/ | jose jws ver -i- -k $TMP/db/sig.jwk
+  curl -sf http://$addr:$port/adv
+  curl -sf http://$addr:$port/adv | jose jws ver -i- -k $TMP/db/sig.jwk
+  curl -sf http://$addr:$port/adv/ | jose jws ver -i- -k $TMP/db/sig.jwk
 
   # Fetching by any thumbprint should work
-  wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/sig.jwk` | jose jws ver -i- -k $TMP/db/sig.jwk
-  wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -a S512 -i $TMP/db/sig.jwk` | jose jws ver -i- -k $TMP/db/sig.jwk
+  curl -sf http://$addr:$port/adv/`jose jwk thp -i $TMP/db/sig.jwk` | jose jws ver -i- -k $TMP/db/sig.jwk
+  curl -sf http://$addr:$port/adv/`jose jwk thp -a S512 -i $TMP/db/sig.jwk` | jose jws ver -i- -k $TMP/db/sig.jwk
 
   # Requesting an adv by an advertised key ID should't be signed by hidden keys
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/sig.jwk` | jose jws ver -i- -k $TMP/db/.sig.jwk
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/sig.jwk` | jose jws ver -i- -k $TMP/db/.oth.jwk
+  ! curl -sf http://$addr:$port/adv/`jose jwk thp -i $TMP/db/sig.jwk` | jose jws ver -i- -k $TMP/db/.sig.jwk
+  ! curl -sf http://$addr:$port/adv/`jose jwk thp -i $TMP/db/sig.jwk` | jose jws ver -i- -k $TMP/db/.oth.jwk
 
   # Verify that the default advertisement is not signed with hidden signature keys
-  ! wget -t 1 -O- http://$addr:$port/adv/ | jose jws ver -i- -k $TMP/db/.oth.jwk
-  ! wget -t 1 -O- http://$addr:$port/adv/ | jose jws ver -i- -k $TMP/db/.sig.jwk
+  ! curl -sf http://$addr:$port/adv/ | jose jws ver -i- -k $TMP/db/.oth.jwk
+  ! curl -sf http://$addr:$port/adv/ | jose jws ver -i- -k $TMP/db/.sig.jwk
 
   # A private key advertisement is signed by all advertised keys and the requested private key
-  wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | jose jws ver -i- -k $TMP/db/sig.jwk
-  wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | jose jws ver -i- -k $TMP/db/.sig.jwk
-  ! wget -t 1 -O- http://$addr:$port/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | jose jws ver -i- -k $TMP/db/.oth.jwk
+  curl -sf http://$addr:$port/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | jose jws ver -i- -k $TMP/db/sig.jwk
+  curl -sf http://$addr:$port/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | jose jws ver -i- -k $TMP/db/.sig.jwk
+  ! curl -sf http://$addr:$port/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | jose jws ver -i- -k $TMP/db/.oth.jwk
 
   kill $PID
   wait $PID || true

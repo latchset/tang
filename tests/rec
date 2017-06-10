@@ -44,6 +44,7 @@ jose jwk pub -i $TMP/exc.jwk -o $TMP/exc.pub.jwk
 port=`shuf -i 1024-65536 -n 1`
 $SD_ACTIVATE -l 127.0.0.1:$port -a $VALGRIND tangd $TMP/cache &
 export PID=$!
+sleep 0.5
 
 # Make sure that GET fails
 ! curl -sf http://127.0.0.1:$port/rec

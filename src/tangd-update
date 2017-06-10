@@ -18,6 +18,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+TMP='{"protected":{"cty":"jwk-set+json"}}'
+
 trap 'exit' ERR
 
 shopt -s nullglob
@@ -34,23 +36,23 @@ fi
 src=`realpath "$1"`
 dst=`realpath "$2"`
 
-for jwk in $src/*.jwk; do
-    pub=`jose jwk pub -i "$jwk"`
+payl=()
+sign=()
 
+for jwk in $src/*.jwk; do
     if jose jwk use -i "$jwk" -r -u sign -u verify; then
-        payl="$payl,$pub"
-        skey="$skey -k $jwk"
+        sign+=("-s" "$TMP" "-k" "$jwk")
+        payl+=("-i" "$jwk")
     elif jose jwk use -i "$jwk" -r -u deriveKey; then
-        payl="$payl,$pub"
+        payl+=("-i" "$jwk")
     else
         echo "Skipping invalid key: $jwk" >&2
     fi
 done
 
-payl="{\"keys\":[${payl:1}]}"
-
-if [ "$skey" ]; then
-    echo "$payl" | jose jws sig -I- $skey -o "$dst/.default.jws"
+if [ ${#sign[@]} -gt 0 ]; then
+    jose jwk pub -s "${payl[@]}" \
+        | jose jws sig -I- "${sign[@]}" -o "$dst/.default.jws"
     mv -f "$dst/.default.jws" "$dst/default.jws"
     new=default.jws
 fi
@@ -66,7 +68,9 @@ for jwk in $src/*.jwk; do
             mv -f "$dst/.$thp.jwk" "$dst/$thp.jwk"
             new="$new\n$thp.jwk"
         elif jose jwk use -i "$jwk" -r -u sign; then
-            echo "$payl" | jose jws sig -I- $skey -k "$jwk" -o "$dst/.$thp.jws"
+            keys=("${sign[@]}" -s "$TMP" -k "$jwk")
+            jose jwk pub -s "${payl[@]}" \
+                | jose jws sig -I- "${keys[@]}" -o "$dst/.$thp.jws"
             mv -f "$dst/.$thp.jws" "$dst/$thp.jws"
             new="$new\n$thp.jws"
         fi

@@ -70,6 +70,14 @@ for addr in "127.0.0.1" "[::1]"; do
   curl -sf http://$addr:$port/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | jose jws ver -i- -k $TMP/db/.sig.jwk
   ! curl -sf http://$addr:$port/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | jose jws ver -i- -k $TMP/db/.oth.jwk
 
+  # Verify that the advertisements contain the cty parameter
+  curl -sf http://$addr:$port/adv \
+      | jose fmt -j- -Og protected -SyOg cty -Sq "jwk-set+json" -E
+  curl -sf http://$addr:$port/adv/`jose jwk thp -i $TMP/db/.sig.jwk` \
+      | jose fmt -j- -Og signatures -A \
+                 -g 0 -Og protected -SyOg cty -Sq "jwk-set+json" -EUUUUU \
+                 -g 1 -Og protected -SyOg cty -Sq "jwk-set+json" -EUUUUU
+
   kill $PID
   wait $PID || true
   unset PID

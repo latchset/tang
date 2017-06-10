@@ -22,7 +22,7 @@ Tang avoids this complexity. Instead of storing a symmetric key remotely,
 the client performs an asymmetric key exchange with the Tang server. Since
 the Tang server doesn't store or transport symmetric keys, neither
 authentication nor encryption are required. Thus, Tang is completely stateless
-and zero-configuration.
+and zero-configuration. Further, clients can be completely anonymous.
 
 Tang does not provide a client. But it does export a simple REST API and
 it transfers only standards compliant JSON Object Signing and Encryption
@@ -60,7 +60,7 @@ new signature and exchange keys with the following commands:
 
     # DB=/var/db/tang
     # jose jwk gen -i '{"alg":"ES512"}' -o $DB/new_sig.jwk
-    # jose jwk gen -i '{"alg":"ECDH","crv":"P-521"}' -o $DB/new_exc.jwk
+    # jose jwk gen -i '{"alg":"ECMR"}' -o $DB/new_exc.jwk
 
 Next, rename the old keys to have a leading `.` in order to hide them from
 advertisement:

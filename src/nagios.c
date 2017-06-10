@@ -355,9 +355,11 @@ nagios_recover(conn_t *con, const char *host, const char *path,
     if (!kid)
         return true;
 
-    lcl = json_pack("{s:O,s:O}",
+    lcl = json_pack("{s:O,s:O,s:s,s:[s]}",
                     "kty", json_object_get(jwk, "kty"),
-                    "crv", json_object_get(jwk, "crv"));
+                    "crv", json_object_get(jwk, "crv"),
+                    "alg", "ECMR",
+                    "key_ops", "deriveKey");
     if (!lcl)
         return false;
 

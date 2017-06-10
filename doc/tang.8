@@ -16,7 +16,7 @@ The Tang project arose as a tool to help the automation of decryption\. Existing
 However, escrow servers have many additional requirements, including authentication (so that clients can\'t get keys they aren\'t suppossed to have) and transport encryption (so that attackers listening on the network can\'t eavesdrop on the keys in transit)\.
 .
 .P
-Tang avoids this complexity\. Instead of storing a symmetric key remotely, the client performs an asymmetric key exchange with the Tang server\. Since the Tang server doesn\'t store or transport symmetric keys, neither authentication nor encryption are required\. Thus, Tang is completely stateless and zero\-configuration\.
+Tang avoids this complexity\. Instead of storing a symmetric key remotely, the client performs an asymmetric key exchange with the Tang server\. Since the Tang server doesn\'t store or transport symmetric keys, neither authentication nor encryption are required\. Thus, Tang is completely stateless and zero\-configuration\. Further, clients can be completely anonymous\.
 .
 .P
 Tang does not provide a client\. But it does export a simple REST API and it transfers only standards compliant JSON Object Signing and Encryption (JOSE) objects, allowing you to create your own clients using off the shelf components\. For an off\-the\-shelf automated encryption framework with support for Tang, see the Clevis project\. For the full technical details of the Tang protocol, see the Tang project\'s homepage\.
@@ -52,7 +52,7 @@ To rotate keys, first we need to generate new keys in the key database directory
 
 # DB=/var/db/tang
 # jose jwk gen \-i \'{"alg":"ES512"}\' \-o $DB/new_sig\.jwk
-# jose jwk gen \-i \'{"alg":"ECDH","crv":"P\-521"}\' \-o $DB/new_exc\.jwk
+# jose jwk gen \-i \'{"alg":"ECMR"}\' \-o $DB/new_exc\.jwk
 .
 .fi
 .

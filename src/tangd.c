@@ -97,17 +97,33 @@ rec(enum http_method method, const char *path, const char *body,
     json_auto_t *jwk = NULL;
     json_auto_t *req = NULL;
     json_auto_t *rep = NULL;
+    const char *alg = NULL;
     const char *kty = NULL;
+    const char *d = NULL;
+
+    /*
+     * Parse and validate the request JWK
+     */
 
     req = json_loads(body, 0, NULL);
     if (!req)
         return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 
-    if (json_unpack(req, "{s:s}", "kty", &kty) != 0)
+    if (!jose_jwk_prm(NULL, req, false, "deriveKey"))
+        return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
+
+    if (json_unpack(req, "{s:s,s?s}", "kty", &kty, "alg", &alg) < 0)
         return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 
     if (strcmp(kty, "EC") != 0)
         return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
+
+    if (alg && strcmp(alg, "ECMR") != 0)
+        return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
+
+    /*
+     * Parse and validate the server-side JWK
+     */
 
     thp = strndup(&path[matches[1].rm_so], size);
     if (!thp)
@@ -123,9 +139,24 @@ rec(enum http_method method, const char *path, const char *body,
     if (!jose_jwk_prm(NULL, jwk, true, "deriveKey"))
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
+    if (json_unpack(jwk, "{s:s,s?s}", "d", &d, "alg", &alg) < 0)
+        return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
+
+    if (alg && strcmp(alg, "ECMR") != 0)
+        return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
+
+    /*
+     * Perform the exchange and return
+     */
     rep = jose_jwk_exc(NULL, jwk, req);
     if (!rep)
         return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
+
+    if (json_object_set_new(rep, "alg", json_string("ECMR")) < 0)
+        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+
+    if (json_object_set_new(rep, "key_ops", json_pack("[s]", "deriveKey")) < 0)
+        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
     enc = json_dumps(rep, JSON_SORT_KEYS | JSON_COMPACT);
     if (!enc)

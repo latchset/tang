@@ -20,15 +20,17 @@
 
 trap 'exit' ERR
 
-if [ $# -ne 1 ] || [ ! -d "$1" ]; then
-    echo "Usage: $0 <jwkdir>" >&2
+if [ $# -ne 1 -a $# -ne 3 ] || [ ! -d "$1" ]; then
+    echo "Usage: $0 <jwkdir> [<sig> <exc>]" >&2
     exit 1
 fi
 
-jwe=`jose jwk gen -i '{"alg":"ES512"}'`
-kid=`echo "$jwe" | jose jwk thp -i-`
-echo "$jwe" > $1/$kid.jwk
+[ $# -eq 3 ] && sig=$2 && exc=$3
 
-jwe=`jose jwk gen -i '{"alg":"ECDH","crv":"P-521"}'`
-kid=`echo "$jwe" | jose jwk thp -i-`
-echo "$jwe" > $1/$kid.jwk
+jwe=`jose jwk gen -i '{"alg":"ES512"}'`
+[ -z "$sig" ] && sig=`echo "$jwe" | jose jwk thp -i-`
+echo "$jwe" > $1/$sig.jwk
+
+jwe=`jose jwk gen -i '{"alg":"ECMR"}'`
+[ -z "$exc" ] && exc=`echo "$jwe" | jose jwk thp -i-`
+echo "$jwe" > $1/$exc.jwk

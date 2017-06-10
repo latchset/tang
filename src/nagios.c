@@ -414,7 +414,7 @@ nagios_recover(conn_t *con, const char *host, const char *path,
         return false;
     }
 
-    if (!json_equal(exc, rep)) {
+    if (!jose_jwk_eql(NULL, exc, rep)) {
         printf("Recovered key doesn't match!\n");
         return false;
     }

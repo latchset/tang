@@ -10,7 +10,6 @@ compiler:
 
 env:
   - DISTRO=fedora:rawhide
-  - DISTRO=fedora:26
   - DISTRO=centos:7
 
 script:

@@ -15,9 +15,10 @@ nodist_systemdsystemunit_DATA = \
     units/tangd-keygen.service
 
 dist_libexec_SCRIPTS = src/tangd-update src/tangd-keygen
+dist_bin_SCRIPTS = src/tang-show-keys
 libexec_PROGRAMS = src/tangd
 nagios_PROGRAMS = src/tang
-man1_MANS = doc/tang-nagios.1
+man1_MANS = doc/tang-nagios.1 doc/tang-show-keys.1
 man8_MANS = doc/tang.8
 
 src_tangd_SOURCES = src/http.c src/http.h src/tangd.c

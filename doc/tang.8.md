@@ -125,11 +125,11 @@ Nathaniel McCallum &lt;npmccallum@redhat.com&gt;
 
 ## SEE ALSO
 
-`systemd.unit`(5), `systemd.socket`(5), `jose-jwk-gen`(1)
+`systemd.unit`(5), `systemd.socket`(5), `jose-jwk-gen`(1), `tang-show-keys`(1)
 
 ## FURTHER READING
 
 * Clevis    : https://github.com/latchset/clevis
 * Tang      : https://github.com/latchset/tang
 * JOSE      : https://datatracker.ietf.org/wg/jose/charter/
-* mod_proxy : https://httpd.apache.org/docs/2.4/mod/mod_proxy.html 
+* mod_proxy : https://httpd.apache.org/docs/2.4/mod/mod_proxy.html

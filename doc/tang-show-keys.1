@@ -1,0 +1,25 @@
+.\" generated with Ronn/v0.7.3
+.\" http://github.com/rtomayko/ronn/tree/0.7.3
+.
+.TH "TANG\-SHOW\-KEYS" "1" "March 2018" "ff" ""
+.
+.SH "NAME"
+\fBtang\-show\-keys\fR \- Output signing key thumbprints
+.
+.SH "SYNOPSIS"
+\fBtang\-show\-keys\fR [\fIPORT\fR]
+.
+.SH "DESCRIPTION"
+It is sometimes necessary to manually verify that a client has received the expected Tang advertisement\.
+.
+.P
+The client will usually show the thumbprints of the signing keys in the advertisement it got, and this tool will show the thumbprints of the signing keys used by the Tang server on localhost\. If these two sets of thumbprints agree, the client has the right advertisement and it is safe to let the client use it\.
+.
+.P
+\fIPORT\fR is the port that the Tang server is listening on on localhost\. It defaults to 80\.
+.
+.SH "AUTHOR"
+Marius Vollmer <marius\.vollmer@redhat\.com>
+.
+.SH "SEE ALSO"
+\fBtang(8)\fR

@@ -1,0 +1,28 @@
+tang-show-keys(1) -- Output signing key thumbprints
+===================================================
+
+## SYNOPSIS
+
+`tang-show-keys` [<PORT>]
+
+## DESCRIPTION
+
+It is sometimes necessary to manually verify that a client has
+received the expected Tang advertisement.
+
+The client will usually show the thumbprints of the signing keys in
+the advertisement it got, and this tool will show the thumbprints of
+the signing keys used by the Tang server on localhost.  If these two
+sets of thumbprints agree, the client has the right advertisement and
+it is safe to let the client use it.
+
+<PORT> is the port that the Tang server is listening on on localhost.
+It defaults to 80.
+
+## AUTHOR
+
+Marius Vollmer &lt;marius.vollmer@redhat.com&gt;
+
+## SEE ALSO
+
+`tang(8)`

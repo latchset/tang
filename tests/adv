@@ -83,3 +83,5 @@ fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` \
     | jose fmt -j- -Og signatures -A \
                -g 0 -Og protected -SyOg cty -Sq "jwk-set+json" -EUUUUU \
                -g 1 -Og protected -SyOg cty -Sq "jwk-set+json" -EUUUUU
+
+test $(tang-show-keys $PORT) == $(jose jwk thp -i $TMP/db/sig.jwk)

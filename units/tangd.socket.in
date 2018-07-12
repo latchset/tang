@@ -1,7 +1,10 @@
 [Unit]
 Description=Tang Server socket
-Requires=tangd-update.path
 Requires=tangd-keygen.service
+Requires=tangd-update.service
+Requires=tangd-update.path
+After=tangd-keygen.service
+After=tangd-update.service
 
 [Socket]
 ListenStream=80

@@ -59,7 +59,7 @@ identifying information from the client.
 
 Tang requires a few other software libraries:
 
-1. http-parser - https://github.com/nodejs/http-parser
+1. http-parser >= 2.8.0 - https://github.com/nodejs/http-parser
 2. systemd - https://github.com/systemd/systemd
 3. jose >= 8 - https://github.com/latchset/jose
 
@@ -79,7 +79,7 @@ packages:
 
 1. http-parser - ``http-parser-devel``
 2. systemd - ``systemd``
-3. jose >= 8 - ``jose``, ``libjose-devel``
+3. jose - ``jose``, ``libjose-devel``
 4. curl - curl (only needed for running tests)
 
 ### Building and Installing from Source

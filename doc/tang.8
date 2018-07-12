@@ -1,137 +1,192 @@
-.\" generated with Ronn/v0.7.3
-.\" http://github.com/rtomayko/ronn/tree/0.7.3
-.
-.TH "TANG" "8" "March 2018" "ff" ""
-.
+'\" t
+.\"     Title: tang
+.\"    Author: [see the "AUTHOR" section]
+.\" Generator: DocBook XSL Stylesheets vsnapshot <http://docbook.sf.net/>
+.\"      Date: 07/12/2018
+.\"    Manual: \ \&
+.\"    Source: \ \&
+.\"  Language: English
+.\"
+.TH "TANG" "8" "07/12/2018" "\ \&" "\ \&"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
 .SH "NAME"
-\fBtang\fR \- Network\-Based Cryptographic Binding Server
-.
+tang \- Network\-Based Cryptographic Binding Server
 .SH "OVERVIEW"
-Tang is a service for binding cryptographic keys to network presence\. It offers a secure, stateless, anonymous alternative to key escrow services\.
-.
-.P
-The Tang project arose as a tool to help the automation of decryption\. Existing mechanisms predominantly use key escrow systems where a client encrypts some data with a symmetric key and stores the symmetric key in a remote server for later retrieval\. The desired goal of this setup is that the client can automatically decrypt the data when it is able to contact the escrow server and fetch the key\.
-.
-.P
-However, escrow servers have many additional requirements, including authentication (so that clients can\'t get keys they aren\'t suppossed to have) and transport encryption (so that attackers listening on the network can\'t eavesdrop on the keys in transit)\.
-.
-.P
-Tang avoids this complexity\. Instead of storing a symmetric key remotely, the client performs an asymmetric key exchange with the Tang server\. Since the Tang server doesn\'t store or transport symmetric keys, neither authentication nor encryption are required\. Thus, Tang is completely stateless and zero\-configuration\. Further, clients can be completely anonymous\.
-.
-.P
-Tang does not provide a client\. But it does export a simple REST API and it transfers only standards compliant JSON Object Signing and Encryption (JOSE) objects, allowing you to create your own clients using off the shelf components\. For an off\-the\-shelf automated encryption framework with support for Tang, see the Clevis project\. For the full technical details of the Tang protocol, see the Tang project\'s homepage\.
-.
+.sp
+Tang is a service for binding cryptographic keys to network presence\&. It offers a secure, stateless, anonymous alternative to key escrow services\&.
+.sp
+The Tang project arose as a tool to help the automation of decryption\&. Existing mechanisms predominantly use key escrow systems where a client encrypts some data with a symmetric key and stores the symmetric key in a remote server for later retrieval\&. The desired goal of this setup is that the client can automatically decrypt the data when it is able to contact the escrow server and fetch the key\&.
+.sp
+However, escrow servers have many additional requirements, including authentication (so that clients can\(cqt get keys they aren\(cqt suppossed to have) and transport encryption (so that attackers listening on the network can\(cqt eavesdrop on the keys in transit)\&.
+.sp
+Tang avoids this complexity\&. Instead of storing a symmetric key remotely, the client performs an asymmetric key exchange with the Tang server\&. Since the Tang server doesn\(cqt store or transport symmetric keys, neither authentication nor encryption are required\&. Thus, Tang is completely stateless and zero\-configuration\&. Further, clients can be completely anonymous\&.
+.sp
+Tang does not provide a client\&. But it does export a simple REST API and it transfers only standards compliant JSON Object Signing and Encryption (JOSE) objects, allowing you to create your own clients using off the shelf components\&. For an off\-the\-shelf automated encryption framework with support for Tang, see the Clevis project\&. For the full technical details of the Tang protocol, see the Tang project\(cqs homepage\&.
 .SH "GETTING STARTED"
+.sp
 Getting a Tang server up and running is simple:
-.
-.IP "" 4
-.
+.sp
+.if n \{\
+.RS 4
+.\}
 .nf
-
-$ sudo systemctl enable tangd\.socket \-\-now
-.
+$ sudo systemctl enable tangd\&.socket \-\-now
 .fi
-.
-.IP "" 0
-.
-.P
-That\'s it\. The server is now running with a fresh set of cryptographic keys and will automatically start on the next reboot\.
-.
+.if n \{\
+.RE
+.\}
+.sp
+That\(cqs it\&. The server is now running with a fresh set of cryptographic keys and will automatically start on the next reboot\&.
 .SH "CONFIGURATION"
-Tang intends to be a minimal network service and therefore does not have any configuration\. To adjust the network settings, you can override the \fBtangd\.socket\fR unit file using the standard systemd mechanisms\. See \fBsystemd\.unit\fR(5) and \fBsystemd\.socket\fR(5) for more information\.
-.
+.sp
+Tang intends to be a minimal network service and therefore does not have any configuration\&. To adjust the network settings, you can override the \fBtangd\&.socket\fR unit file using the standard systemd mechanisms\&. See \fBsystemd\&.unit\fR(5) and \fBsystemd\&.socket\fR(5) for more information\&.
 .SH "KEY ROTATION"
-In order to preserve the security of the system over the long run, you need to periodically rotate your keys\. The precise interval at which you should rotate depends upon your application, key sizes and institutional policy\. For some common recommendations, see: https://www\.keylength\.com\.
-.
-.P
-To rotate keys, first we need to generate new keys in the key database directory\. This is typically \fB/var/db/tang\fR\. For example, you can create new signature and exchange keys with the following commands:
-.
-.IP "" 4
-.
+.sp
+In order to preserve the security of the system over the long run, you need to periodically rotate your keys\&. The precise interval at which you should rotate depends upon your application, key sizes and institutional policy\&. For some common recommendations, see: https://www\&.keylength\&.com\&.
+.sp
+To rotate keys, first we need to generate new keys in the key database directory\&. This is typically \fB/var/db/tang\fR\&. For example, you can create new signature and exchange keys with the following commands:
+.sp
+.if n \{\
+.RS 4
+.\}
 .nf
-
 # DB=/var/db/tang
-# jose jwk gen \-i \'{"alg":"ES512"}\' \-o $DB/new_sig\.jwk
-# jose jwk gen \-i \'{"alg":"ECMR"}\' \-o $DB/new_exc\.jwk
-.
+# jose jwk gen \-i \*(Aq{"alg":"ES512"}\*(Aq \-o $DB/new_sig\&.jwk
+# jose jwk gen \-i \*(Aq{"alg":"ECMR"}\*(Aq \-o $DB/new_exc\&.jwk
 .fi
-.
-.IP "" 0
-.
-.P
-Next, rename the old keys to have a leading \fB\.\fR in order to hide them from advertisement:
-.
-.IP "" 4
-.
+.if n \{\
+.RE
+.\}
+.sp
+Next, rename the old keys to have a leading \fB\&.\fR in order to hide them from advertisement:
+.sp
+.if n \{\
+.RS 4
+.\}
 .nf
-
-# mv $DB/old_sig\.jwk $DB/\.old_sig\.jwk
-# mv $DB/old_exc\.jwk $DB/\.old_exc\.jwk
-.
+# mv $DB/old_sig\&.jwk $DB/\&.old_sig\&.jwk
+# mv $DB/old_exc\&.jwk $DB/\&.old_exc\&.jwk
 .fi
-.
-.IP "" 0
-.
-.P
-Tang will immediately pick up all changes\. No restart is required\.
-.
-.P
-At this point, new client bindings will pick up the new keys and old clients can continue to utilize the old keys\. Once you are sure that all the old clients have been migrated to use the new keys, you can remove the old keys\. Be aware that removing the old keys while clients are still using them can result in data loss\. You have been warned\.
-.
+.if n \{\
+.RE
+.\}
+.sp
+Tang will immediately pick up all changes\&. No restart is required\&.
+.sp
+At this point, new client bindings will pick up the new keys and old clients can continue to utilize the old keys\&. Once you are sure that all the old clients have been migrated to use the new keys, you can remove the old keys\&. Be aware that removing the old keys while clients are still using them can result in data loss\&. You have been warned\&.
 .SH "HIGH PERFORMANCE"
-The Tang protocol is extremely fast\. However, in the default setup we use systemd socket activiation to start one process per connection\. This imposes a performance overhead\. For most deployments, this is still probably quick enough, given that Tang is extremely lightweight\. But for larger deployments, greater performance can be achieved\.
-.
-.P
-Our recommendation for achieving higher throughput is to proxy traffic to Tang through your existing web services using a connection pool\. Since there is one process per connection, keeping a number of connections open in this setup will enable effective parallelism since there are no internal locks in Tang\.
-.
-.P
-For Apache, this is possible using the \fBProxyPass\fR directive of the \fBmod_proxy\fR module\.
-.
+.sp
+The Tang protocol is extremely fast\&. However, in the default setup we use systemd socket activiation to start one process per connection\&. This imposes a performance overhead\&. For most deployments, this is still probably quick enough, given that Tang is extremely lightweight\&. But for larger deployments, greater performance can be achieved\&.
+.sp
+Our recommendation for achieving higher throughput is to proxy traffic to Tang through your existing web services using a connection pool\&. Since there is one process per connection, keeping a number of connections open in this setup will enable effective parallelism since there are no internal locks in Tang\&.
+.sp
+For Apache, this is possible using the \fBProxyPass\fR directive of the \fBmod_proxy\fR module\&.
 .SH "HIGH AVAILABILITY"
-Tang provides two methods for building a high availability deployment\.
-.
-.IP "1." 4
+.sp
+Tang provides two methods for building a high availability deployment\&.
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 1.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  1." 4.2
+.\}
 Client redundency (recommended)
-.
-.IP "2." 4
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 2.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  2." 4.2
+.\}
 Key sharing with DNS round\-robin
-.
-.IP "" 0
-.
-.P
-While it may be tempting to share keys between Tang servers, this method should be avoided\. Sharing keys increases the risk of key compromise and requires additional automation infrastructure\.
-.
-.P
-Instead, clients should be coded with the ability to bind to multiple Tang servers\. In this setup, each Tang server will have its own keys and clients will be able to decrypt by contacting a subset of these servers\.
-.
-.P
-Clevis already supports this workflow through its \fBsss\fR plugin\.
-.
-.P
-However, if you still feel that key sharing is the right deployment strategy, Tang will do nothing to stop you\. Just (securely!) transfer all the contents of the database directory to all your servers\. Make sure you don\'t forget the unadvertised keys! Then set up DNS round\-robin so that clients will be load balanced across your servers\.
-.
+.RE
+.sp
+While it may be tempting to share keys between Tang servers, this method should be avoided\&. Sharing keys increases the risk of key compromise and requires additional automation infrastructure\&.
+.sp
+Instead, clients should be coded with the ability to bind to multiple Tang servers\&. In this setup, each Tang server will have its own keys and clients will be able to decrypt by contacting a subset of these servers\&.
+.sp
+Clevis already supports this workflow through its \fBsss\fR plugin\&.
+.sp
+However, if you still feel that key sharing is the right deployment strategy, Tang will do nothing to stop you\&. Just (securely!) transfer all the contents of the database directory to all your servers\&. Make sure you don\(cqt forget the unadvertised keys! Then set up DNS round\-robin so that clients will be load balanced across your servers\&.
 .SH "COMMANDS"
-The Tang server provides no public commands\.
-.
+.sp
+The Tang server provides no public commands\&.
 .SH "AUTHOR"
-Nathaniel McCallum <npmccallum@redhat\.com>
-.
+.sp
+Nathaniel McCallum <npmccallum@redhat\&.com>
 .SH "SEE ALSO"
-\fBsystemd\.unit\fR(5), \fBsystemd\.socket\fR(5), \fBjose\-jwk\-gen\fR(1), \fBtang\-show\-keys\fR(1)
-.
+.sp
+\fBsystemd\&.unit\fR(5), \fBsystemd\&.socket\fR(5), \fBjose\-jwk\-gen\fR(1), \fBtang\-show\-keys\fR(1)
 .SH "FURTHER READING"
-.
-.IP "\(bu" 4
-Clevis : https://github\.com/latchset/clevis
-.
-.IP "\(bu" 4
-Tang : https://github\.com/latchset/tang
-.
-.IP "\(bu" 4
-JOSE : https://datatracker\.ietf\.org/wg/jose/charter/
-.
-.IP "\(bu" 4
-mod_proxy : https://httpd\.apache\.org/docs/2\.4/mod/mod_proxy\.html
-.
-.IP "" 0
-
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Clevis :
+https://github\&.com/latchset/clevis
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Tang :
+https://github\&.com/latchset/tang
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+JOSE :
+https://datatracker\&.ietf\&.org/wg/jose/charter/
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+mod_proxy :
+https://httpd\&.apache\&.org/docs/2\&.4/mod/mod_proxy\&.html
+.RE

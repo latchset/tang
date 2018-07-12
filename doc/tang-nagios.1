@@ -1,70 +1,165 @@
-.\" generated with Ronn/v0.7.3
-.\" http://github.com/rtomayko/ronn/tree/0.7.3
-.
-.TH "TANG\-NAGIOS" "1" "June 2017" "" ""
-.
+'\" t
+.\"     Title: tang-nagios
+.\"    Author: [see the "AUTHOR" section]
+.\" Generator: DocBook XSL Stylesheets vsnapshot <http://docbook.sf.net/>
+.\"      Date: 07/12/2018
+.\"    Manual: \ \&
+.\"    Source: \ \&
+.\"  Language: English
+.\"
+.TH "TANG\-NAGIOS" "1" "07/12/2018" "\ \&" "\ \&"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
 .SH "NAME"
-\fBtang\-nagios\fR \- A Nagios plugin for Tang
-.
+tang-nagios \- A Nagios plugin for Tang
 .SH "SYNOPSIS"
+.sp
 \fBtang\fR \-u URL
-.
 .SH "OVERVIEW"
-This Nagios plugin for Tang enables Nagios to monitor a Tang server for its basic functionality as well as performance metrics\. The plugin is executed simply by providing the base URL to the Tang service\.
-.
-.P
+.sp
+This Nagios plugin for Tang enables Nagios to monitor a Tang server for its basic functionality as well as performance metrics\&. The plugin is executed simply by providing the base URL to the Tang service\&.
+.sp
 The plugin will test the following functionality:
-.
-.IP "1." 4
-Downloading the advertisement\.
-.
-.IP "2." 4
-Verification of advertisement semantics\.
-.
-.IP "3." 4
-Verification of signatures for all advertised signing keys\.
-.
-.IP "4." 4
-Verification of key exchanges for all advertised exchange keys\.
-.
-.IP "" 0
-.
-.P
-If any of these tests fail, an error will be generated\. Upon success, the plugin will output the following performance metrics:
-.
-.IP "\(bu" 4
-\fBadv\fR : Time it took to fetch the advertisement (in μs)\.
-.
-.IP "\(bu" 4
-\fBexc\fR : Average time of all key exchange operations (in μs)\.
-.
-.IP "\(bu" 4
-\fBnkeys\fR : Number of keys in the advertisement\.
-.
-.IP "\(bu" 4
-\fBnsigk\fR : Number of signing keys in the advertisement\.
-.
-.IP "\(bu" 4
-\fBnexck\fR : Number of exchange keys in the advertisement\.
-.
-.IP "" 0
-.
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 1.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  1." 4.2
+.\}
+Downloading the advertisement\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 2.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  2." 4.2
+.\}
+Verification of advertisement semantics\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 3.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  3." 4.2
+.\}
+Verification of signatures for all advertised signing keys\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 4.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  4." 4.2
+.\}
+Verification of key exchanges for all advertised exchange keys\&.
+.RE
+.sp
+If any of these tests fail, an error will be generated\&. Upon success, the plugin will output the following performance metrics:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBadv\fR
+: Time it took to fetch the advertisement (in μs)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBexc\fR
+: Average time of all key exchange operations (in μs)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBnkeys\fR
+: Number of keys in the advertisement\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBnsigk\fR
+: Number of signing keys in the advertisement\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBnexck\fR
+: Number of exchange keys in the advertisement\&.
+.RE
 .SH "EXAMPLES"
+.sp
 A simple test against a localhost Tang server:
-.
-.IP "" 4
-.
+.sp
+.if n \{\
+.RS 4
+.\}
 .nf
-
-$ \./tang \-u http://localhost/
+$ \&./tang \-u http://localhost/
 OK|adv=21430 exc=44587 nkeys=2 nsigk=1 nexck=1
-.
 .fi
-.
-.IP "" 0
-.
+.if n \{\
+.RE
+.\}
 .SH "AUTHOR"
-Nathaniel McCallum <npmccallum@redhat\.com>
-.
+.sp
+Nathaniel McCallum <npmccallum@redhat\&.com>
 .SH "SEE ALSO"
+.sp
 \fBtang\fR(8)

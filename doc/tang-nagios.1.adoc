@@ -1,11 +1,16 @@
-tang-nagios(1) -- A Nagios plugin for Tang
-==========================================
+tang-nagios(1)
+==============
+:doctype: manpage
 
-## SYNOPSIS
+== NAME
 
-`tang` -u URL
+tang-nagios - A Nagios plugin for Tang
 
-## OVERVIEW
+== SYNOPSIS
+
+*tang* -u URL
+
+== OVERVIEW
 
 This Nagios plugin for Tang enables Nagios to monitor a Tang server for its
 basic functionality as well as performance metrics. The plugin is executed
@@ -21,23 +26,23 @@ The plugin will test the following functionality:
 If any of these tests fail, an error will be generated. Upon success, the
 plugin will output the following performance metrics:
 
-* `adv`   : Time it took to fetch the advertisement (in μs).
-* `exc`   : Average time of all key exchange operations (in μs).
-* `nkeys` : Number of keys in the advertisement.
-* `nsigk` : Number of signing keys in the advertisement.
-* `nexck` : Number of exchange keys in the advertisement.
+* *adv*   : Time it took to fetch the advertisement (in μs).
+* *exc*   : Average time of all key exchange operations (in μs).
+* *nkeys* : Number of keys in the advertisement.
+* *nsigk* : Number of signing keys in the advertisement.
+* *nexck* : Number of exchange keys in the advertisement.
 
-## EXAMPLES
+== EXAMPLES
 
 A simple test against a localhost Tang server:
 
     $ ./tang -u http://localhost/
     OK|adv=21430 exc=44587 nkeys=2 nsigk=1 nexck=1
 
-## AUTHOR
+== AUTHOR
 
-Nathaniel McCallum &lt;npmccallum@redhat.com&gt;
+Nathaniel McCallum <npmccallum@redhat.com>
 
-## SEE ALSO
+== SEE ALSO
 
-`tang`(8)
+link:tang.8.adoc[*tang*(8)]

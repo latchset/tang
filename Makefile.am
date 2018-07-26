@@ -17,12 +17,17 @@ nodist_systemdsystemunit_DATA = \
 dist_libexec_SCRIPTS = src/tangd-update src/tangd-keygen
 dist_bin_SCRIPTS = src/tang-show-keys
 libexec_PROGRAMS = src/tangd
-nagios_PROGRAMS = src/tang
-man1_MANS = doc/tang-nagios.1 doc/tang-show-keys.1
+man1_MANS = doc/tang-show-keys.1
 man8_MANS = doc/tang.8
 
-src_tangd_SOURCES = src/http.c src/http.h src/tangd.c
+if NAGIOSPLUGIN
+nagios_PROGRAMS = src/tang
+man1_MANS += doc/tang-nagios.1
+
 src_tang_SOURCES = src/nagios.c
+endif
+
+src_tangd_SOURCES = src/http.c src/http.h src/tangd.c
 
 %: %.in
 	$(AM_V_GEN)mkdir -p "`dirname "$@"`"
@@ -33,7 +38,10 @@ src_tang_SOURCES = src/nagios.c
 		$(srcdir)/$@.in > $@
 
 AM_TESTS_ENVIRONMENT = SD_ACTIVATE="@SD_ACTIVATE@" PATH=$(srcdir)/src:$(builddir)/src:$(PATH)
-TESTS = tests/adv tests/rec tests/nagios
+TESTS = tests/adv tests/rec
+if NAGIOSPLUGIN
+TESTS += tests/nagios
+endif
 
 CLEANFILES = $(nodist_systemdsystemunit_DATA)
 EXTRA_DIST = \

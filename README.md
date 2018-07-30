@@ -84,12 +84,14 @@ packages:
 
 #### OpenWrt
 
-Tang is also capable of running on devices without systemd even for example OpenWrt
-(see: [this PR](https://github.com/openwrt/packages/pull/5447)).
-Instead of using systemd for socket activation you can use another daemon for spawning services like xinetd.
-Without systemd watching Tang's database directory you will have to make sure that key cache is generated properly.
+Tang is also capable of running on devices without systemd even for example
+OpenWrt (see: [this PR](https://github.com/openwrt/packages/pull/5447)).
+Instead of using systemd for socket activation you can use another daemon for
+spawning services like xinetd.  Without systemd watching Tang's database
+directory you will have to make sure that key cache is generated properly.
 
-An example of configuration file for Tang using xinetd can be found in the `units/` directory.
+An example of configuration file for Tang using xinetd can be found in the
+`units/` directory.
 
 ### Building and Installing from Source
 

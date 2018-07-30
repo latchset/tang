@@ -9,7 +9,7 @@ compiler:
   - gcc
 
 env:
-  - DISTRO=fedora:rawhide
+  - DISTRO=fedora:latest
   - DISTRO=centos:7
 
 script:

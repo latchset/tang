@@ -93,6 +93,15 @@ directory you will have to make sure that key cache is generated properly.
 An example of configuration file for Tang using xinetd can be found in the
 `units/` directory.
 
+#### Docker Container
+
+Tang is also available as a [Docker
+Container](https://github.com/AdrianKoshka/tang-docker-container/).
+
+Care should be taken to ensure that, when deploying in a container cluster,
+that the Tang keys are not stored on the same physical medium that you wish to
+protect.
+
 ### Building and Installing from Source
 
 Building Tang is fairly straightforward:

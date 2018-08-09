@@ -80,5 +80,13 @@ TANG_CFLAGS="\
 "
 AC_SUBST([TANG_CFLAGS])
 
+AC_CHECK_PROGS(A2X, [a2x])
+
+if test "x$A2X" = "x"; then
+   AC_MSG_WARN([asciidoc / a2x not found -- man pages will not be generated and installed])
+fi
+
+AM_CONDITIONAL(HAVE_A2X, [test -n "$A2X"])
+
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

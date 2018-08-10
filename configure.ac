@@ -29,11 +29,6 @@ AC_CHECK_LIB([http_parser], [http_parser_execute],
 PKG_CHECK_MODULES([jose], [jose >= 8])
 PKG_CHECK_MODULES([systemd], [systemd])
 
-AC_ARG_ENABLE([nagiosplugin],
-              AS_HELP_STRING([--disable-nagiosplugin], [Disable Nagios plugin]))
-
-AM_CONDITIONAL([NAGIOSPLUGIN], [test "x$enable_nagiosplugin" != "xno"])
-
 AC_ARG_WITH([systemdsystemunitdir],
             [AS_HELP_STRING([--with-systemdsystemunitdir=DIR], [Directory for systemd service files])],
             [],

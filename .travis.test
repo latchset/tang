@@ -4,14 +4,8 @@ PM=dnf
 
 case "$1" in
   centos:7)
-    curl -o /etc/yum.repos.d/npmccallum-nbde-epel-7.repo \
-      https://copr.fedorainfracloud.org/coprs/npmccallum/nbde/repo/epel-7/npmccallum-nbde-epel-7.repo
     PM=yum
     ;;
-
-  fedora:23)
-    ;;
-
   fedora:*)
     rt=compiler-rt
     ;;
@@ -20,7 +14,7 @@ esac
 BUILDENV="automake autoconf libtool pkgconfig git gcc make file clang $rt"
 BUILDDEP="openssl-devel zlib-devel jansson-devel jose libjose*devel http-parser-devel wget systemd which"
 
-$PM -y install $BUILDENV $BUILDDEP
+$PM -y --nogpgcheck install $BUILDENV $BUILDDEP
 
 autoreconf -if
 

@@ -92,7 +92,7 @@ An example of configuration file for Tang using xinetd can be found in the
 #### Docker Container
 
 Tang is also available as a [Docker
-Container](https://github.com/AdrianKoshka/tang-docker-container/).
+Container](https://gitlab.com/AdrianKoshka/tang-docker-container/).
 
 Care should be taken to ensure that, when deploying in a container cluster,
 that the Tang keys are not stored on the same physical medium that you wish to

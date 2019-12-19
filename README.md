@@ -102,14 +102,14 @@ protect.
 
 Building Tang is fairly straightforward:
 
-    $ autoreconf -if
-    $ ./configure --prefix=/usr --libdir=/usr/lib64
-    $ make
-    $ sudo make install
+    $ mkdir build && cd build
+    $ meson .. --prefix=/usr
+    $ ninja
+    $ sudo ninja install
 
 You can even run the tests if you'd like:
 
-    $ make check
+    $ meson test
 
 ### Server Enablement
 

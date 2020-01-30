@@ -1,5 +1,7 @@
 [Unit]
 Description=Tang Server
+Requires=tangd-keygen.service
+After=tangd-keygen.service
 
 [Service]
 StandardInput=socket

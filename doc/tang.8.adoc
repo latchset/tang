@@ -19,7 +19,7 @@ client can automatically decrypt the data when it is able to contact the
 escrow server and fetch the key.
 
 However, escrow servers have many additional requirements, including
-authentication (so that clients can't get keys they aren't suppossed to have)
+authentication (so that clients can't get keys they aren't supposed to have)
 and transport encryption (so that attackers listening on the network can't
 eavesdrop on the keys in transit).
 
@@ -84,7 +84,7 @@ result in data loss. You have been warned.
 == HIGH PERFORMANCE
 
 The Tang protocol is extremely fast. However, in the default setup we
-use systemd socket activiation to start one process per connection. This
+use systemd socket activation to start one process per connection. This
 imposes a performance overhead. For most deployments, this is still probably
 quick enough, given that Tang is extremely lightweight. But for larger
 deployments, greater performance can be achieved.
@@ -101,7 +101,7 @@ module.
 
 Tang provides two methods for building a high availability deployment.
 
-1. Client redundency (recommended)
+1. Client redundancy (recommended)
 2. Key sharing with DNS round-robin
 
 While it may be tempting to share keys between Tang servers, this method

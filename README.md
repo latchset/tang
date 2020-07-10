@@ -215,7 +215,7 @@ The server then performs its half of the ECDH key exchange using `xJWK` and
 `sJWK`, producing `yJWK`. The server returns `yJWK` to the client.
 
 The client then performs half of an ECDH key exchange between `eJWK` and
-`sJWK`, producing `zJWK`. Subtracing `zJWK` from `yJWK` produces `dJWK` again.
+`sJWK`, producing `zJWK`. Subtracting `zJWK` from `yJWK` produces `dJWK` again.
 
 Expressed mathematically (capital = private key):
 

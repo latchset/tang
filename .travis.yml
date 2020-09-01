@@ -8,6 +8,9 @@ services:
 compiler:
   - gcc
 
+arch:
+  - ppc64le
+
 env:
   - DISTRO=fedora:latest
   - DISTRO=centos:7

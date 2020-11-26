@@ -1,0 +1,61 @@
+---
+name: coverage
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        os:
+          - ubuntu:latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Show OS information
+        run: cat /etc/os-release 2>/dev/null || echo /etc/os-release not available
+
+      - name: Install build dependencies
+        run: bash .github/workflows/install-dependencies
+
+      - name: Build tang
+        run: |
+          mkdir -p build && cd build
+          export ninja=$(command -v ninja)
+          [ -z "${ninja}" ] && export ninja=$(command -v ninja-build)
+          meson .. -Db_coverage=true || cat meson-logs/meson-log.txt >&2
+          ${ninja}
+
+      - name: Run tests
+        run: |
+          cd build
+          meson test || cat meson-logs/testlog.txt >&2
+
+      - name: Show full test logs
+        run: |
+          if [ -r build/meson-logs/testlog.txt ]; then
+            cat build/meson-logs/testlog.txt >&2
+          else
+            echo "No test log available" >&2
+          fi
+
+      - name: Create coverage report
+        run: |
+          cd build
+          export ninja=$(command -v ninja)
+          [ -z "${ninja}" ] && export ninja=$(command -v ninja-build)
+          gcovr -r .. -f ../src -f src/ -e ../tests -e tests -x coverage.xml
+
+      - uses: codecov/codecov-action@v1
+        with:
+          file: build/coverage.xml
+          fail_ci_if_error: true # optional (default = false)
+          verbose: true # optional (default = false)
+
+    container:
+      image: ${{matrix.os}}
+      env:
+        DISTRO: ${{matrix.os}}
+
+# vim:set ts=2 sw=2 et:

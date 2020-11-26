@@ -1,0 +1,30 @@
+#!/bin/sh -ex
+
+case "${DISTRO}" in
+debian:*|ubuntu:*)
+    export DEBIAN_FRONTEND=noninteractive
+    apt clean
+    apt update
+    apt -y install gcc meson pkg-config libjose-dev jose libhttp-parser-dev \
+                   systemd gcovr curl
+    ;;
+
+fedora:*)
+    echo 'max_parallel_downloads=10' >> /etc/dnf/dnf.conf
+    dnf -y clean all
+    dnf -y --setopt=deltarpm=0 update
+    dnf -y install gcc meson pkgconfig libjose-devel jose http-parser-devel \
+                   systemd gcovr curl
+    ;;
+
+centos:*)
+    yum -y clean all
+    yum -y --setopt=deltarpm=0 update
+    yum install -y yum-utils epel-release
+    yum config-manager -y --set-enabled PowerTools \
+        || yum config-manager -y --set-enabled powertools || :
+    yum -y install meson
+    yum-builddep -y tang
+    ;;
+esac
+# vim: set ts=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:

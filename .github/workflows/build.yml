@@ -1,0 +1,56 @@
+---
+name: build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        os:
+          - fedora:rawhide
+          - fedora:latest
+          - centos:7
+          - centos:8
+          - debian:testing
+          - debian:latest
+          - ubuntu:devel
+          - ubuntu:rolling
+          - ubuntu:bionic
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Show OS information
+        run: cat /etc/os-release 2>/dev/null || echo /etc/os-release not available
+
+      - name: Install build dependencies
+        run: bash .github/workflows/install-dependencies
+
+      - name: Build tang
+        run: |
+          mkdir -p build && cd build
+          export ninja=$(command -v ninja)
+          [ -z "${ninja}" ] && export ninja=$(command -v ninja-build)
+          meson .. || cat meson-logs/meson-log.txt >&2
+          ${ninja}
+
+      - name: Run tests
+        run: |
+          cd build
+          meson test || cat meson-logs/testlog.txt >&2
+
+      - name: Show full test logs
+        run: |
+          if [ -r build/meson-logs/testlog.txt ]; then
+            cat build/meson-logs/testlog.txt >&2
+          else
+            echo "No test log available" >&2
+          fi
+
+    container:
+      image: ${{matrix.os}}
+      env:
+        DISTRO: ${{matrix.os}}
+
+# vim:set ts=2 sw=2 et:

@@ -1,3 +1,6 @@
+[![build](https://github.com/latchset/tang/workflows/build/badge.svg)](https://github.com/latchset/tang/actions)
+[![coverage](https://codecov.io/gh/latchset/tang/branch/master/graph/badge.svg)](https://codecov.io/gh/latchset/tang)
+
 # Tang
 
 ## Welcome to Tang!

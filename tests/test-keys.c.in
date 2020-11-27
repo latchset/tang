@@ -1,0 +1,257 @@
+/* vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80: */
+/*
+ * Copyright (c) 2020 Red Hat, Inc.
+ * Author: Sergio Correia <scorreia@redhat.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "keys.c"
+#include "test-util.h"
+
+const char* jwkdir = "@testjwkdir@";
+
+struct thp_result {
+    const char* thp;
+    int valid;
+};
+
+struct test_result_int {
+    const char* data;
+    int expected;
+};
+
+static void
+test_create_new_keys(void)
+{
+   __attribute__((cleanup(cleanup_str))) char* newdir = create_tempdir();
+    ASSERT(newdir);
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(newdir);
+    ASSERT(tki);
+    ASSERT(tki->m_keys_count == 2);
+    remove_tempdir(newdir);
+}
+
+
+static void
+test_is_hash(void)
+{
+    const struct test_result_int test_data[] = {
+        {NULL, 0},
+        {"", 0},
+        {"ES512", 0},
+        {"ECMR", 0},
+        {"foobar", 0},
+        {"{", 0},
+        {"[}", 0},
+        {"[]", 0},
+        {"S1", 1},
+        {"S224", 1},
+        {"S256", 1},
+        {"S384", 1},
+        {"S512", 1},
+        {"S42", 0}
+    };
+    for (int i = 0, len = ARRAY_COUNT(test_data); i < len; i++) {
+        int ret = is_hash(test_data[i].data);
+        ASSERT_WITH_MSG(ret == test_data[i].expected, "i = %d, alg = %s", i, test_data[i].data);
+    };
+
+}
+
+static void
+test_jwk_generate(void)
+{
+    const struct test_result_int test_data[] = {
+        {NULL, 0},
+        {"", 0},
+        {"ES512", 1},
+        {"ECMR", 1},
+        {"foobar", 0},
+        {"{", 0},
+        {"[}", 0},
+        {"[]", 0}
+    };
+
+    for (int i = 0, len = ARRAY_COUNT(test_data); i < len; i++) {
+        json_auto_t* jwk = jwk_generate(test_data[i].data);
+        ASSERT_WITH_MSG(!!jwk == test_data[i].expected, "i = %d, alg = %s", i, test_data[i].data);
+    };
+}
+
+static void
+test_find_jws(void)
+{
+    const struct thp_result test_data[] = {
+        {"00BUQM4A7NYxbOrBR9QDfkzGVGj3k57Fs4jCbJxcLYAgRFHu5B7jtbL97x1T7stQ", 1},
+        {"dd5qbN1lQ6UWdZszbfx2oIcH34ShklzFL1SUQg", 1},
+        {"dOZkUtZ_gLDUP53GIlyAxHMNuyrk8vdY-XXND32GccqNbT_MKpqGC-13-GNEye48", 1},
+        {"DZrlBQvfvlwPQlvH_IieBdc_KpesEramLygVL_rFr7g", 1},
+        {"FL_Zt5fFadUL4syeMMpUnss8aKdCrPGFy3102JGR3EE", 1},
+        {"qgmqJSo6AEEuVQY7zVlklqdTMqY", 1},
+        {"r4E2wG1u_YyKUo0N0rIK7jJF5Xg", 1},
+        {"ugJ4Ula-YABQIiJ-0g3B_jpFpF2nl3W-DNpfLdXArhTusV0QCcd1vtgDeGHEPzpm7jEsyC7VYYSSOkZicK22mw", 1},
+        {"up0Z4fRhpd4O5QwBaMCXDTlrvxCmZacU0MD8kw", 1},
+        {"vllHS-M0aQFCo2yUCcAahMU4TAtXACyeuRf-zbmmTPBg7V0Pb-RRFGo5C6MnpzdirK8B3ORLOsN8RyXClvtjxA", 1},
+        {NULL, 1},
+        {"a", 0},
+        {"foo", 0},
+        {"bar", 0},
+        {"XXXXXXXXXXXXXXXXXX", 0}
+    };
+
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(jwkdir);
+    for (int i = 0, len = ARRAY_COUNT(test_data); i < len; i++) {
+        json_auto_t* jws = find_jws(tki, test_data[i].thp);
+        ASSERT_WITH_MSG(!!jws == test_data[i].valid, "i = %d, thp = %s", i, test_data[i].thp);
+    }
+
+    /* Passing NULL to find_jws should return the default advertisement */
+    json_auto_t* adv = find_jws(tki, NULL);
+    ASSERT(adv);
+
+
+    /*
+     * The default set of signing keys are the signing keys that are not
+     * rotated. The payload is made of deriving keys that are also not
+     * rotated. The default advertisement should be signed by this set of
+     * default signing keys.
+     */
+    ASSERT(jose_jws_ver(NULL, adv, NULL, tki->m_sign, 1));
+
+    /* find_jws should be able to respond to thumbprints of keys using any
+     * of jose supported hash algorithms. */
+    const char** hashes = supported_hashes();
+    size_t idx;
+    json_t* jwk;
+
+    /* Let's put together all the keys, including rotated ones. */
+    json_auto_t* keys = json_deep_copy(tki->m_keys);
+    ASSERT(keys);
+    ASSERT(json_array_extend(keys, tki->m_rotated_keys) == 0);
+    ASSERT(json_array_size(keys) == (size_t)tki->m_keys_count);
+
+    for (int i = 0; hashes[i]; i++) {
+        json_array_foreach(keys, idx, jwk) {
+            if (!jwk_valid_for_signing(jwk)) {
+                continue;
+            }
+            __attribute__((cleanup(cleanup_str))) char* thp = jwk_thumbprint(jwk, hashes[i]);
+            ASSERT_WITH_MSG(thp, "i = %d, hash = %s, key idx = %d", i, hashes[i], idx);
+            json_auto_t* jws = find_jws(tki, thp);
+            ASSERT_WITH_MSG(jws, "i = %d, hash = %s, key idx = %d, thp = %s", i, hashes[i], idx, thp);
+
+            /* Signing keys should sign the payload, in addition to the
+             * default set of signing keys. */
+            json_auto_t* sign = json_deep_copy(tki->m_sign);
+            ASSERT_WITH_MSG(sign, "i = %d, hash = %s, key idx = %d, thp = %s", i, hashes[i], idx, thp);
+            ASSERT_WITH_MSG(json_array_append(sign, jwk) == 0, "i = %d, hash = %s, key idx = %d, thp = %s", i, hashes[i], idx, thp);
+            ASSERT_WITH_MSG(jose_jws_ver(NULL, jws, NULL, sign, 1), "i = %d, hash = %s, key idx = %d, thp = %s", i, hashes[i], idx, thp);
+        }
+    }
+}
+
+static void
+test_find_jwk(void)
+{
+    const struct thp_result test_data[] = {
+        {"1HdF3XKRSsuZdkpXNurBPoL_pvxdvCOlHuhB4DP-4xWFqbZ51zo29kR4fSiT3BGy9UrHVJ26JMBLOA1vKq3lxA", 1},
+        {"9U8qgy_YjyY6Isuq6QuiKEiYZgNJShcGgJx5FJzCu6m3N6zFaIPy_HDkxkVqAZ9E", 1},
+        {"-bWkGaJi0Zdvxaj4DCp28umLcRA", 1},
+        {"Cy73glFjs6B6RU7wy6vWxAc-2bJy5VJOT9LyK80eKgZ8k27wXZ-3rjsuNU5tua_yHWtluyoSYtjoKXfI0E8ESw", 1},
+        {"kfjbqx_b3BsgPC87HwlOWL9daGMMHBzxcFLClw", 1},
+        {"L4xg2tZXTEVbsK39bzOZM1jGWn3HtOxF5gh6F9YVf5Q", 1},
+        {"LsVAV2ig5LlfstM8TRSf-c7IAkLpNYbIysNuRCVlxocRCGqAh6-f9PklM4nU4N-J", 1},
+        {"OkAcDxYHNlo7-tul8OubYuWXB8CPEhAkcacCmhTclMU", 1},
+        {"uZ0s8YTXcGcuWduWWBSiR2OjOVg", 1},
+        {"WEpfFyeoNKkE2-TosN_bP-gd9UgRvQCZpVasZQ", 1},
+        {NULL, 0},
+        {"a", 0},
+        {"foo", 0},
+        {"bar", 0},
+        {"XXXXXXXXXXXXXXXXXX", 0},
+    };
+
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(jwkdir);
+
+    for (int i = 0, len = ARRAY_COUNT(test_data); i < len; i++) {
+        json_auto_t* tjwk = find_jwk(tki, test_data[i].thp);
+        ASSERT_WITH_MSG(!!tjwk == test_data[i].valid, "i = %d, thp = %s", i, test_data[i].thp);
+    }
+    /* Passing NULL to find_jwk should fail */
+    json_auto_t* bad_jwk = find_jwk(tki, NULL);
+    ASSERT(bad_jwk == NULL);
+
+    /* find_jwk should be able to respond to thumbprints of keys using any
+     * of jose supported hash algorithms. */
+    const char** hashes = supported_hashes();
+    size_t idx;
+    json_t* jwk;
+
+    /* Let's put together all the keys, including rotated ones. */
+    json_auto_t* keys = json_deep_copy(tki->m_keys);
+    ASSERT(keys);
+    ASSERT(json_array_extend(keys, tki->m_rotated_keys) == 0);
+    ASSERT(json_array_size(keys) == (size_t)tki->m_keys_count);
+
+    for (int i = 0; hashes[i]; i++) {
+        json_array_foreach(keys, idx, jwk) {
+            if (!jwk_valid_for_deriving_keys(jwk)) {
+                continue;
+            }
+            __attribute__((cleanup(cleanup_str))) char* thp = jwk_thumbprint(jwk, hashes[i]);
+            json_auto_t* tjwk = find_jwk(tki, thp);
+            ASSERT_WITH_MSG(tjwk, "i = %d, hash = %s, key idx = %d, thp = %s", i, hashes[i], idx, thp);
+        }
+    }
+}
+
+static void
+test_read_keys(void)
+{
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(jwkdir);
+    ASSERT(tki);
+
+    /*
+     * Keys in tests/keys:
+     * - .uZ0s8YTXcGcuWduWWBSiR2OjOVg.jwk
+     * - .r4E2wG1u_YyKUo0N0rIK7jJF5Xg.jwk
+     * - qgmqJSo6AEEuVQY7zVlklqdTMqY.jwk
+     * - -bWkGaJi0Zdvxaj4DCp28umLcRA.jwk
+     */
+    ASSERT(tki->m_keys_count == 4);
+    ASSERT(json_array_size(tki->m_keys) == 2);
+    ASSERT(json_array_size(tki->m_rotated_keys) == 2);
+
+    const char* invalid_jwkdir = "foobar";
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki2 = read_keys(invalid_jwkdir);
+    ASSERT(tki2 == NULL);
+}
+
+static void
+run_tests(void)
+{
+    test_read_keys();
+    test_find_jwk();
+    test_find_jws();
+    test_jwk_generate();
+    test_is_hash();
+    test_create_new_keys();
+}
+
+int main(int argc, char** argv)
+{
+    run_tests();
+    return 0;
+}

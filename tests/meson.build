@@ -1,22 +1,42 @@
+incdir = include_directories(
+  join_paths('..', 'src')
+)
+
+test_data = configuration_data()
+test_data.set('testjwkdir', join_paths(meson.source_root(), 'tests','keys'))
+
+test_keys_c = configure_file(
+  input: 'test-keys.c.in',
+  output: 'test-keys.c',
+  configuration: test_data
+)
+
+test_keys = executable('test-keys',
+  test_keys_c,
+  'test-util.c',
+  dependencies: [jose],
+  include_directories: incdir
+)
+
 sd_activate = find_program(
   'systemd-socket-activate',
   'systemd-activate',
   required: false
 )
 
+env = environment()
+env.prepend('PATH',
+  join_paths(meson.source_root(), 'src'),
+  join_paths(meson.build_root(), 'src'),
+  separator: ':'
+)
+
 if sd_activate.found()
-  env = environment()
-  env.prepend('PATH',
-    join_paths(meson.source_root(), 'src'),
-    join_paths(meson.build_root(), 'src'),
-    separator: ':'
-  )
   env.set('SD_ACTIVATE', sd_activate.path() + ' --inetd')
 
-  test('adv', find_program('adv'), env: env)
+  test('adv', find_program('adv'), env: env, timeout: 60)
   test('rec', find_program('rec'), env: env)
-else
-  warning('Will not run the tests due to missing dependencies!')
 endif
+test('test-keys', test_keys, env: env, timeout: 60)
 
 # vim:set ts=2 sw=2 et:

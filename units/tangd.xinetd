@@ -1,7 +1,7 @@
 service tangd
 {
     port = 80
-    server_args = /var/cache/tang
+    server_args = /var/db/tang
     server = /usr/libexec/tangd
     socket_type = stream
     protocol = tcp

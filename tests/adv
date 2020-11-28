@@ -36,15 +36,13 @@ trap 'exit' ERR
 
 export TMP=`mktemp -d`
 mkdir -p $TMP/db
-mkdir -p $TMP/cache
 
 tangd-keygen $TMP/db sig exc
 jose jwk gen -i '{"alg": "ES512"}' -o $TMP/db/.sig.jwk
 jose jwk gen -i '{"alg": "ES512"}' -o $TMP/db/.oth.jwk
-tangd-update $TMP/db $TMP/cache
 
 export PORT=`shuf -i 1024-65536 -n 1`
-$SD_ACTIVATE -l "127.0.0.1:$PORT" -a $VALGRIND tangd $TMP/cache &
+$SD_ACTIVATE -l "127.0.0.1:$PORT" -a $VALGRIND tangd $TMP/db &
 export PID=$!
 sleep 0.5
 
@@ -84,4 +82,4 @@ fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` \
                -g 0 -Og protected -SyOg cty -Sq "jwk-set+json" -EUUUUU \
                -g 1 -Og protected -SyOg cty -Sq "jwk-set+json" -EUUUUU
 
-test $(tang-show-keys $PORT) == $(jose jwk thp -i $TMP/db/sig.jwk)
+test "$(tang-show-keys $PORT)" == "$(jose jwk thp -i $TMP/db/sig.jwk)"

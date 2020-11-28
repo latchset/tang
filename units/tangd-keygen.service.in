@@ -1,8 +1,0 @@
-[Unit]
-Description=Tang Server key generation script
-ConditionDirectoryNotEmpty=|!@jwkdir@
-Requires=tangd-update.path
-
-[Service]
-Type=oneshot
-ExecStart=@libexecdir@/tangd-keygen @jwkdir@

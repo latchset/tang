@@ -16,14 +16,12 @@ sysconfdir = join_paths(get_option('prefix'), get_option('sysconfdir'))
 bindir = join_paths(get_option('prefix'), get_option('bindir'))
 systemunitdir = join_paths(get_option('prefix'), 'lib/systemd/system')
 licensedir = join_paths(get_option('prefix'), 'share', 'licenses', meson.project_name())
-cachedir = join_paths(get_option('localstatedir'), 'cache', meson.project_name())
 jwkdir = join_paths(get_option('localstatedir'), 'db', meson.project_name())
 
 data = configuration_data()
 data.set('libexecdir', libexecdir)
 data.set('sysconfdir', sysconfdir)
 data.set('systemunitdir', systemunitdir)
-data.set('cachedir', cachedir)
 data.set('jwkdir', jwkdir)
 
 add_project_arguments(

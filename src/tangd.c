@@ -28,6 +28,7 @@
 #include <unistd.h>
 
 #include <jose/jose.h>
+#include "keys.h"
 
 static void
 str_cleanup(char **str)
@@ -36,23 +37,20 @@ str_cleanup(char **str)
         free(*str);
 }
 
-static void
-FILE_cleanup(FILE **file)
-{
-    if (file && *file)
-        fclose(*file);
-}
-
 static int
 adv(enum http_method method, const char *path, const char *body,
     regmatch_t matches[], void *misc)
 {
-    __attribute__((cleanup(FILE_cleanup))) FILE *file = NULL;
     __attribute__((cleanup(str_cleanup))) char *adv = NULL;
     __attribute__((cleanup(str_cleanup))) char *thp = NULL;
-    char filename[PATH_MAX] = {};
-    const char *cachedir = misc;
-    struct stat st = {};
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info *tki = NULL;
+    json_auto_t *jws = NULL;
+    const char *jwkdir = misc;
+
+    tki = read_keys(jwkdir);
+    if (!tki || tki->m_keys_count == 0) {
+        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+    }
 
     if (matches[1].rm_so < matches[1].rm_eo) {
         size_t size = matches[1].rm_eo - matches[1].rm_so;
@@ -61,22 +59,13 @@ adv(enum http_method method, const char *path, const char *body,
             return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
     }
 
-    if (snprintf(filename, sizeof(filename),
-                 "%s/%s.jws", cachedir, thp ? thp : "default") < 0)
-        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
-
-    file = fopen(filename, "r");
-    if (!file)
+    jws = find_jws(tki, thp);
+    if (!jws) {
         return http_reply(HTTP_STATUS_NOT_FOUND, NULL);
+    }
 
-    if (fstat(fileno(file), &st) != 0)
-        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
-
-    adv = calloc(st.st_size + 1, 1);
+    adv = json_dumps(jws, 0);
     if (!adv)
-        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
-
-    if (fread(adv, st.st_size, 1, file) != 1)
         return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
     return http_reply(HTTP_STATUS_OK,
@@ -91,9 +80,9 @@ rec(enum http_method method, const char *path, const char *body,
 {
     __attribute__((cleanup(str_cleanup))) char *enc = NULL;
     __attribute__((cleanup(str_cleanup))) char *thp = NULL;
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info *tki = NULL;
     size_t size = matches[1].rm_eo - matches[1].rm_so;
-    char filename[PATH_MAX] = {};
-    const char *cachedir = misc;
+    const char *jwkdir = misc;
     json_auto_t *jwk = NULL;
     json_auto_t *req = NULL;
     json_auto_t *rep = NULL;
@@ -124,15 +113,16 @@ rec(enum http_method method, const char *path, const char *body,
     /*
      * Parse and validate the server-side JWK
      */
+    tki = read_keys(jwkdir);
+    if (!tki || tki->m_keys_count == 0) {
+        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+    }
 
     thp = strndup(&path[matches[1].rm_so], size);
     if (!thp)
         return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
-    if (snprintf(filename, sizeof(filename), "%s/%s.jwk", cachedir, thp) < 0)
-        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
-
-    jwk = json_load_file(filename, 0, NULL);
+    jwk = find_jwk(tki, thp);
     if (!jwk)
         return http_reply(HTTP_STATUS_NOT_FOUND, NULL);
 
@@ -188,7 +178,7 @@ main(int argc, char *argv[])
     http_parser_init(&parser, HTTP_REQUEST);
 
     if (argc != 2) {
-        fprintf(stderr, "Usage: %s <cachedir>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <jwkdir>\n", argv[0]);
         return EXIT_FAILURE;
     }
 

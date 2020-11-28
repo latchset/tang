@@ -1,10 +1,8 @@
 [Unit]
 Description=Tang Server
-Requires=tangd-keygen.service
-After=tangd-keygen.service
 
 [Service]
 StandardInput=socket
 StandardOutput=socket
 StandardError=journal
-ExecStart=@libexecdir@/tangd @cachedir@
+ExecStart=@libexecdir@/tangd @jwkdir@

@@ -9,5 +9,6 @@ tangd = executable('tangd',
 
 bins += join_paths(meson.current_source_dir(), 'tang-show-keys')
 libexecbins += join_paths(meson.current_source_dir(), 'tangd-keygen')
+libexecbins += join_paths(meson.current_source_dir(), 'tangd-rotate-keys')
 
 # vim:set ts=2 sw=2 et:

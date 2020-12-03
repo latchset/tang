@@ -226,6 +226,7 @@ jwk_sign(const json_t* to_sign, const json_t* sig_keys)
     json_auto_t* to_sign_copy = json_deep_copy(to_sign);
     if (!jose_jwk_pub(NULL, to_sign_copy)) {
         fprintf(stderr, "Error removing private material from data to sign\n");
+        return NULL;
     }
 
     json_auto_t* payload = json_pack("{s:O}", "keys", to_sign_copy);

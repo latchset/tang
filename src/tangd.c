@@ -205,7 +205,7 @@ main(int argc, char *argv[])
         if (parser.http_errno != 0) {
             fprintf(stderr, "HTTP Parsing Error: %s\n",
                     http_errno_description(parser.http_errno));
-            return EXIT_FAILURE;
+            return EXIT_SUCCESS;
         }
 
         memmove(req, &req[r], rcvd - r);

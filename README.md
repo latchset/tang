@@ -103,7 +103,7 @@ and differs only sligtly from the general instructions.
     $ ninja
     (as root) # ninja install
     (as root) # mkdir -m 0700 /usr/local/var/db/tang
-    $ pkg create -M ../BSD-MANIFEST
+    (as root) # pkg create -M ../BSD-MANIFEST
     (as root) service tangd enable
     (as root) service tangd start
 

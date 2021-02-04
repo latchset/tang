@@ -1,0 +1,46 @@
+name: "tang"
+origin: "security/tang"
+version: "7"
+comment: "Network Presence Binding Daemon"
+desc: "Tang is a small daemon for binding data to the presence of a third party."
+abi: "FreeBSD:12:amd64"
+arch: "freebsd:12:x86:64"
+maintainer: "64922841+hdholm@users.noreply.github.com"
+www: "https://github.com/hdholm/tang"
+prefix: "/usr/local"
+licenselogic: "single"
+licenses: [
+    "GPLv3+"
+]
+deps: {
+  ucspi-tcp: {
+    origin: sysutils/ucspi-tcp,
+    version: 0.88_2
+  }
+}
+shlibs_required: [
+    "libjansson.so.4",
+    "libcrypto.so.11",
+    "libjose.so.0",
+    "libhttp_parser.so.2.9"
+]
+deps : {
+    "socat": {
+        version: "1.7.3.4_1",
+        origin: "net/socat"
+    }
+}
+
+files: {
+  /usr/local/libexec/tangd: '7f7441aa34641828b2763b616c0e4aea98642bc99a6665b6baf0dcb2468d0fa1'
+  /usr/local/share/man/man1/tang-show-keys.1: '3c0853556ce21df355cf78e27224de178e74a4c27c327d80c3df63636207f33d'
+  /usr/local/share/man/man8/tang.8: '477b8dc040bdf888f30b212e28943656634fdc7ccd3ae711e2dc32cfffab61d6'
+  /usr/local/libexec/tangd-keygen: '74b7d61960a59173d5787809104d0b58c4723f2d0d7ed1cb0ab9f35c16d98f99'
+  /usr/local/bin/tang-show-keys: 'f7ca7c12fee01b45a00ce828c19c84e09f51d67417a922a9709898dc0287539e'
+  /usr/local/share/licenses/tang-7/COPYING: '8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903'
+  /usr/local/etc/rc.d/tangd: '70aeb4b953081465e6341b0f817ca5107b54c50c354cd327e1b0322a50bb5d57'
+}
+
+directories: {
+  /usr/local/var/db/tang: "y"
+}

@@ -89,7 +89,34 @@ Instead of using systemd for socket activation you can use another daemon for
 spawning services like xinetd.
 
 An example of configuration file for Tang using xinetd can be found in the
-`units/` directory.
+`units/` directory as 'tangdx'.  Using that will also require installing the
+wrapper from the 'units/' directroy 'tangdw' in '/usr/libexec/tangdw'.
+
+#### FreeBSD, HardenedBSD and OPNsense
+
+Tang is also capable of running on FreeBSD Unix variants. The build is simple
+and differs only sligtly from the general instructions.
+
+    (as root) # pkg install jose git meson pkgconf jansson openssl asciidoc http-parser socat
+    $ mkdir build && cd build
+    $ meson .. --prefix=/usr/local --localstatedir=/usr/local/var
+    $ ninja
+    (as root) # ninja install
+    (as root) # mkdir -m 0700 /usr/local/var/db/tang
+    $ pkg create -M ../BSD-MANIFEST
+    (as root) service tangd enable
+    (as root) service tangd start
+
+The install and mkdir should be sufficient, but the pkg create allows you to
+create a binary package for installation on other systems. Once built it
+does not require the many packages above, but still requires jose, socat
+and http_parser. 
+
+FreeBSD, HardendedBSD, and OPNsense use inetd rather than systemd or
+xinetd. To limit the need to manage inetd configuration which has a shared
+config file, tangd is instead packaged to depend on `socat`.  Of course,
+if desired it may be configured to run instead from inetd.conf in which case
+the socate package will no longer be required.
 
 #### Docker Container
 

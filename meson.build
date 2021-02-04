@@ -16,6 +16,9 @@ sysconfdir = join_paths(get_option('prefix'), get_option('sysconfdir'))
 bindir = join_paths(get_option('prefix'), get_option('bindir'))
 systemunitdir = join_paths(get_option('prefix'), 'lib/systemd/system')
 licensedir = join_paths(get_option('prefix'), 'share', 'licenses', meson.project_name())
+if build_machine.system() == 'freebsd'
+  licensedir += '-'+meson.project_version()
+endif
 jwkdir = join_paths(get_option('localstatedir'), 'db', meson.project_name())
 
 data = configuration_data()
@@ -48,10 +51,10 @@ add_project_arguments(
 jose = dependency('jose', version: '>=8')
 a2x = find_program('a2x', required: false)
 compiler = meson.get_compiler('c')
-if not compiler.has_header('http_parser.h')
+if not compiler.has_header('http_parser.h',args : '-I/usr/local/include')
   error('http-parser devel files not found.')
 endif
-http_parser = compiler.find_library('http_parser')
+http_parser = compiler.find_library('http_parser',dirs:['/usr/lib','/usr/local/lib'])
 
 licenses = ['COPYING']
 libexecbins = []

@@ -31,11 +31,16 @@ env.prepend('PATH',
   separator: ':'
 )
 
-if sd_activate.found()
-  env.set('SD_ACTIVATE', sd_activate.path() + ' --inetd')
+if build_machine.system() == 'freebsd'
+    test('adv', find_program('bsd-adv'), env: env, timeout: 60)
+    test('rec', find_program('bsd-rec'), env: env)
+else
+  if sd_activate.found()
+    env.set('SD_ACTIVATE', sd_activate.path() + ' --inetd')
 
-  test('adv', find_program('adv'), env: env, timeout: 60)
-  test('rec', find_program('rec'), env: env)
+    test('adv', find_program('adv'), env: env, timeout: 60)
+    test('rec', find_program('rec'), env: env)
+  endif
 endif
 test('test-keys', test_keys, env: env, timeout: 60)
 

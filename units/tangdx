@@ -1,0 +1,13 @@
+service tangd
+{
+    port            = 8888
+    server_args     = /var/db/tang
+    server          = /usr/libexec/tangdw
+    socket_type     = stream
+    user            = root
+    wait            = no
+    log_on_success  += USERID
+    log_on_failure  += USERID
+    disable         = no
+    type            = UNLISTED
+}

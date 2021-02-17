@@ -103,14 +103,11 @@ and differs only sligtly from the general instructions.
     $ ninja
     (as root) # ninja install
     (as root) # mkdir -m 0700 /usr/local/var/db/tang
-    (as root) # pkg create -M ../BSD-MANIFEST
     (as root) service tangd enable
     (as root) service tangd start
 
-The install and mkdir should be sufficient, but the pkg create allows you to
-create a binary package for installation on other systems. Once built it
-does not require the many packages above, but still requires jose, socat
-and http_parser. 
+Once built it does not require the many packages above, but still requires
+jose, socat and http_parser. 
 
 FreeBSD, HardendedBSD, and OPNsense use inetd rather than systemd or
 xinetd. To limit the need to manage inetd configuration which has a shared

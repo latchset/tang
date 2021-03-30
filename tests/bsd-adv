@@ -1,0 +1,84 @@
+#!/bin/sh -ex
+# vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:
+#
+# Copyright (c) 2016 Red Hat, Inc.
+# Author: Nathaniel McCallum <npmccallum@redhat.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+fetch() {
+    curl -sfg http://127.0.0.1:$PORT$1
+}
+
+ver() {
+    jose jws ver -i- -k "$1"
+}
+
+on_exit() {
+    if [ "$PID" ]; then kill $PID; wait $PID || true; fi
+    [ -d "$TMP" ] && rm -rf $TMP
+}
+
+trap 'on_exit' EXIT
+
+export TMP=`mktemp -d`
+mkdir -p $TMP/db
+
+tangd-keygen $TMP/db sig exc
+jose jwk gen -i '{"alg": "ES512"}' -o $TMP/db/.sig.jwk
+jose jwk gen -i '{"alg": "ES512"}' -o $TMP/db/.oth.jwk
+
+export PORT=`jot -r 1 1024 6553`
+/usr/local/bin/socat TCP-LISTEN:${PORT},bind=127.0.0.1,fork SYSTEM:"$VALGRIND tangd $TMP/db" &
+export PID=$!
+sleep 0.5
+
+# Make sure requests on the root fail
+! fetch /
+
+# The request should fail (404) for non-signature key IDs
+! fetch /adv/`jose jwk thp -i $TMP/db/exc.jwk`
+! fetch /adv/`jose jwk thp -a S512 -i $TMP/db/exc.jwk`
+
+# The default advertisement fetch should succeed and pass verification
+fetch /adv
+fetch /adv | ver $TMP/db/sig.jwk
+fetch /adv/ | ver $TMP/db/sig.jwk
+
+# Fetching by any thumbprint should work
+fetch /adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/sig.jwk
+fetch /adv/`jose jwk thp -a S512 -i $TMP/db/sig.jwk` | ver $TMP/db/sig.jwk
+
+# Requesting an adv by an advertised key ID should't be signed by hidden keys
+! fetch /adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/.sig.jwk
+! fetch /adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/.oth.jwk
+
+# Verify that the default advertisement is not signed with hidden signature keys
+! fetch /adv/ | ver $TMP/db/.oth.jwk
+! fetch /adv/ | ver $TMP/db/.sig.jwk
+
+# A private key advertisement is signed by all advertised keys and the requested private key
+fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` | ver $TMP/db/sig.jwk
+fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` | ver $TMP/db/.sig.jwk
+! fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` | ver $TMP/db/.oth.jwk
+
+# Verify that the advertisements contain the cty parameter
+fetch /adv | jose fmt -j- -Og protected -SyOg cty -Sq "jwk-set+json" -E
+fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` \
+    | jose fmt -j- -Og signatures -A \
+               -g 0 -Og protected -SyOg cty -Sq "jwk-set+json" -EUUUUU \
+               -g 1 -Og protected -SyOg cty -Sq "jwk-set+json" -EUUUUU
+
+test "$(tang-show-keys $PORT)" == "$(jose jwk thp -i $TMP/db/sig.jwk)"

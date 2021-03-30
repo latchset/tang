@@ -113,7 +113,7 @@ FreeBSD, HardendedBSD, and OPNsense use inetd rather than systemd or
 xinetd. To limit the need to manage inetd configuration which has a shared
 config file, tangd is instead packaged to depend on `socat`.  Of course,
 if desired it may be configured to run instead from inetd.conf in which case
-the socate package will no longer be required.
+the socat package will no longer be required.
 
 #### Docker Container
 

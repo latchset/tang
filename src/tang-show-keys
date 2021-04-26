@@ -29,7 +29,8 @@ port=${1-80}
 
 adv=$(curl -sSf localhost:$port/adv)
 
+THP_DEFAULT_HASH=S256    # SHA-256.
 echo $adv \
     | jose fmt -j- -g payload -y -o- \
     | jose jwk use -i- -r -u verify -o- \
-    | jose jwk thp -i-
+    | jose jwk thp -i- -a "${THP_DEFAULT_HASH}"

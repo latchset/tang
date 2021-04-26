@@ -82,4 +82,5 @@ fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` \
                -g 0 -Og protected -SyOg cty -Sq "jwk-set+json" -EUUUUU \
                -g 1 -Og protected -SyOg cty -Sq "jwk-set+json" -EUUUUU
 
-test "$(tang-show-keys $PORT)" == "$(jose jwk thp -i $TMP/db/sig.jwk)"
+THP_DEFAULT_HASH=S256     # SHA-256.
+test "$(tang-show-keys $PORT)" == "$(jose jwk thp -a "${THP_DEFAULT_HASH}" -i $TMP/db/sig.jwk)"

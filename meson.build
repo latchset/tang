@@ -1,5 +1,5 @@
 project('tang', 'c',
-  version: '8',
+  version: '9',
   license: 'GPL3+',
   default_options: [
     'c_std=c99',

@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/sh -ex
 # vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:
 #
 # Copyright (c) 2016 Red Hat, Inc.
@@ -18,35 +18,11 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-function fetch() {
-    curl -sfg http://127.0.0.1:$PORT$1
-}
+. helpers
 
-function ver() {
-    jose jws ver -i- -k "$1"
-}
-
-function on_exit() {
-    if [ "$PID" ]; then kill $PID; wait $PID || true; fi
-    [ -d "$TMP" ] && rm -rf $TMP
-}
-
-validate() {
-    if ! _jwks="$(jose fmt --json="${1}" -Og payload -SyOg keys \
-                 -AUo- 2>/dev/null)"; then
-        echo "Advertisement is malformed" >&2
-        exit 1
-    fi
-    _ver="$(printf '%s' "${_jwks}" | jose jwk use -i- -r -u verify -o-)"
-    if ! printf '%s' "${_ver}" | jose jws ver -i "${1}" -k- -a; then
-        echo "Advertisement is missing signatures" >&2
-        exit 1
-    fi
-}
+sanity_check
 
 trap 'on_exit' EXIT
-trap 'exit' ERR
-
 export TMP=`mktemp -d`
 mkdir -p $TMP/db
 
@@ -54,8 +30,8 @@ tangd-keygen $TMP/db sig exc
 jose jwk gen -i '{"alg": "ES512"}' -o $TMP/db/.sig.jwk
 jose jwk gen -i '{"alg": "ES512"}' -o $TMP/db/.oth.jwk
 
-export PORT=`shuf -i 1024-65536 -n 1`
-$SD_ACTIVATE -l "127.0.0.1:$PORT" -a $VALGRIND tangd $TMP/db &
+export PORT=$(random_port)
+start_server "${PORT}"
 export PID=$!
 sleep 0.5
 
@@ -96,7 +72,7 @@ fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` \
                -g 1 -Og protected -SyOg cty -Sq "jwk-set+json" -EUUUUU
 
 THP_DEFAULT_HASH=S256     # SHA-256.
-test "$(tang-show-keys $PORT)" == "$(jose jwk thp -a "${THP_DEFAULT_HASH}" -i $TMP/db/sig.jwk)"
+test "$(tang-show-keys $PORT)" = "$(jose jwk thp -a "${THP_DEFAULT_HASH}" -i $TMP/db/sig.jwk)"
 
 # Check that new keys will be created if none exist.
 rm -rf "${TMP}/db" && mkdir -p "${TMP}/db"

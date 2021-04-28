@@ -1,0 +1,62 @@
+#!/bin/sh -ex
+# vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:
+#
+# Copyright (c) 2016 Red Hat, Inc.
+# Author: Nathaniel McCallum <npmccallum@redhat.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+fetch() {
+    curl -sfg "http://127.0.0.1:${PORT}${1}"
+}
+
+ver() {
+    jose jws ver -i- -k "${1}"
+}
+
+random_port() {
+    if [ -n "${TANG_BSD}" ]; then
+        jot -r 1 1024 65536
+    else
+        shuf -i 1024-65536 -n 1
+    fi
+}
+
+start_server() {
+    "${SOCAT}" TCP-LISTEN:"${1}",bind=127.0.0.1,fork SYSTEM:"${VALGRIND} tangd ${TMP}/db" &
+}
+
+on_exit() {
+    if [ "$PID" ]; then kill "${PID}"; wait "${PID}" || true; fi
+    [ -d "${TMP}" ] && rm -rf "${TMP}"
+}
+
+validate() {
+    if ! _jwks="$(jose fmt --json="${1}" -Og payload -SyOg keys \
+                 -AUo- 2>/dev/null)"; then
+        echo "Advertisement is malformed" >&2
+        exit 1
+    fi
+    _ver="$(printf '%s' "${_jwks}" | jose jwk use -i- -r -u verify -o-)"
+    if ! printf '%s' "${_ver}" | jose jws ver -i "${1}" -k- -a; then
+        echo "Advertisement is missing signatures" >&2
+        exit 1
+    fi
+}
+
+sanity_check() {
+    # Skip test if socat is not available.
+    [ -n "${SOCAT}" ] || exit 77
+}

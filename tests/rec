@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/sh -ex
 # vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:
 #
 # Copyright (c) 2016 Red Hat, Inc.
@@ -18,14 +18,11 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-function on_exit() {
-    if [ "$PID" ]; then kill $PID; wait $PID || true; fi
-    [ -d "$TMP" ] && rm -rf $TMP
-}
+. helpers
+
+sanity_check
 
 trap 'on_exit' EXIT
-trap 'exit' ERR
-
 export TMP=`mktemp -d`
 mkdir -p $TMP/db
 
@@ -39,19 +36,19 @@ jose jwk gen -i "$tmp" -o $TMP/exc.jwk
 jose jwk pub -i $TMP/exc.jwk -o $TMP/exc.pub.jwk
 
 # Start the server
-port=`shuf -i 1024-65536 -n 1`
-$SD_ACTIVATE -l 127.0.0.1:$port -a $VALGRIND tangd $TMP/db &
+export PORT=$(random_port)
+start_server "${PORT}"
 export PID=$!
 sleep 0.5
 
 # Make sure that GET fails
-! curl -sf http://127.0.0.1:$port/rec
-! curl -sf http://127.0.0.1:$port/rec/
+! curl -sf http://127.0.0.1:$PORT/rec
+! curl -sf http://127.0.0.1:$PORT/rec/
 
 # Make a recovery request (NOTE: this is insecure! Don't do this in real code!)
 good=`jose jwk exc -i '{"alg":"ECMR","key_ops":["deriveKey"]}' -l $TMP/exc.jwk -r $TMP/db/exc.jwk`
 test=`curl -sf -X POST \
            -H "Content-Type: application/jwk+json" \
            --data-binary @- \
-           http://127.0.0.1:$port/rec/${exc_kid} < $TMP/exc.pub.jwk`
-[ "$good" == "$test" ]
+           http://127.0.0.1:$PORT/rec/${exc_kid} < $TMP/exc.pub.jwk`
+[ "$good" = "$test" ]

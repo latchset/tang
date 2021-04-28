@@ -18,9 +18,8 @@ test_keys = executable('test-keys',
   include_directories: incdir
 )
 
-sd_activate = find_program(
-  'systemd-socket-activate',
-  'systemd-activate',
+socat = find_program(
+  'socat',
   required: false
 )
 
@@ -28,20 +27,21 @@ env = environment()
 env.prepend('PATH',
   join_paths(meson.source_root(), 'src'),
   join_paths(meson.build_root(), 'src'),
+  join_paths(meson.source_root(), 'tests'),
+  join_paths(meson.build_root(), 'tests'),
   separator: ':'
 )
 
 if build_machine.system() == 'freebsd'
-    test('adv', find_program('bsd-adv'), env: env, timeout: 60)
-    test('rec', find_program('bsd-rec'), env: env)
-else
-  if sd_activate.found()
-    env.set('SD_ACTIVATE', sd_activate.path() + ' --inetd')
-
-    test('adv', find_program('adv'), env: env, timeout: 60)
-    test('rec', find_program('rec'), env: env)
-  endif
+  env.set('TANG_BSD', '1')
 endif
+
+if socat.found()
+  env.set('SOCAT', socat.path())
+endif
+
+test('adv', find_program('adv'), env: env, timeout: 60)
+test('rec', find_program('rec'), env: env)
 test('test-keys', test_keys, env: env, timeout: 60)
 
 # vim:set ts=2 sw=2 et:

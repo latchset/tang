@@ -233,21 +233,11 @@ jwk_sign(const json_t* to_sign, const json_t* sig_keys)
     json_auto_t* sig_template = json_pack("{s:{s:s}}",
                                           "protected", "cty", "jwk-set+json");
 
-    /* Use the template with the signing keys. */
-    json_auto_t* sig_template_arr = json_array();
-    size_t arr_size = json_array_size(sig_keys);
-    for (size_t i = 0; i < arr_size; i++) {
-        if (json_array_append(sig_template_arr, sig_template) == -1) {
-            fprintf(stderr, "Unable to append sig template to array\n");
-            return NULL;
-        }
-    }
-
     __attribute__ ((__cleanup__(cleanup_str))) char* data_to_sign = json_dumps(payload, 0);
     json_auto_t* jws = json_pack("{s:o}", "payload",
                                  jose_b64_enc(data_to_sign, strlen(data_to_sign)));
 
-    if (!jose_jws_sig(NULL, jws, sig_template_arr, sig_keys)) {
+    if (!jose_jws_sig(NULL, jws, sig_template, sig_keys)) {
         fprintf(stderr, "Error trying to jose_jws_sign\n");
         return NULL;
     }

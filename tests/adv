@@ -31,6 +31,19 @@ function on_exit() {
     [ -d "$TMP" ] && rm -rf $TMP
 }
 
+validate() {
+    if ! _jwks="$(jose fmt --json="${1}" -Og payload -SyOg keys \
+                 -AUo- 2>/dev/null)"; then
+        echo "Advertisement is malformed" >&2
+        exit 1
+    fi
+    _ver="$(printf '%s' "${_jwks}" | jose jwk use -i- -r -u verify -o-)"
+    if ! printf '%s' "${_ver}" | jose jws ver -i "${1}" -k- -a; then
+        echo "Advertisement is missing signatures" >&2
+        exit 1
+    fi
+}
+
 trap 'on_exit' EXIT
 trap 'exit' ERR
 
@@ -96,3 +109,18 @@ for k in *.jwk; do
 done
 cd -
 fetch /adv
+
+# Lets's now test with multiple pairs of keys.
+for i in 1 2 3 4 5 6 7 8 9; do
+    tangd-keygen "${TMP}"/db other-sig-${i} other-exc-${i}
+done
+
+# Verify the advertisement is correct.
+validate "$(fetch /adv)"
+
+# And make sure we can fetch an adv by its thumbprint.
+for jwk in "${TMP}"/db/other-sig-*.jwk; do
+    for alg in $(jose alg -k hash); do
+        fetch /adv/"$(jose jwk thp -a "${alg}" -i "${jwk}")" | ver "${jwk}"
+    done
+done

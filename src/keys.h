@@ -34,8 +34,8 @@ struct tang_keys_info {
     json_t* m_sign;               /* Set of signing keys made from regular
                                      keys. */
 
-    size_t m_keys_count;          /* Number of keys (regular + rotated). */
-
+    size_t m_keys_count;          /* Number of regular keys. */
+    size_t m_rotated_keys_count;  /* Number of rotated keys. */
 };
 
 void cleanup_tang_keys_info(struct tang_keys_info**);

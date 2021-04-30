@@ -140,7 +140,7 @@ test_find_jws(void)
     json_auto_t* keys = json_deep_copy(tki->m_keys);
     ASSERT(keys);
     ASSERT(json_array_extend(keys, tki->m_rotated_keys) == 0);
-    ASSERT(json_array_size(keys) == (size_t)tki->m_keys_count);
+    ASSERT(json_array_size(keys) == (size_t)(tki->m_keys_count + tki->m_rotated_keys_count));
 
     for (int i = 0; hashes[i]; i++) {
         json_array_foreach(keys, idx, jwk) {
@@ -203,7 +203,7 @@ test_find_jwk(void)
     json_auto_t* keys = json_deep_copy(tki->m_keys);
     ASSERT(keys);
     ASSERT(json_array_extend(keys, tki->m_rotated_keys) == 0);
-    ASSERT(json_array_size(keys) == (size_t)tki->m_keys_count);
+    ASSERT(json_array_size(keys) == (size_t)(tki->m_keys_count + tki->m_rotated_keys_count));
 
     for (int i = 0; hashes[i]; i++) {
         json_array_foreach(keys, idx, jwk) {
@@ -230,7 +230,8 @@ test_read_keys(void)
      * - qgmqJSo6AEEuVQY7zVlklqdTMqY.jwk
      * - -bWkGaJi0Zdvxaj4DCp28umLcRA.jwk
      */
-    ASSERT(tki->m_keys_count == 4);
+    ASSERT(tki->m_keys_count == 2);
+    ASSERT(tki->m_rotated_keys_count == 2);
     ASSERT(json_array_size(tki->m_keys) == 2);
     ASSERT(json_array_size(tki->m_rotated_keys) == 2);
 

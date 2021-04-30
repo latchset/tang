@@ -84,3 +84,15 @@ fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` \
 
 THP_DEFAULT_HASH=S256     # SHA-256.
 test "$(tang-show-keys $PORT)" == "$(jose jwk thp -a "${THP_DEFAULT_HASH}" -i $TMP/db/sig.jwk)"
+
+# Check that new keys will be created if none exist.
+rm -rf "${TMP}/db" && mkdir -p "${TMP}/db"
+fetch /adv
+
+# Now let's rotate these keys and check if we still create new keys.
+cd "${TMP}/db"
+for k in *.jwk; do
+    mv -f -- "${k}" ".${k}"
+done
+cd -
+fetch /adv

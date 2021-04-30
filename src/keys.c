@@ -392,12 +392,15 @@ load_keys(const char* jwkdir)
             json_t* arr = tki->m_keys;
             if (d->d_name[0] == '.') {
                 arr = tki->m_rotated_keys;
+                tki->m_rotated_keys_count++;
+            } else {
+                tki->m_keys_count++;
             }
+
             if (json_array_append(arr, json) == -1) {
                 fprintf(stderr, "Unable to append JSON (%s) to array; skipping\n", d->d_name);
                 continue;
             }
-            tki->m_keys_count++;
         }
     }
     closedir(dir);

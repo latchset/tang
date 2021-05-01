@@ -32,6 +32,9 @@
 #define PATH_MAX 4096
 #endif
 
+/* Default hash to use with JWK thumbprints (S256 = SHA-256). */
+#define DEFAULT_THP_HASH "S256"
+
 static const char**
 supported_hashes(void)
 {
@@ -314,7 +317,6 @@ prepare_payload_and_sign(struct tang_keys_info* tki)
 static int
 create_new_keys(const char* jwkdir)
 {
-    const char** hashes = supported_hashes();
     const char* alg[] = {"ES512", "ECMR", NULL};
     char path[PATH_MAX];
     for (int i = 0; alg[i] != NULL; i++) {
@@ -322,7 +324,7 @@ create_new_keys(const char* jwkdir)
         if (!jwk) {
             return 0;
         }
-        __attribute__ ((__cleanup__(cleanup_str))) char* thp = jwk_thumbprint(jwk, hashes[0]);
+        __attribute__ ((__cleanup__(cleanup_str))) char* thp = jwk_thumbprint(jwk, DEFAULT_THP_HASH);
         if (!thp) {
             return 0;
         }

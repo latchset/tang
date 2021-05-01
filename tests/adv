@@ -78,9 +78,13 @@ test "$(tang-show-keys $PORT)" = "$(jose jwk thp -a "${THP_DEFAULT_HASH}" -i $TM
 rm -rf "${TMP}/db" && mkdir -p "${TMP}/db"
 fetch /adv
 
-# Now let's rotate these keys and check if we still create new keys.
+# Now let's make sure the new keys were named using our default thumbprint
+# hash and then rotate them and check if we still create new keys.
 cd "${TMP}/db"
 for k in *.jwk; do
+    # Check for the key name (SHA-256).
+    test "${k}" = "$(jose jwk thp -a "${THP_DEFAULT_HASH}" -i "${k}")".jwk
+    # Rotate the key.
     mv -f -- "${k}" ".${k}"
 done
 cd -

@@ -93,6 +93,9 @@ fetch /adv
 # Lets's now test with multiple pairs of keys.
 for i in 1 2 3 4 5 6 7 8 9; do
     tangd-keygen "${TMP}"/db other-sig-${i} other-exc-${i}
+    # Make sure the requested keys exist and are valid.
+    validate_sig "${TMP}/db/other-sig-${i}.jwk"
+    validate_exc "${TMP}/db/other-exc-${i}.jwk"
 done
 
 # Verify the advertisement is correct.
@@ -104,3 +107,20 @@ for jwk in "${TMP}"/db/other-sig-*.jwk; do
         fetch /adv/"$(jose jwk thp -a "${alg}" -i "${jwk}")" | ver "${jwk}"
     done
 done
+
+# Now let's test keys rotation.
+tangd-rotate-keys -d "${TMP}/db"
+for i in 1 2 3 4 5 6 7 8 9; do
+    # Make sure keys were excluded from advertisement.
+    validate_sig "${TMP}/db/.other-sig-${i}.jwk"
+    validate_exc "${TMP}/db/.other-exc-${i}.jwk"
+done
+
+# And test also that we have valid keys after rotation.
+thp=
+for jwk in "${TMP}"/db/*.jwk; do
+    validate_sig "${jwk}" && thp="$(jose jwk thp -a "${THP_DEFAULT_HASH}" \
+                                    -i "${jwk}")"
+done
+[ -z "${thp}" ] && die "There should be valid keys after rotation"
+test "$(tang-show-keys $PORT)" = "${thp}"

@@ -18,20 +18,23 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-trap 'exit' ERR
+set -e
 
-if [ $# -ne 1 -a $# -ne 3 ] || [ ! -d "$1" ]; then
+usage() {
     echo "Usage: $0 <jwkdir> [<sig> <exc>]" >&2
     exit 1
-fi
+}
+
+[ $# -ne 1 ] && [ $# -ne 3 ] && usage
+[ -d "$1" ] || usage
 
 [ $# -eq 3 ] && sig=$2 && exc=$3
 
 THP_DEFAULT_HASH=S256     # SHA-256.
-jwe=`jose jwk gen -i '{"alg":"ES512"}'`
+jwe=$(jose jwk gen -i '{"alg":"ES512"}')
 [ -z "$sig" ] && sig=$(echo "$jwe" | jose jwk thp -i- -a "${THP_DEFAULT_HASH}")
-echo "$jwe" > $1/$sig.jwk
+echo "$jwe" > "$1/$sig.jwk"
 
-jwe=`jose jwk gen -i '{"alg":"ECMR"}'`
+jwe=$(jose jwk gen -i '{"alg":"ECMR"}')
 [ -z "$exc" ] && exc=$(echo "$jwe" | jose jwk thp -i- -a "${THP_DEFAULT_HASH}")
-echo "$jwe" > $1/$exc.jwk
+echo "$jwe" > "$1/$exc.jwk"

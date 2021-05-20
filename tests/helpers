@@ -56,7 +56,22 @@ validate() {
     fi
 }
 
+validate_sig() {
+    jose fmt --json "${1}" --output=- | jose jwk use --input=- --required \
+        --use verify 2>/dev/null
+}
+
+validate_exc() {
+    jose fmt --json "${1}" --output=- | jose jwk use --input=- --required \
+        --use deriveKey 2>/dev/null
+}
+
 sanity_check() {
     # Skip test if socat is not available.
     [ -n "${SOCAT}" ] || exit 77
+}
+
+die() {
+    echo "${1}" >&2
+    exit 1
 }

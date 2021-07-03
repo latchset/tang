@@ -21,7 +21,7 @@
 SUMMARY="Perform rotation of tang keys"
 
 usage() {
-    local _ret="${1:-1}"
+    _ret="${1:-1}"
     exec >&2
     echo "Usage: ${0} [-h] [-v] -d <KEYDIR>"
     echo
@@ -37,8 +37,8 @@ usage() {
 }
 
 log() {
-    local _msg="${1}"
-    local _verbose="${2:-}"
+    _msg="${1}"
+    _verbose="${2:-}"
     [ -z "${_verbose}" ] && return 0
     echo "${_msg}" >&2
 }

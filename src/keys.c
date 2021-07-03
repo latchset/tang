@@ -263,7 +263,7 @@ find_by_thp(struct tang_keys_info* tki, const char* target)
     json_array_foreach(keys, idx, jwk) {
         for (int i = 0; hashes[i]; i++) {
             __attribute__ ((__cleanup__(cleanup_str))) char* thumbprint = jwk_thumbprint(jwk, hashes[i]);
-            if (strcmp(thumbprint, target) != 0) {
+            if (!thumbprint || strcmp(thumbprint, target) != 0) {
                 continue;
             }
 

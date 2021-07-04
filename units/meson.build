@@ -3,7 +3,7 @@ tangd_service = configure_file(
   output: 'tangd@.service',
   configuration: data
 )
-if build_machine.system() == 'freebsd'
+if host_machine.system() == 'freebsd'
   tangd_rc = configure_file(
     input: 'tangd.rc.in',
     output: 'tangd',

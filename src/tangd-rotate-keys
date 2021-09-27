@@ -78,6 +78,7 @@ cd "${JWKDIR}" || error "Unable to change to keys directory '${JWKDIR}'"
         thp="$(printf '%s' "${jwe}" | jose jwk thp --input=- \
                                            -a "${DEFAULT_THP_HASH}")"
         echo "${jwe}" > "${thp}.jwk"
+        chmod 0440 "${thp}.jwk"
         log "Created new key ${thp}.jwk" "${VERBOSE}"
     done
 cd - >/dev/null

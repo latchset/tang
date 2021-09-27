@@ -17,6 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
@@ -335,6 +336,12 @@ create_new_keys(const char* jwkdir)
         path[sizeof(path) - 1] = '\0';
         if (json_dump_file(jwk, path, 0) == -1) {
             fprintf(stderr, "Error saving JWK to file (%s)\n", path);
+            return 0;
+        }
+
+        /* Set 0440 permission for the new key. */
+        if (chmod(path, S_IRUSR | S_IRGRP) == -1) {
+            fprintf(stderr, "Unable to set permissions for JWK file (%s)\n", path);
             return 0;
         }
     }

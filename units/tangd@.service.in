@@ -6,3 +6,4 @@ StandardInput=socket
 StandardOutput=socket
 StandardError=journal
 ExecStart=@libexecdir@/tangd @jwkdir@
+User=@user@

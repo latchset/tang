@@ -26,6 +26,8 @@ data.set('libexecdir', libexecdir)
 data.set('sysconfdir', sysconfdir)
 data.set('systemunitdir', systemunitdir)
 data.set('jwkdir', jwkdir)
+data.set('user', get_option('user'))
+data.set('group', get_option('group'))
 
 add_project_arguments(
   '-D_POSIX_C_SOURCE=200809L',

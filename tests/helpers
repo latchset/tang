@@ -75,3 +75,8 @@ die() {
     echo "${1}" >&2
     exit 1
 }
+
+valid_key_perm() {
+    _perm="$(stat -c %a "${1}")"
+    [ "${_perm}" = "440" ]
+}

@@ -26,8 +26,8 @@ usage() {
 }
 
 set_perms() {
-    chmod 0440 -- "${1}"
-    if ! chown @user@:@group@ -- "${1}" 2>/dev/null; then
+    chmod -- 0440 "${1}"
+    if ! chown -- @user@:@group@ "${1}" 2>/dev/null; then
         echo "Unable to change owner/group for ${1} to @user@:@group@" >&2
     fi
 }

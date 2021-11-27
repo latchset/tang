@@ -32,7 +32,7 @@ env.prepend('PATH',
   separator: ':'
 )
 
-if build_machine.system() == 'freebsd'
+if host_machine.system() == 'freebsd'
   env.set('TANG_BSD', '1')
 endif
 

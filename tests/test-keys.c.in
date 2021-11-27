@@ -33,6 +33,56 @@ struct test_result_int {
 };
 
 static void
+verify_keys_permissions(const char* targetdir)
+{
+    struct stat st;
+    struct dirent* d;
+    DIR* dir = opendir(targetdir);
+    ASSERT(dir);
+    char filepath[PATH_MAX];
+    const char* pattern = ".jwk";
+    while ((d = readdir(dir)) != NULL) {
+        if (strcmp(d->d_name, ".") == 0 || strcmp(d->d_name, "..") == 0) {
+            continue;
+        }
+
+        char* dot = strrchr(d->d_name, '.');
+        if (!dot) {
+            continue;
+        }
+
+        if (strcmp(dot, pattern) == 0) {
+            /* Found a file with .jwk extension. */
+            if (snprintf(filepath, PATH_MAX, "%s/%s", targetdir, d->d_name) < 0) {
+                fprintf(stderr, "Unable to prepare variable with file full path (%s); skipping\n", d->d_name);
+                continue;
+            }
+            filepath[sizeof(filepath) - 1] = '\0';
+            ASSERT(stat(filepath, &st) == 0);
+
+            ASSERT_WITH_MSG(st.st_mode & (S_IRUSR | S_IRGRP), "key = %s, missing perm (0%o)", filepath, (S_IRUSR | S_IRGRP));
+            int unexpected_perms[] = {
+                S_ISUID, /* 04000 set-user-ID */
+                S_ISGID, /* 02000 set-group-ID */
+                S_IWUSR, /* 00200 write by owner */
+                S_IXUSR, /* 00100 execute/search by owner */
+                S_IWGRP, /* 00020 write by group */
+                S_IXGRP, /* 00010 execute/search by group */
+                S_IROTH, /* 00004 read by others */
+                S_IWOTH, /* 00002 write by others */
+                S_IXOTH, /* 00001 execute/search by others */
+                0
+            };
+            for (int i = 0; unexpected_perms[i] != 0; i++) {
+                ASSERT_WITH_MSG((st.st_mode & unexpected_perms[i]) == 0, "key = %s, i = %d, unexpected perm (0%o)", filepath, i, unexpected_perms[i]);
+            }
+
+        }
+    }
+    closedir(dir);
+}
+
+static void
 test_create_new_keys(void)
 {
    __attribute__((cleanup(cleanup_str))) char* newdir = create_tempdir();
@@ -40,6 +90,10 @@ test_create_new_keys(void)
     __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(newdir);
     ASSERT(tki);
     ASSERT(tki->m_keys_count == 2);
+
+    /* Make sure keys have proper permissions. */
+    verify_keys_permissions(newdir);
+
     remove_tempdir(newdir);
 }
 

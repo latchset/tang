@@ -1,0 +1,2 @@
+option('user', type: 'string', value: 'tang', description: 'Unprivileged user for tang operations')
+option('group', type: 'string', value: 'tang', description: 'Unprivileged group for tang operations')

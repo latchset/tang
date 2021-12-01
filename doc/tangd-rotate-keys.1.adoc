@@ -12,16 +12,20 @@ tangd-rotate-keys - Perform rotation of tang keys
 
 == DESCRIPTION
 
-in order to preserve the security of the system over the long run, you need to periodically rotate your keys. The precise interval at which you should rotate depends upon your application, key sizes and institutional policy. For some common recommendations, see: https://www.keylength.com.
+in order to preserve the security of the system over the long run, you need to periodically
+rotate your keys. The precise interval at which you should rotate depends upon your application,
+key sizes and institutional policy. For some common recommendations, see: https://www.keylength.com.
 
-To rotate keys, first we need to generate new keys in the key database directory. This is typically /var/db/tang.
-Next, rename the old keys to have a leading . in order to hide them from advertisement:
+*tangd-rotate-keys* generates new keys in the key database directory given by the *-d* option.
+This is typically */var/db/tang*. It also rename the old keys to have a leading . in order to
+hide them from advertisement.
 
-# mv $DB/old_sig.jwk $DB/.old_sig.jwk
-# mv $DB/old_exc.jwk $DB/.old_exc.jwk
 Tang will immediately pick up all changes. No restart is required.
 
-At this point, new client bindings will pick up the new keys and old clients can continue to utilize the old keys. Once you are sure that all the old clients have been migrated to use the new keys, you can remove the old keys. Be aware that removing the old keys while clients are still using them can result in data loss. You have been warned.
+At this point, new client bindings will pick up the new keys and old clients can continue to
+utilize the old keys. Once you are sure that all the old clients have been migrated to use the
+new keys, you can remove the old keys. Be aware that removing the old keys while clients are
+still using them can result in data loss. You have been warned.
 
 == OPTIONS
 *  *-d* <KEYDIR>:

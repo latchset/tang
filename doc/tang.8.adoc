@@ -150,7 +150,7 @@ link:systemd.unit.5.adoc[*systemd.unit*(5)],
 link:systemd.socket.5.adoc[*systemd.socket*(5)],
 endif::[]
 link:jose-jwk-gen.1.adoc[*jose-jwk-gen*(1)],
-link:tang-show-keys.1.adoc[*tang-show-keys*(1)]
+link:tang-show-keys.1.adoc[*tang-show-keys*(1)],
 link:tangd-rotate-keys.1.adoc[*tangd-rotate-keys*(1)]
 
 == FURTHER READING

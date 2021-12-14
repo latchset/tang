@@ -77,7 +77,7 @@ install_data(licenses, install_dir: licensedir)
 if a2x.found()
   foreach m : mans
     custom_target(m.split('/')[-1], input: m + '.adoc', output: m.split('/')[-1],
-      command: [a2x, '-f', 'manpage', '-D', meson.current_build_dir(), '@INPUT@'],
+      command: [a2x, '--attribute=' + build_machine.system(), '-f', 'manpage', '-D', meson.current_build_dir(), '@INPUT@'],
       install_dir: join_paths(get_option('mandir'), 'man' + m.split('.')[-1]),
       install: true
     )

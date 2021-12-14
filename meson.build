@@ -16,7 +16,7 @@ sysconfdir = join_paths(get_option('prefix'), get_option('sysconfdir'))
 bindir = join_paths(get_option('prefix'), get_option('bindir'))
 systemunitdir = join_paths(get_option('prefix'), 'lib/systemd/system')
 licensedir = join_paths(get_option('prefix'), 'share', 'licenses', meson.project_name())
-if build_machine.system() == 'freebsd'
+if host_machine.system() == 'freebsd'
   licensedir += '-'+meson.project_version()
 endif
 jwkdir = join_paths(get_option('localstatedir'), 'db', meson.project_name())
@@ -56,7 +56,11 @@ compiler = meson.get_compiler('c')
 if not compiler.has_header('http_parser.h',args : '-I/usr/local/include')
   error('http-parser devel files not found.')
 endif
-http_parser = compiler.find_library('http_parser',dirs:['/usr/lib','/usr/local/lib'])
+if host_machine.system() == 'freebsd'
+  http_parser = compiler.find_library('http_parser',dirs : '/usr/local/lib')
+else
+  http_parser = compiler.find_library('http_parser')
+endif
 
 licenses = ['COPYING']
 libexecbins = []

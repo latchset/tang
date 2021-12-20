@@ -45,8 +45,8 @@ export PID=$!
 sleep 0.5
 
 # Make sure that GET fails
-! curl -sf http://127.0.0.1:$PORT/rec
-! curl -sf http://127.0.0.1:$PORT/rec/
+curl -sf http://127.0.0.1:$PORT/rec && expected_fail
+curl -sf http://127.0.0.1:$PORT/rec/ && expected_fail
 
 # Make a recovery request (NOTE: this is insecure! Don't do this in real code!)
 good=`jose jwk exc -i '{"alg":"ECMR","key_ops":["deriveKey"]}' -l $TMP/exc.jwk -r $TMP/db/exc.jwk`

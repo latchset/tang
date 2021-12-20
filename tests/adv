@@ -40,11 +40,11 @@ export PID=$!
 sleep 0.5
 
 # Make sure requests on the root fail
-! fetch /
+fetch / && expected_fail
 
 # The request should fail (404) for non-signature key IDs
-! fetch /adv/`jose jwk thp -i $TMP/db/exc.jwk`
-! fetch /adv/`jose jwk thp -a S512 -i $TMP/db/exc.jwk`
+fetch /adv/`jose jwk thp -i $TMP/db/exc.jwk` && expected_fail
+fetch /adv/`jose jwk thp -a S512 -i $TMP/db/exc.jwk` && expected_fail
 
 # The default advertisement fetch should succeed and pass verification
 fetch /adv
@@ -56,17 +56,17 @@ fetch /adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/sig.jwk
 fetch /adv/`jose jwk thp -a S512 -i $TMP/db/sig.jwk` | ver $TMP/db/sig.jwk
 
 # Requesting an adv by an advertised key ID should't be signed by hidden keys
-! fetch /adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/.sig.jwk
-! fetch /adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/.oth.jwk
+fetch /adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/.sig.jwk && expected_fail
+fetch /adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/.oth.jwk && expected_fail
 
 # Verify that the default advertisement is not signed with hidden signature keys
-! fetch /adv/ | ver $TMP/db/.oth.jwk
-! fetch /adv/ | ver $TMP/db/.sig.jwk
+fetch /adv/ | ver $TMP/db/.oth.jwk && expected_fail
+fetch /adv/ | ver $TMP/db/.sig.jwk && expected_fail
 
 # A private key advertisement is signed by all advertised keys and the requested private key
 fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` | ver $TMP/db/sig.jwk
 fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` | ver $TMP/db/.sig.jwk
-! fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` | ver $TMP/db/.oth.jwk
+fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` | ver $TMP/db/.oth.jwk && expected_fail
 
 # Verify that the advertisements contain the cty parameter
 fetch /adv | jose fmt -j- -Og protected -SyOg cty -Sq "jwk-set+json" -E

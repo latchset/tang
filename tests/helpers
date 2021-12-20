@@ -77,6 +77,15 @@ die() {
 }
 
 valid_key_perm() {
-    _perm="$(stat -c %a "${1}")"
+    if [ -n "${TANG_BSD}" ]; then
+        _perm="$(stat -f %Lp "${1}")"
+    else
+        _perm="$(stat -c %a "${1}")"
+    fi
     [ "${_perm}" = "440" ]
+}
+
+expected_fail () {
+    echo "Test was expected to fail" >&2
+    exit 1
 }

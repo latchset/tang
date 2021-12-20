@@ -40,7 +40,13 @@ protocol, see the Tang project's homepage.
 
 Getting a Tang server up and running is simple:
 
+ifdef::freebsd[]
+    $ sudo service tangd enable
+    $ sudo service tangd start
+endif::[]
+ifndef::freebsd[]
     $ sudo systemctl enable tangd.socket --now
+endif::[]
 
 That's it. The server is now running with a fresh set of cryptographic keys
 and will automatically start on the next reboot.
@@ -49,8 +55,13 @@ and will automatically start on the next reboot.
 
 Tang intends to be a minimal network service and therefore does not have any
 configuration. To adjust the network settings, you can override the
+ifdef::freebsd[]
+variables in the */usr/local/etc/rc.d/tangd* file.
+endif::[]
+ifndef::freebsd[]
 *tangd.socket* unit file using the standard systemd mechanisms. See
 link:systemd.unit.5.adoc[*systemd.unit*(5)] and link:systemd.socket.5.adoc[*systemd.socket*(5)] for more information.
+endif::[]
 
 == KEY ROTATION
 
@@ -58,6 +69,10 @@ In order to preserve the security of the system over the long run, you need to
 periodically rotate your keys. The precise interval at which you should rotate
 depends upon your application, key sizes and institutional policy. For some
 common recommendations, see: https://www.keylength.com.
+
+There is a convenience script to deal with this. See
+link:tangd-rotate-keys.1.adoc[*tangd-rotate-keys*(1)] for more information.
+This can also be performed manually as described below.
 
 To rotate keys, first we need to generate new keys in the key database
 directory. This is typically */var/db/tang*. For example, you can create
@@ -130,10 +145,13 @@ Nathaniel McCallum <npmccallum@redhat.com>
 
 == SEE ALSO
 
+ifndef::freebsd[]
 link:systemd.unit.5.adoc[*systemd.unit*(5)],
 link:systemd.socket.5.adoc[*systemd.socket*(5)],
+endif::[]
 link:jose-jwk-gen.1.adoc[*jose-jwk-gen*(1)],
-link:tang-show-keys.1.adoc[*tang-show-keys*(1)]
+link:tang-show-keys.1.adoc[*tang-show-keys*(1)],
+link:tangd-rotate-keys.1.adoc[*tangd-rotate-keys*(1)]
 
 == FURTHER READING
 

@@ -1,5 +1,5 @@
 project('tang', 'c',
-  version: '10',
+  version: '11',
   license: 'GPL3+',
   default_options: [
     'c_std=c99',
@@ -16,7 +16,7 @@ sysconfdir = join_paths(get_option('prefix'), get_option('sysconfdir'))
 bindir = join_paths(get_option('prefix'), get_option('bindir'))
 systemunitdir = join_paths(get_option('prefix'), 'lib/systemd/system')
 licensedir = join_paths(get_option('prefix'), 'share', 'licenses', meson.project_name())
-if build_machine.system() == 'freebsd'
+if host_machine.system() == 'freebsd'
   licensedir += '-'+meson.project_version()
 endif
 jwkdir = join_paths(get_option('localstatedir'), 'db', meson.project_name())
@@ -56,7 +56,11 @@ compiler = meson.get_compiler('c')
 if not compiler.has_header('http_parser.h',args : '-I/usr/local/include')
   error('http-parser devel files not found.')
 endif
-http_parser = compiler.find_library('http_parser',dirs:['/usr/lib','/usr/local/lib'])
+if host_machine.system() == 'freebsd'
+  http_parser = compiler.find_library('http_parser',dirs : '/usr/local/lib')
+else
+  http_parser = compiler.find_library('http_parser')
+endif
 
 licenses = ['COPYING']
 libexecbins = []
@@ -77,7 +81,7 @@ install_data(licenses, install_dir: licensedir)
 if a2x.found()
   foreach m : mans
     custom_target(m.split('/')[-1], input: m + '.adoc', output: m.split('/')[-1],
-      command: [a2x, '-f', 'manpage', '-D', meson.current_build_dir(), '@INPUT@'],
+      command: [a2x, '--attribute=' + build_machine.system(), '-f', 'manpage', '-D', meson.current_build_dir(), '@INPUT@'],
       install_dir: join_paths(get_option('mandir'), 'man' + m.split('.')[-1]),
       install: true
     )

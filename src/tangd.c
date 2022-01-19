@@ -38,7 +38,7 @@ str_cleanup(char **str)
 }
 
 static int
-adv(enum http_method method, const char *path, const char *body,
+adv(enum llhttp_method method, const char *path, const char *body,
     regmatch_t matches[], void *misc)
 {
     __attribute__((cleanup(str_cleanup))) char *adv = NULL;
@@ -75,7 +75,7 @@ adv(enum http_method method, const char *path, const char *body,
 }
 
 static int
-rec(enum http_method method, const char *path, const char *body,
+rec(enum llhttp_method method, const char *path, const char *body,
     regmatch_t matches[], void *misc)
 {
     __attribute__((cleanup(str_cleanup))) char *enc = NULL;
@@ -169,13 +169,12 @@ int
 main(int argc, char *argv[])
 {
     struct http_state state = { .dispatch = dispatch, .misc = argv[1] };
-    struct http_parser parser = { .data = &state };
+    llhttp_t parser = { .data = &state };
+    llhttp_errno_t http_errno = 0;
     struct stat st = {};
     char req[4096] = {};
     size_t rcvd = 0;
     int r = 0;
-
-    http_parser_init(&parser, HTTP_REQUEST);
 
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <jwkdir>\n", argv[0]);
@@ -192,6 +191,8 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    llhttp_init(&parser, HTTP_REQUEST, &http_settings);
+
     for (;;) {
         r = read(STDIN_FILENO, &req[rcvd], sizeof(req) - rcvd - 1);
         if (r == 0)
@@ -201,10 +202,10 @@ main(int argc, char *argv[])
 
         rcvd += r;
 
-        r = http_parser_execute(&parser, &http_settings, req, rcvd);
-        if (parser.http_errno != 0) {
+        http_errno = llhttp_execute(&parser, req, rcvd);
+        if (http_errno != 0) {
             fprintf(stderr, "HTTP Parsing Error: %s\n",
-                    http_errno_description(parser.http_errno));
+                    llhttp_errno_name(http_errno));
             return EXIT_SUCCESS;
         }
 

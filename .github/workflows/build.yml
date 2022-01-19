@@ -13,10 +13,10 @@ jobs:
           - fedora:latest
           - centos:7
           - centos:8
-          - debian:testing
-          - debian:latest
-          - ubuntu:rolling
-          - ubuntu:bionic
+#          - debian:testing
+#          - debian:latest
+#          - ubuntu:rolling
+#          - ubuntu:bionic
         stable: [true]
         include:
           - os: fedora:rawhide

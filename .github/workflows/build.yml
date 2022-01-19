@@ -21,7 +21,7 @@ jobs:
         include:
           - os: fedora:rawhide
             stable: false
-          - os: ubuntu:devel
+#          - os: ubuntu:devel
             stable: false
     steps:
       - uses: actions/checkout@v2

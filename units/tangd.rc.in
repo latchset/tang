@@ -8,7 +8,6 @@
 
 # PROVIDE: tangd
 # REQUIRE: NETWORKING DAEMON
-# KEYWORD: nojail
 
 . /etc/rc.subr
 

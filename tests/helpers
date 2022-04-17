@@ -34,8 +34,36 @@ random_port() {
     fi
 }
 
+check_if_port_listening() {
+        ss -anl|grep "[\:\.]${1}"|grep LISTEN >/dev/null 2>&1
+}
+
+wait_for_port()
+{
+        local ret
+        local port="${1}"
+        sleep 1
+
+        local i=0
+        while test $i -lt 90; do
+                check_if_port_listening ${port}
+                ret=$?
+                if test $ret = 0;then
+                        break
+                fi
+                i=`expr $i + 1`
+                echo "try $i: waiting for port"
+                sleep 1
+        done
+        return $ret
+}
+
 start_server() {
     "${SOCAT}" TCP-LISTEN:"${1}",bind=127.0.0.1,fork SYSTEM:"${VALGRIND} tangd ${TMP}/db" &
+}
+
+start_standalone_server() {
+    ${VALGRIND} tangd -p ${1} -l ${TMP}/db &
 }
 
 on_exit() {

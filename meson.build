@@ -50,6 +50,8 @@ add_project_arguments(
   language: 'c'
 )
 
+add_project_arguments('-DVERSION="'+meson.project_version() + '"', language : 'c')
+
 jose = dependency('jose', version: '>=8')
 a2x = find_program('a2x', required: false)
 compiler = meson.get_compiler('c')

@@ -1,5 +1,6 @@
 [Unit]
 Description=Tang Server socket
+Documentation=man:tang(8)
 
 [Socket]
 ListenStream=80

@@ -5,5 +5,6 @@ Description=Tang Server
 StandardInput=socket
 StandardOutput=socket
 StandardError=journal
-ExecStart=@libexecdir@/tangd @jwkdir@
+EnvironmentFile=@sysconfdir@/tangd/tangd.conf
+ExecStart=@libexecdir@/tangd $TANG_JWKDIR $TANG_AUTHDIR
 User=@user@

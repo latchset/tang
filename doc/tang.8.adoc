@@ -164,10 +164,10 @@ ifdef::freebsd[]
        command_args="${_tangd_listen_args} SYSTEM:\"${tangd_executable} ${tangd_jwkdir} ${tangd_jwkdir}/auth 2>> ${tangd_logfile} \" &"
 endif::[]
 ifndef::freebsd[]
-   Edit the *ExecStart=*  line in the *tangd@.service* unit file by
-   extending it with */var/db/tang/auth*.  Like this:
+   In the */etc/tangd/tangd.conf* configuration file, set the TANG_AUTHDIR to the
+   directory of the authorization files:
 
-       ExecStart=/usr/libexec/tangd /var/db/tang /var/db/tang/authorized
+       TANG_AUTHDIR=/var/db/tang/auth
 endif::[]
 
 2.  Encrypt some data:

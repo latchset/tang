@@ -21,8 +21,9 @@ centos:*)
     yum -y clean all
     yum -y --setopt=deltarpm=0 update
     yum install -y yum-utils epel-release
-    yum config-manager -y --set-enabled CRB \
-        || yum config-manager -y --set-enabled powertools || :
+    yum config-manager -y --set-enabled PowerTools \
+        || yum config-manager -y --set-enabled powertools \
+        || yum config-manager -y --set-enabled CRB || :
     yum -y install meson socat
     yum-builddep -y tang
     ;;

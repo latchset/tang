@@ -5,7 +5,7 @@ debian:*|ubuntu:*)
     export DEBIAN_FRONTEND=noninteractive
     apt clean
     apt update
-    apt -y install gcc meson pkg-config libjose-dev jose libhttp-parser-dev \
+    apt -y install gcc meson pkg-config libjose-dev jose llhttp \
                    systemd gcovr curl socat
     ;;
 
@@ -13,7 +13,7 @@ fedora:*)
     echo 'max_parallel_downloads=10' >> /etc/dnf/dnf.conf
     dnf -y clean all
     dnf -y --setopt=deltarpm=0 update
-    dnf -y install gcc meson pkgconfig libjose-devel jose http-parser-devel \
+    dnf -y install gcc meson pkgconfig libjose-devel jose llhttp-devel \
                    systemd gcovr curl socat
     ;;
 
@@ -23,7 +23,7 @@ centos:*)
     yum install -y yum-utils epel-release
     yum config-manager -y --set-enabled PowerTools \
         || yum config-manager -y --set-enabled powertools || :
-    yum -y install meson socat
+    yum -y install meson socat llhttp-devel
     yum-builddep -y tang
     ;;
 

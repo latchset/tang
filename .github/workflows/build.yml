@@ -14,16 +14,16 @@ jobs:
           - centos:7
           - quay.io/centos/centos:stream8
           - quay.io/centos/centos:stream9
-          - debian:testing
-          - debian:latest
-          - ubuntu:rolling
-          - ubuntu:bionic
+#          - debian:testing
+#          - debian:latest
+#          - ubuntu:rolling
+#          - ubuntu:bionic
         stable: [true]
         include:
           - os: fedora:rawhide
             stable: false
-          - os: ubuntu:devel
-            stable: false
+#          - os: ubuntu:devel
+#            stable: false
     steps:
       - uses: actions/checkout@v2
 

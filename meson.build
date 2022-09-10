@@ -53,13 +53,13 @@ add_project_arguments(
 jose = dependency('jose', version: '>=8')
 a2x = find_program('a2x', required: false)
 compiler = meson.get_compiler('c')
-if not compiler.has_header('http_parser.h',args : '-I/usr/local/include')
-  error('http-parser devel files not found.')
+if not compiler.has_header('llhttp.h',args : '-I/usr/local/include')
+  error('llhttp devel files not found.')
 endif
 if host_machine.system() == 'freebsd'
-  http_parser = compiler.find_library('http_parser',dirs : '/usr/local/lib')
+  http_parser = compiler.find_library('libllhttp',dirs : '/usr/local/lib')
 else
-  http_parser = compiler.find_library('http_parser')
+  http_parser = compiler.find_library('libllhttp')
 endif
 
 licenses = ['COPYING']

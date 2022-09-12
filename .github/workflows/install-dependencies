@@ -17,11 +17,11 @@ fedora:*)
                    systemd gcovr curl socat
     ;;
 
-centos:*)
+*centos:*)
     yum -y clean all
     yum -y --setopt=deltarpm=0 update
     yum install -y yum-utils epel-release
-    yum config-manager -y --set-enabled PowerTools \
+    yum config-manager -y --set-enabled crb \
         || yum config-manager -y --set-enabled powertools || :
     yum -y install meson socat
     yum-builddep -y tang

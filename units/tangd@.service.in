@@ -1,5 +1,6 @@
 [Unit]
 Description=Tang Server
+Documentation=man:tang(8)
 
 [Service]
 StandardInput=socket

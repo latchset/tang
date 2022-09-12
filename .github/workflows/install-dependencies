@@ -26,5 +26,15 @@ centos:*)
     yum -y install meson socat
     yum-builddep -y tang
     ;;
+
+*centos:stream*)
+    dnf -y clean all
+    dnf -y --setopt=deltarpm=0 update
+    dnf install -y dnf-plugins-core epel-release
+    dnf config-manager -y --set-enabled powertools \
+        || dnf config-manager -y --set-enabled crb || :
+    dnf -y install meson socat
+    dnf builddep -y tang
+    ;;
 esac
 # vim: set ts=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:

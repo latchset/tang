@@ -363,6 +363,8 @@ load_keys(const char* jwkdir)
         }
 
         if (strcmp(dot, pattern) == 0) {
+            json_error_t error;
+
             /* Found a file with .jwk extension. */
             if (snprintf(filepath, PATH_MAX, "%s/%s", jwkdir, d->d_name) < 0) {
                 fprintf(stderr, "Unable to prepare variable with file full path (%s); skipping\n", d->d_name);
@@ -371,7 +373,10 @@ load_keys(const char* jwkdir)
             filepath[sizeof(filepath) - 1] = '\0';
             json_auto_t* json = json_load_file(filepath, 0, NULL);
             if (!json) {
-                fprintf(stderr, "Invalid JSON file (%s); skipping\n", filepath);
+                enum json_error_code code = json_error_code(&error);
+                fprintf(stderr, "Cannot load JSON file (%s); skipping\n", filepath);
+                fprintf(stderr, "error code %d text %s line %d col %d pos %d\n",
+                    code, error.text, error.line, error.column, error.position);
                 continue;
             }
 

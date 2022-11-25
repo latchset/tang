@@ -369,9 +369,12 @@ load_keys(const char* jwkdir)
                 continue;
             }
             filepath[sizeof(filepath) - 1] = '\0';
-            json_auto_t* json = json_load_file(filepath, 0, NULL);
+            json_error_t error;
+            json_auto_t* json = json_load_file(filepath, 0, &error);
             if (!json) {
-                fprintf(stderr, "Invalid JSON file (%s); skipping\n", filepath);
+                fprintf(stderr, "Cannot load JSON file (%s); skipping\n", filepath);
+                fprintf(stderr, "error text %s, line %d, col %d, pos %d\n",
+                    error.text, error.line, error.column, error.position);
                 continue;
             }
 

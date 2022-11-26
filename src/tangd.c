@@ -24,11 +24,17 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 
 #include <jose/jose.h>
 #include "keys.h"
+
+struct tang_config {
+    char *jwkdir;
+    char *authorization_dir;
+};
 
 static void
 str_cleanup(char **str)
@@ -45,9 +51,9 @@ adv(enum http_method method, const char *path, const char *body,
     __attribute__((cleanup(str_cleanup))) char *thp = NULL;
     __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info *tki = NULL;
     json_auto_t *jws = NULL;
-    const char *jwkdir = misc;
+    struct tang_config *tangcfg = misc;
 
-    tki = read_keys(jwkdir);
+    tki = read_keys(tangcfg->jwkdir);
     if (!tki || tki->m_keys_count == 0) {
         return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
     }
@@ -74,6 +80,20 @@ adv(enum http_method method, const char *path, const char *body,
                       "\r\n%s", strlen(adv), adv);
 }
 
+
+static bool check_rec_authorization(const char *authdir, const char *thp)
+{
+    char auth_file[PATH_MAX+1];
+    snprintf(auth_file, PATH_MAX, "%s/%s", authdir, thp);
+
+    if (access(auth_file, F_OK | R_OK) != 0) {
+        fprintf(stderr, " ** WARNING ** Authorization check failed for %s\n", thp);
+        return false;
+    }
+    return true;
+}
+
+
 static int
 rec(enum http_method method, const char *path, const char *body,
     regmatch_t matches[], void *misc)
@@ -82,7 +102,7 @@ rec(enum http_method method, const char *path, const char *body,
     __attribute__((cleanup(str_cleanup))) char *thp = NULL;
     __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info *tki = NULL;
     size_t size = matches[1].rm_eo - matches[1].rm_so;
-    const char *jwkdir = misc;
+    struct tang_config *tangcfg = misc;
     json_auto_t *jwk = NULL;
     json_auto_t *req = NULL;
     json_auto_t *rep = NULL;
@@ -113,7 +133,7 @@ rec(enum http_method method, const char *path, const char *body,
     /*
      * Parse and validate the server-side JWK
      */
-    tki = read_keys(jwkdir);
+    tki = read_keys(tangcfg->jwkdir);
     if (!tki || tki->m_keys_count == 0) {
         return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
     }
@@ -125,6 +145,13 @@ rec(enum http_method method, const char *path, const char *body,
     jwk = find_jwk(tki, thp);
     if (!jwk)
         return http_reply(HTTP_STATUS_NOT_FOUND, NULL);
+
+    /* If a authorization directory is given, check if the client thp is authorized */
+    if (tangcfg->authorization_dir
+        && !check_rec_authorization(tangcfg->authorization_dir, thp))
+    {
+        return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
+    }
 
     if (!jose_jwk_prm(NULL, jwk, true, "deriveKey"))
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
@@ -165,32 +192,50 @@ static struct http_dispatch dispatch[] = {
     {}
 };
 
+static bool check_directory(const char *path)
+{
+    struct stat st = {};
+
+    if (stat(path, &st) != 0) {
+        fprintf(stderr, "Error calling stat() on path: %s: %m\n", path);
+        return false;
+    }
+
+    if (!S_ISDIR(st.st_mode)) {
+        fprintf(stderr, "Path is not a directory: %s\n", path);
+        return false;
+    }
+    return true;
+}
+
+
 int
 main(int argc, char *argv[])
 {
-    struct http_state state = { .dispatch = dispatch, .misc = argv[1] };
+    if (argc <= 1 || argc >= 4) {
+        fprintf(stderr, "Usage: %s <jwkdir> [<authorization_dir>]\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    if (!check_directory(argv[1])) {
+        return EXIT_FAILURE;
+    }
+
+    struct tang_config tangcfg = { .jwkdir = argv[1], .authorization_dir = NULL };
+     if (argc == 3) {
+        if (!check_directory(argv[2])) {
+            return EXIT_FAILURE;
+        }
+        tangcfg.authorization_dir = argv[2];
+    }
+
+    struct http_state state = { .dispatch = dispatch, .misc = &tangcfg };
     struct http_parser parser = { .data = &state };
-    struct stat st = {};
     char req[4096] = {};
     size_t rcvd = 0;
     int r = 0;
 
     http_parser_init(&parser, HTTP_REQUEST);
-
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <jwkdir>\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    if (stat(argv[1], &st) != 0) {
-        fprintf(stderr, "Error calling stat() on path: %s: %m\n", argv[1]);
-        return EXIT_FAILURE;
-    }
-
-    if (!S_ISDIR(st.st_mode)) {
-        fprintf(stderr, "Path is not a directory: %s\n", argv[1]);
-        return EXIT_FAILURE;
-    }
 
     for (;;) {
         r = read(STDIN_FILENO, &req[rcvd], sizeof(req) - rcvd - 1);

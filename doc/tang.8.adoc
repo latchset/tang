@@ -135,6 +135,67 @@ of the database directory to all your servers. Make sure you don't forget the
 unadvertised keys! Then set up DNS round-robin so that clients will be load
 balanced across your servers.
 
+== AUTHORIZATION CONTROL
+
+By default, tang will respond to any recovery requests.  This can be
+controlled on a per client key by adding a second argument to the *tang*
+command line.  This argument needs to be a path to an existing directory.
+This directory should be empty on first setup; this directory is called
+the 'authorization directory'.
+
+The concept is that an empty file named by the fingerprint of the client
+key needs to be present in the authorization directory to allow a
+decryption operation to happen.  If this file is missing, the request
+will be denied.
+
+An example:
+
+1. Configure tangd to use */var/db/tang/auth* as the authorization
+   directory.
+
+ifdef::freebsd[]
+   Edit the *tangd.rc* file in the */etc/rc.d* directory to add the authorization
+   directory to the *required_dirs* variable:
+
+       required_dirs="${tangd_jwkdir} ${tangd_jwkdir}/auth"
+
+   Then add this directory to the command line to be used for startup:
+
+       command_args="${_tangd_listen_args} SYSTEM:\"${tangd_executable} ${tangd_jwkdir} ${tangd_jwkdir}/auth 2>> ${tangd_logfile} \" &"
+endif::[]
+ifndef::freebsd[]
+   In the */etc/tangd/tangd.conf* configuration file, set the TANG_AUTHDIR to the
+   directory of the authorization files:
+
+       TANG_AUTHDIR=/var/db/tang/auth
+endif::[]
+
+2.  Encrypt some data:
+
+    $ echo "One of my secrets" | clevis encrypt tang '{"url":"http://localhost"}' > enc.jwe
+
+3.  Decrypting this will now fail:
+
+    $ clevis decrypt < enc.jwe
+    Error communicating with the server http://127.0.0.1
+
+4.  Extract the client fingerprint (*kid*) value from *enc.jwe*:
+
+    $ cut -d. -f1 t2.jwe | jose b64 dec -i - | jose fmt -j- -Og kid -Su-
+    EyIEfKd-_3UFMI5PSAp64UAAKeQ
+
+5.  Authorize this client fingerprint to be used; on the tang server run this:
+
+    # touch /var/db/tang/authorized/EyIEfKd-_3UFMI5PSAp64UAAKeQ
+
+6.  Decrypting this will now work:
+
+    $ clevis decrypt < enc.jwe
+    One of my secrets
+
+If the client fingerprint file in the authorization directory is removed on the
+server, decryption is not possible.
+
 == COMMANDS
 
 The Tang server provides no public commands.

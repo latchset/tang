@@ -1,0 +1,17 @@
+#
+# tangd configuration file
+#
+#
+# This file is read by the tangd@.service systemd unit file at startup
+#
+
+# Base directory for the JSON Web Key storage
+#
+TANG_JWKDIR=@jwkdir@
+
+# Directory for Tang authorization files
+# By enabling adding this directory, clients must have their fingerprints
+# registered in this directory to be able to decrypt their secrets.
+# See the tang(8) man page for details.
+#
+# TANG_AUTHDIR=@jwkdir@/auth

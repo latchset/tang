@@ -2,6 +2,7 @@ tangd = executable('tangd',
   'http.c',
   'keys.c',
   'tangd.c',
+  'socket.c',
   dependencies: [jose, http_parser],
   install: true,
   install_dir: libexecdir

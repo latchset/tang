@@ -63,6 +63,14 @@ ifndef::freebsd[]
 link:systemd.unit.5.adoc[*systemd.unit*(5)] and link:systemd.socket.5.adoc[*systemd.socket*(5)] for more information.
 endif::[]
 
+== STANDALONE OR VIA SYSTEMD
+
+The Tang server can be run via systemd socket activation or standalone
+when the parameter *-l* is passed. The default port used is 9090 and can
+be changed with the *-p* option.
+
+    tang -l -p 9090
+
 == KEY ROTATION
 
 In order to preserve the security of the system over the long run, you need to

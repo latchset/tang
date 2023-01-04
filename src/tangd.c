@@ -26,9 +26,35 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <getopt.h>
 
 #include <jose/jose.h>
 #include "keys.h"
+#include "socket.h"
+
+static const struct option long_options[] = {
+	{"port", 1, 0, 'p'},
+	{"listen", 0, 0, 'l'},
+	{"version", 0, 0, 'v'},
+	{"help", 0, 0, 'h'},
+	{NULL, 0, 0, 0}
+};
+
+static void
+print_help(const char *name)
+{
+	fprintf(stderr, "Usage: %s [OPTIONS] <jwkdir>\n", name);
+	fprintf(stderr, "  -p, --port=PORT                 Specify the port to listen (default 9090)\n");
+	fprintf(stderr, "  -l, --listen                    Run as a service and wait for connections\n");
+	fprintf(stderr, "  -v, --version                   Display program version\n");
+	fprintf(stderr, "  -h, --help                      Show this help message\n");
+}
+
+static void
+print_version(void)
+{
+	fprintf(stderr, "tangd %s\n", VERSION);
+}
 
 static void
 str_cleanup(char **str)
@@ -165,10 +191,12 @@ static struct http_dispatch dispatch[] = {
     {}
 };
 
-int
-main(int argc, char *argv[])
+#define DEFAULT_PORT 9090
+
+static int
+process_request(const char *jwkdir, int in_fileno)
 {
-    struct http_state state = { .dispatch = dispatch, .misc = argv[1] };
+    struct http_state state = { .dispatch = dispatch, .misc = (char*)jwkdir };
     struct http_parser parser = { .data = &state };
     struct stat st = {};
     char req[4096] = {};
@@ -177,23 +205,18 @@ main(int argc, char *argv[])
 
     http_parser_init(&parser, HTTP_REQUEST);
 
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <jwkdir>\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    if (stat(argv[1], &st) != 0) {
-        fprintf(stderr, "Error calling stat() on path: %s: %m\n", argv[1]);
+    if (stat(jwkdir, &st) != 0) {
+        fprintf(stderr, "Error calling stat() on path: %s: %m\n", jwkdir);
         return EXIT_FAILURE;
     }
 
     if (!S_ISDIR(st.st_mode)) {
-        fprintf(stderr, "Path is not a directory: %s\n", argv[1]);
+        fprintf(stderr, "Path is not a directory: %s\n", jwkdir);
         return EXIT_FAILURE;
     }
 
     for (;;) {
-        r = read(STDIN_FILENO, &req[rcvd], sizeof(req) - rcvd - 1);
+        r = read(in_fileno, &req[rcvd], sizeof(req) - rcvd - 1);
         if (r == 0)
             return rcvd > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
         if (r < 0)
@@ -213,4 +236,45 @@ main(int argc, char *argv[])
     }
 
     return EXIT_SUCCESS;
+}
+
+int
+main(int argc, char *argv[])
+{
+    int listen = 0;
+    int port = DEFAULT_PORT;
+    const char *jwkdir = NULL;
+
+    while (1) {
+	int c = getopt_long(argc, argv, "lp:vh", long_options, NULL);
+	if (c == -1)
+            break;
+
+	switch(c) {
+            case 'v':
+		print_version();
+		return EXIT_SUCCESS;
+	    case 'h':
+		print_help(argv[0]);
+		return EXIT_SUCCESS;
+	    case 'p':
+		port = atoi(optarg);
+		break;
+	    case 'l':
+		listen = 1;
+		break;
+	}
+    }
+
+    if (optind >= argc) {
+        fprintf(stderr, "Usage: %s [OPTION] <jwkdir>\n", argv[0]);
+	return EXIT_FAILURE;
+    }
+    jwkdir = argv[optind++];
+
+    if (listen == 0) { /* process one-shot query from stdin */
+	return process_request(jwkdir, STDIN_FILENO);
+    } else { /* listen and process all incoming connections */
+	return run_service(jwkdir, port, process_request);
+    }
 }

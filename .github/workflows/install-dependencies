@@ -6,7 +6,7 @@ debian:*|ubuntu:*)
     apt clean
     apt update
     apt -y install gcc meson pkg-config libjose-dev jose libhttp-parser-dev \
-                   systemd gcovr curl socat
+                   systemd gcovr curl socat iproute2
     ;;
 
 fedora:*)
@@ -14,7 +14,7 @@ fedora:*)
     dnf -y clean all
     dnf -y --setopt=deltarpm=0 update
     dnf -y install gcc meson pkgconfig libjose-devel jose http-parser-devel \
-                   systemd gcovr curl socat
+                   systemd gcovr curl socat iproute
     ;;
 
 centos:*)
@@ -23,7 +23,7 @@ centos:*)
     yum install -y yum-utils epel-release
     yum config-manager -y --set-enabled PowerTools \
         || yum config-manager -y --set-enabled powertools || :
-    yum -y install meson socat
+    yum -y install meson socat iproute
     yum-builddep -y tang
     ;;
 
@@ -33,7 +33,7 @@ centos:*)
     dnf install -y dnf-plugins-core epel-release
     dnf config-manager -y --set-enabled powertools \
         || dnf config-manager -y --set-enabled crb || :
-    dnf -y install meson socat
+    dnf -y install meson socat iproute
     dnf builddep -y tang
     ;;
 esac

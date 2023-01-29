@@ -36,7 +36,7 @@ random_port() {
 
 check_if_port_listening() {
     if [ -n "${TANG_BSD}" ]; then
-        sockstat -nl|grep "[\:\.]${1}" >/dev/null 2>&1
+        sockstat -l|grep "[\:\.]${1}" >/dev/null 2>&1
     else
 
         ss -anl|grep "[\:\.]${1}"|grep LISTEN >/dev/null 2>&1

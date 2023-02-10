@@ -17,6 +17,8 @@ jobs:
           - debian:testing
           - debian:latest
           - ubuntu:rolling
+          - ubuntu:jammy
+          - ubuntu:focal
           - ubuntu:bionic
         stable: [true]
         include:

@@ -4,44 +4,26 @@
 #
 
 # Should probably in the future allow running as non-root
-# and enable multiple interfaces in some cleaner way.
+# and enable multiple interfaces in some way in the future.
 
 # PROVIDE: tangd
 # REQUIRE: NETWORKING DAEMON
-# KEYWORD: nojail
 
 . /etc/rc.subr
 
 name="tangd"
 desc="Network Presence Binding Daemon (tang)"
 rcvar="tangd_enable"
-command="/usr/local/bin/socat"
 
 load_rc_config $name
 : ${tangd_enable:=no}
-: ${tangd_ip="127.0.0.1"}
 : ${tangd_port="8888"}
 : ${tangd_jwkdir="@jwkdir@"}
 : ${tangd_logfile="/var/log/tang"}
-: ${tangd_executable="@libexecdir@/tangd"}
 
-pidfile="/var/run/${name}.pid"
-required_files="@libexecdir@/${name}"
 required_dirs="${tangd_jwkdir}"
 
-start_postcmd="${name}_poststart"
-_tangd_listen_args="TCP-LISTEN:${tangd_port},bind=${tangd_ip},fork"
-command_args="${_tangd_listen_args} SYSTEM:\"${tangd_executable} ${tangd_jwkdir} 2>> ${tangd_logfile} \" &"
-
-# Since we may not be the only socat running we can't use the built-in process
-# management, so we'll need to use a pid file and find the pid from unique arguments.
-tangd_poststart() {
-  ps_pid=`ps ax -o pid= -o command= | grep ${_tangd_listen_args} | grep -v grep | awk '{print $1}'`
-  if [ -z "$ps_pid" ]; then
-    err 1 "Cannot get pid for ${command} ${command_args}"
-  fi
-  echo $ps_pid > ${pidfile}
-  return $?
-}
+command="@libexecdir@/${name}"
+command_args="-p ${tangd_port} -l ${tangd_jwkdir} 2>> ${tangd_logfile} &"
 
 run_rc_command "$1"

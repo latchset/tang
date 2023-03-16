@@ -3,6 +3,11 @@ tangd_service = configure_file(
   output: 'tangd@.service',
   configuration: data
 )
+tangd_socket = configure_file(
+  input: 'tangd.socket.in',
+  output: 'tangd.socket',
+  configuration: data
+)
 if host_machine.system() == 'freebsd'
   tangd_rc = configure_file(
     input: 'tangd.rc.in',
@@ -12,7 +17,7 @@ if host_machine.system() == 'freebsd'
     install_mode: ['rwxr-xr-x', 'root', 'wheel']
   )
 else
-  units += join_paths(meson.current_source_dir(), 'tangd.socket')
+  units += tangd_socket
   units += tangd_service
 endif
 

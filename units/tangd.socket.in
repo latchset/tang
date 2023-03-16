@@ -6,5 +6,8 @@ Documentation=man:tang(8)
 ListenStream=80
 Accept=true
 
+ExecStartPre=-/usr/bin/chmod --silent 0440 -- @jwkdir@/*.jwk @jwkdir@/.*.jwk
+ExecStartPre=-/usr/bin/chown -R @user@:@group@ @jwkdir@
+
 [Install]
 WantedBy=sockets.target

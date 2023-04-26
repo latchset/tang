@@ -192,7 +192,13 @@ int run_service(const char *jwkdir, int port, process_request_func pfunc)
 	fd_set read_fds;
 	struct timeval tv;
 
-	signal(SIGCHLD, handle_child);
+	struct sigaction new_action;
+
+	/* Set up the structure to specify the new action. */
+	new_action.sa_handler = handle_child;
+	sigemptyset (&new_action.sa_mask);
+	new_action.sa_flags = 0;
+	sigaction(SIGCHLD, &new_action, NULL);
 
 	r = listen_port(&slist, port);
 	if (r < 0) {

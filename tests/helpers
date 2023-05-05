@@ -45,22 +45,17 @@ check_if_port_listening() {
 
 wait_for_port()
 {
-        local ret
-        local port="${1}"
-        sleep 1
+    local port="${1}"
+    sleep 1
 
-        local i=0
-        while test $i -lt 90; do
-                check_if_port_listening ${port}
-                ret=$?
-                if test $ret = 0;then
-                        break
-                fi
-                i=`expr $i + 1`
-                echo "try $i: waiting for port"
-                sleep 1
-        done
-        return $ret
+    local i=0
+    while [ "${i}" -lt 90 ]; do
+        check_if_port_listening "${port}" && return 0
+        i=$((i + 1))
+        echo "try ${i}: waiting for port" >&2
+        sleep 1
+    done
+    return 1
 }
 
 start_server() {

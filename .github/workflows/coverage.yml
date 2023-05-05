@@ -47,7 +47,7 @@ jobs:
           [ -z "${ninja}" ] && export ninja=$(command -v ninja-build)
           gcovr -r .. -f ../src -f src/ -e ../tests -e tests -x coverage.xml
 
-      - uses: codecov/codecov-action@v1
+      - uses: codecov/codecov-action@v2
         with:
           file: build/coverage.xml
           fail_ci_if_error: true # optional (default = false)

@@ -38,7 +38,6 @@ typedef struct socket_list {
 	int s;
 	int family;
 	struct sockaddr addr;
-	socklen_t addrlen;
 	struct socket_list *next;
 } socket_list;
 
@@ -130,8 +129,7 @@ static int listen_port(socket_list **slist, int port)
 		}
 		lm->s = s;
 		lm->family = ptr->ai_family;
-		lm->addrlen = ptr->ai_addrlen;
-		memcpy(&lm->addr, ptr->ai_addr, ptr->ai_addrlen);
+		memcpy(&lm->addr, ptr->ai_addr, sizeof(*ptr->ai_addr));
 		lm->next = *slist;
 		*slist = lm;
 	}

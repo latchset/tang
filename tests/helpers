@@ -67,7 +67,10 @@ start_standalone_server() {
 }
 
 on_exit() {
-    if [ "$PID" ]; then kill "${PID}"; wait "${PID}" || true; fi
+    if [ "${PID}" ]; then
+        kill "${PID}" || true
+        wait "${PID}" || true
+    fi
     [ -d "${TMP}" ] && rm -rf "${TMP}"
 }
 

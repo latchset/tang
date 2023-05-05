@@ -170,6 +170,7 @@ static void spawn_process(int fd, const char *jwkdir,
 		close(fd);
 
 		pfunc(jwkdir, STDOUT_FILENO);
+		free_socket_list(slist);
 		exit(0);
 	} else if (pid == -1) {
 		perror("fork failed");

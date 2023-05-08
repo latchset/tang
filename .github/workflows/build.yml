@@ -17,9 +17,12 @@ jobs:
           - debian:testing
           - debian:latest
           - ubuntu:rolling
+          - ubuntu:lunar
           - ubuntu:jammy
           - ubuntu:focal
           - ubuntu:bionic
+          - ubuntu:trusty
+          - ubuntu:kinetic
         stable: [true]
         include:
           - os: fedora:rawhide
@@ -27,7 +30,7 @@ jobs:
           - os: ubuntu:devel
             stable: false
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Show OS information
         run: cat /etc/os-release 2>/dev/null || echo /etc/os-release not available

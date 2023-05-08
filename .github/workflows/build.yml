@@ -21,7 +21,6 @@ jobs:
           - ubuntu:jammy
           - ubuntu:focal
           - ubuntu:bionic
-          - ubuntu:trusty
           - ubuntu:kinetic
         stable: [true]
         include:

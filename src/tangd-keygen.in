@@ -38,6 +38,10 @@ set_perms() {
 [ $# -eq 3 ] && sig=$2 && exc=$3
 
 THP_DEFAULT_HASH=S256     # SHA-256.
+
+# Set default umask for file creation.
+umask 0337
+
 jwe=$(jose jwk gen -i '{"alg":"ES512"}')
 [ -z "$sig" ] && sig=$(echo "$jwe" | jose jwk thp -i- -a "${THP_DEFAULT_HASH}")
 echo "$jwe" > "$1/$sig.jwk"

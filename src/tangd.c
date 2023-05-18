@@ -32,8 +32,11 @@
 #include "keys.h"
 #include "socket.h"
 
+#define MAX_URL 256
+
 static const struct option long_options[] = {
 	{"port", 1, 0, 'p'},
+	{"endpoint", 1, 0, 'e'},
 	{"listen", 0, 0, 'l'},
 	{"version", 0, 0, 'v'},
 	{"help", 0, 0, 'h'},
@@ -45,6 +48,7 @@ print_help(const char *name)
 {
 	fprintf(stderr, "Usage: %s [OPTIONS] <jwkdir>\n", name);
 	fprintf(stderr, "  -p, --port=PORT                 Specify the port to listen (default 9090)\n");
+	fprintf(stderr, "  -e, --endpoint=ENDPOINT         Specify endpoint to listen (empty by default)\n");
 	fprintf(stderr, "  -l, --listen                    Run as a service and wait for connections\n");
 	fprintf(stderr, "  -v, --version                   Display program version\n");
 	fprintf(stderr, "  -h, --help                      Show this help message\n");
@@ -184,7 +188,7 @@ rec(http_method_t method, const char *path, const char *body,
                       "\r\n%s", strlen(enc), enc);
 }
 
-static struct http_dispatch dispatch[] = {
+static struct http_dispatch s_dispatch[] = {
     { adv, 1 << HTTP_GET,  2, "^/+adv/+([0-9A-Za-z_-]+)$" },
     { adv, 1 << HTTP_GET,  2, "^/+adv/*$" },
     { rec, 1 << HTTP_POST, 2, "^/+rec/+([0-9A-Za-z_-]+)$" },
@@ -196,7 +200,7 @@ static struct http_dispatch dispatch[] = {
 static int
 process_request(const char *jwkdir, int in_fileno)
 {
-    struct http_state state = { .dispatch = dispatch, .misc = (char*)jwkdir };
+    struct http_state state = { .dispatch = s_dispatch, .misc = (char*)jwkdir };
     http_parser_t parser;
     struct stat st = {};
     char req[4096] = {};
@@ -244,9 +248,10 @@ main(int argc, char *argv[])
     int listen = 0;
     int port = DEFAULT_PORT;
     const char *jwkdir = NULL;
+    const char *endpoint = NULL;
 
     while (1) {
-	int c = getopt_long(argc, argv, "lp:vh", long_options, NULL);
+	int c = getopt_long(argc, argv, "lp:e:vh", long_options, NULL);
 	if (c == -1)
             break;
 
@@ -260,6 +265,9 @@ main(int argc, char *argv[])
 	    case 'p':
 		port = atoi(optarg);
 		break;
+	    case 'e':
+		endpoint = optarg;
+		break;
 	    case 'l':
 		listen = 1;
 		break;
@@ -272,9 +280,24 @@ main(int argc, char *argv[])
     }
     jwkdir = argv[optind++];
 
+    char adv_thp_endpoint[MAX_URL] = {};
+    char adv_endpoint[MAX_URL] = {};
+    char rec_endpoint[MAX_URL] = {};
+    if (endpoint != NULL) {
+        char *endpoint_ptr = (char*)endpoint;
+        while (*endpoint_ptr == '/') {
+            endpoint_ptr++;
+        }
+        snprintf(adv_thp_endpoint, MAX_URL, "^/%s/+adv/+([0-9A-Za-z_-]+)$", endpoint_ptr);
+        snprintf(adv_endpoint, MAX_URL, "^/%s/+adv/*$", endpoint_ptr);
+        snprintf(rec_endpoint, MAX_URL, "^/%s/+rec/+([0-9A-Za-z_-]+)$", endpoint_ptr);
+        s_dispatch[0].re = adv_thp_endpoint;
+        s_dispatch[1].re = adv_endpoint;
+        s_dispatch[2].re = rec_endpoint;
+    }
     if (listen == 0) { /* process one-shot query from stdin */
-	return process_request(jwkdir, STDIN_FILENO);
+        return process_request(jwkdir, STDIN_FILENO);
     } else { /* listen and process all incoming connections */
-	return run_service(jwkdir, port, process_request);
+        return run_service(jwkdir, port, process_request);
     }
 }

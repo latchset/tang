@@ -51,3 +51,17 @@ rec_second_phase () {
            http://127.0.0.1:$PORT/rec/${exc_kid} < $TMP/exc.pub.jwk`
     [ "$good" = "$test" ]
 }
+
+rec_second_phase_endpoint () {
+    # Make sure that GET fails
+    curl -sf http://127.0.0.1:$PORT/$ENDPOINT/rec && expected_fail
+    curl -sf http://127.0.0.1:$PORT/$ENDPOINT/rec/ && expected_fail
+
+    # Make a recovery request (NOTE: this is insecure! Don't do this in real code!)
+    good=`jose jwk exc -i '{"alg":"ECMR","key_ops":["deriveKey"]}' -l $TMP/exc.jwk -r $TMP/db/exc.jwk`
+    test=`curl -sf -X POST \
+           -H "Content-Type: application/jwk+json" \
+           --data-binary @- \
+           http://127.0.0.1:$PORT/$ENDPOINT/rec/${exc_kid} < $TMP/exc.pub.jwk`
+    [ "$good" = "$test" ]
+}

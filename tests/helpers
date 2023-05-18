@@ -30,7 +30,12 @@ random_port() {
     if [ -n "${TANG_BSD}" ]; then
         jot -r 1 1024 65536
     else
-        shuf -i 1024-65536 -n 1
+        if test -f /dev/urandom;
+        then
+            shuf -i 1024-65535 -n 1 --random-file=/dev/urandom
+        else
+            shuf -i 1024-65535 -n 1
+        fi
     fi
 }
 
@@ -62,8 +67,16 @@ start_server() {
     "${SOCAT}" TCP-LISTEN:"${1}",bind=127.0.0.1,fork SYSTEM:"${VALGRIND} tangd ${TMP}/db" &
 }
 
+start_server_endpoint() {
+    "${SOCAT}" TCP-LISTEN:"${1}",bind=127.0.0.1,fork SYSTEM:"${VALGRIND} tangd ${TMP}/db -e ${ENDPOINT}" &
+}
+
 start_standalone_server() {
     ${VALGRIND} tangd -p ${1} -l ${TMP}/db &
+}
+
+start_standalone_server_endpoint() {
+    ${VALGRIND} tangd -p ${1} -l ${TMP}/db -e ${2} &
 }
 
 on_exit() {

@@ -36,47 +36,47 @@ adv_startup () {
 
 adv_second_phase () {
     # Make sure requests on the root fail
-    fetch / && expected_fail
+    fetch "${ENDPOINT}"/ && expected_fail
 
     # The request should fail (404) for non-signature key IDs
-    fetch /adv/`jose jwk thp -i $TMP/db/exc.jwk` && expected_fail
-    fetch /adv/`jose jwk thp -a S512 -i $TMP/db/exc.jwk` && expected_fail
+    fetch "${ENDPOINT}"/adv/`jose jwk thp -i $TMP/db/exc.jwk` && expected_fail
+    fetch "${ENDPOINT}"/adv/`jose jwk thp -a S512 -i $TMP/db/exc.jwk` && expected_fail
 
     # The default advertisement fetch should succeed and pass verification
-    fetch /adv
-    fetch /adv | ver $TMP/db/sig.jwk
-    fetch /adv/ | ver $TMP/db/sig.jwk
+    fetch "${ENDPOINT}"/adv
+    fetch "${ENDPOINT}"/adv | ver $TMP/db/sig.jwk
+    fetch "${ENDPOINT}"/adv/ | ver $TMP/db/sig.jwk
 
     # Fetching by any thumbprint should work
-    fetch /adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/sig.jwk
-    fetch /adv/`jose jwk thp -a S512 -i $TMP/db/sig.jwk` | ver $TMP/db/sig.jwk
+    fetch "${ENDPOINT}"/adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/sig.jwk
+    fetch "${ENDPOINT}"/adv/`jose jwk thp -a S512 -i $TMP/db/sig.jwk` | ver $TMP/db/sig.jwk
 
     # Requesting an adv by an advertised key ID should't be signed by hidden keys
-    fetch /adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/.sig.jwk && expected_fail
-    fetch /adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/.oth.jwk && expected_fail
+    fetch "${ENDPOINT}"/adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/.sig.jwk && expected_fail
+    fetch "${ENDPOINT}"/adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/.oth.jwk && expected_fail
 
     # Verify that the default advertisement is not signed with hidden signature keys
-    fetch /adv/ | ver $TMP/db/.oth.jwk && expected_fail
-    fetch /adv/ | ver $TMP/db/.sig.jwk && expected_fail
+    fetch "${ENDPOINT}"/adv/ | ver $TMP/db/.oth.jwk && expected_fail
+    fetch "${ENDPOINT}"/adv/ | ver $TMP/db/.sig.jwk && expected_fail
 
     # A private key advertisement is signed by all advertised keys and the requested private key
-    fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` | ver $TMP/db/sig.jwk
-    fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` | ver $TMP/db/.sig.jwk
-    fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` | ver $TMP/db/.oth.jwk && expected_fail
+    fetch "${ENDPOINT}"/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | ver $TMP/db/sig.jwk
+    fetch "${ENDPOINT}"/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | ver $TMP/db/.sig.jwk
+    fetch "${ENDPOINT}"/adv/`jose jwk thp -i $TMP/db/.sig.jwk` | ver $TMP/db/.oth.jwk && expected_fail
 
     # Verify that the advertisements contain the cty parameter
-    fetch /adv | jose fmt -j- -Og protected -SyOg cty -Sq "jwk-set+json" -E
-    fetch /adv/`jose jwk thp -i $TMP/db/.sig.jwk` \
+    fetch "${ENDPOINT}"/adv | jose fmt -j- -Og protected -SyOg cty -Sq "jwk-set+json" -E
+    fetch "${ENDPOINT}"/adv/`jose jwk thp -i $TMP/db/.sig.jwk` \
         | jose fmt -j- -Og signatures -A \
                -g 0 -Og protected -SyOg cty -Sq "jwk-set+json" -EUUUUU \
                -g 1 -Og protected -SyOg cty -Sq "jwk-set+json" -EUUUUU
 
     THP_DEFAULT_HASH=S256     # SHA-256.
-    test "$(tang-show-keys $PORT)" = "$(jose jwk thp -a "${THP_DEFAULT_HASH}" -i $TMP/db/sig.jwk)"
+    test "$(tang-show-keys $PORT $ENDPOINT)" = "$(jose jwk thp -a "${THP_DEFAULT_HASH}" -i $TMP/db/sig.jwk)"
 
     # Check that new keys will be created if none exist.
     rm -rf "${TMP}/db" && mkdir -p "${TMP}/db"
-    fetch /adv
+    fetch "${ENDPOINT}"/adv
 
     # Now let's make sure the new keys were named using our default thumbprint
     # hash and then rotate them and check if we still create new keys.
@@ -88,7 +88,7 @@ adv_second_phase () {
         mv -f -- "${k}" ".${k}"
     done
     cd -
-    fetch /adv
+    fetch "${ENDPOINT}"/adv
 
     # Lets's now test with multiple pairs of keys.
     for i in 1 2 3 4 5 6 7 8 9; do
@@ -103,12 +103,12 @@ adv_second_phase () {
     done
 
     # Verify the advertisement is correct.
-    validate "$(fetch /adv)"
+    validate "$(fetch "${ENDPOINT}"/adv)"
 
     # And make sure we can fetch an adv by its thumbprint.
     for jwk in "${TMP}"/db/other-sig-*.jwk; do
 	for alg in $(jose alg -k hash); do
-		fetch /adv/"$(jose jwk thp -a "${alg}" -i "${jwk}")" | ver "${jwk}"
+		fetch "${ENDPOINT}"/adv/"$(jose jwk thp -a "${alg}" -i "${jwk}")" | ver "${jwk}"
 	done
     done
 
@@ -130,5 +130,5 @@ adv_second_phase () {
 	valid_key_perm "${jwk}"
     done
     [ -z "${thp}" ] && die "There should be valid keys after rotation"
-    test "$(tang-show-keys $PORT)" = "${thp}"
+    test "$(tang-show-keys $PORT $ENDPOINT)" = "${thp}"
 }

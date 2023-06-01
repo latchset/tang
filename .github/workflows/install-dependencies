@@ -1,5 +1,9 @@
 #!/bin/sh -ex
 
+echo '--------------- DISTRO -------------'
+echo $DISTRO
+echo '--------------- DISTRO -------------'
+
 case "${DISTRO}" in
 debian:*|ubuntu:*)
     export DEBIAN_FRONTEND=noninteractive
@@ -10,7 +14,16 @@ debian:*|ubuntu:*)
     ;;
 
 fedora:*)
+    grep -e '\[[a-z]*\]' /etc/dnf/dnf.conf ||
+    {
+        printf '[main]\n' >> /etc/dnf/dnf.conf.fixed
+        cat /etc/dnf/dnf.conf >> /etc/dnf/dnf.conf.fixed
+        mv /etc/dnf/dnf.conf.fixed /etc/dnf/dnf.conf
+    }
     echo 'max_parallel_downloads=10' >> /etc/dnf/dnf.conf
+    echo '--------------- /etc/dnf/dnf.conf -------------'
+    cat /etc/dnf/dnf.conf
+    echo '--------------- /etc/dnf/dnf.conf -------------'
     dnf -y clean all
     dnf -y --setopt=deltarpm=0 update
     dnf -y install gcc meson pkgconfig libjose-devel jose http-parser-devel \
@@ -34,7 +47,7 @@ centos:*)
     dnf config-manager -y --set-enabled powertools \
         || dnf config-manager -y --set-enabled crb || :
     dnf -y install meson socat iproute
-    dnf builddep -y tang
+    dnf builddep -y tang --allowerasing --skip-broken --nobest
     ;;
 esac
 # vim: set ts=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:

@@ -9,7 +9,7 @@ debian:*|ubuntu:*)
                    systemd gcovr curl socat iproute2
     ;;
 
-fedora:*)
+*fedora:*)
     echo 'max_parallel_downloads=10' >> /etc/dnf/dnf.conf
     dnf -y clean all
     dnf -y --setopt=deltarpm=0 update
@@ -34,7 +34,7 @@ centos:*)
     dnf config-manager -y --set-enabled powertools \
         || dnf config-manager -y --set-enabled crb || :
     dnf -y install meson socat iproute
-    dnf builddep -y tang
+    dnf builddep -y tang --allowerasing --skip-broken --nobest
     ;;
 esac
 # vim: set ts=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:

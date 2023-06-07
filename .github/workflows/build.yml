@@ -24,7 +24,7 @@ jobs:
           - ubuntu:kinetic
         stable: [true]
         include:
-          - os: fedora:rawhide
+          - os: quay.io/fedora/fedora:rawhide
             stable: false
           - os: ubuntu:devel
             stable: false

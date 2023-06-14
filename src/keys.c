@@ -307,6 +307,9 @@ create_new_keys(const char* jwkdir)
 {
     const char* alg[] = {"ES512", "ECMR", NULL};
     char path[PATH_MAX];
+
+    /* Set default umask for file creation. */
+    umask(0337);
     for (int i = 0; alg[i] != NULL; i++) {
         json_auto_t* jwk = jwk_generate(alg[i]);
         if (!jwk) {

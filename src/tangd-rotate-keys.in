@@ -79,6 +79,10 @@ cd "${JWKDIR}" || error "Unable to change to keys directory '${JWKDIR}'"
 
     # Create a new set of keys.
     DEFAULT_THP_HASH="S256"
+
+    # Set default umask for file creation.
+    umask 0337
+
     for alg in "ES512" "ECMR"; do
         json="$(printf '{"alg": "%s"}' "${alg}")"
         jwe="$(jose jwk gen --input "${json}")"

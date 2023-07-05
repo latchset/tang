@@ -1,7 +1,13 @@
 ---
 name: build
 
-on: [push, pull_request]
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - '**.md'
 
 jobs:
   build:
@@ -32,7 +38,8 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Show OS information
-        run: cat /etc/os-release 2>/dev/null || echo /etc/os-release not available
+        run: cat /etc/os-release 2>/dev/null || \
+          echo /etc/os-release not available
 
       - name: Install build dependencies
         run: bash .github/workflows/install-dependencies

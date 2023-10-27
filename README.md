@@ -124,6 +124,12 @@ Care should be taken to ensure that, when deploying in a container cluster,
 that the Tang keys are not stored on the same physical medium that you wish to
 protect.
 
+#### Android
+
+Why not run a tang server on your android phone that is connected via WIFI to the same network is your protected machine?
+This solution might be most interesting to the Linux desktop users:
+https://github.com/gernotfeichter/tanga
+
 ### Building and Installing from Source
 
 Building Tang is fairly straightforward:

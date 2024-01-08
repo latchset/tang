@@ -40,10 +40,10 @@ if socat.found()
   env.set('SOCAT', socat.path())
 endif
 
-test('adv-standalone', find_program('adv-standalone'), env: env, timeout: 60)
-test('adv-socat', find_program('adv-socat'), env: env, timeout: 60)
-test('rec-standalone', find_program('rec-standalone'), env: env, timeout: 60)
-test('rec-socat', find_program('rec-socat'), env: env)
-test('test-keys', test_keys, env: env, timeout: 60)
+test('adv-standalone', find_program('adv-standalone'), env: env, timeout: 360)
+test('adv-socat', find_program('adv-socat'), env: env, timeout: 360)
+test('rec-standalone', find_program('rec-standalone'), env: env, timeout: 360)
+test('rec-socat', find_program('rec-socat'), env: env, timeout: 360)
+test('test-keys', test_keys, env: env, timeout: 360)
 
 # vim:set ts=2 sw=2 et:

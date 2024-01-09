@@ -13,7 +13,7 @@ debian:*|ubuntu:*)
     echo 'max_parallel_downloads=10' >> /etc/dnf/dnf.conf
     dnf -y clean all
     dnf -y --setopt=deltarpm=0 update
-    dnf -y install gcc meson pkgconfig libjose-devel jose http-parser-devel \
+    dnf -y install gcc meson pkgconfig libjose-devel jose llhttp-devel \
                    systemd gcovr curl socat iproute
     ;;
 

@@ -64,7 +64,7 @@ str_cleanup(char **str)
 }
 
 static int
-adv(enum http_method method, const char *path, const char *body,
+adv(http_method_t method, const char *path, const char *body,
     regmatch_t matches[], void *misc)
 {
     __attribute__((cleanup(str_cleanup))) char *adv = NULL;
@@ -101,7 +101,7 @@ adv(enum http_method method, const char *path, const char *body,
 }
 
 static int
-rec(enum http_method method, const char *path, const char *body,
+rec(http_method_t method, const char *path, const char *body,
     regmatch_t matches[], void *misc)
 {
     __attribute__((cleanup(str_cleanup))) char *enc = NULL;
@@ -197,13 +197,14 @@ static int
 process_request(const char *jwkdir, int in_fileno)
 {
     struct http_state state = { .dispatch = dispatch, .misc = (char*)jwkdir };
-    struct http_parser parser = { .data = &state };
+    http_parser_t parser;
     struct stat st = {};
     char req[4096] = {};
     size_t rcvd = 0;
     int r = 0;
 
-    http_parser_init(&parser, HTTP_REQUEST);
+    tang_http_parser_init(&parser, &http_settings);
+    parser.data = &state;
 
     if (stat(jwkdir, &st) != 0) {
         fprintf(stderr, "Error calling stat() on path: %s: %m\n", jwkdir);
@@ -224,17 +225,16 @@ process_request(const char *jwkdir, int in_fileno)
 
         rcvd += r;
 
-        r = http_parser_execute(&parser, &http_settings, req, rcvd);
-        if (parser.http_errno != 0) {
+        r = tang_http_parser_execute(&parser, &http_settings, req, rcvd);
+        if (tang_http_parser_errno(parser) != 0) {
             fprintf(stderr, "HTTP Parsing Error: %s\n",
-                    http_errno_description(parser.http_errno));
+                    tang_http_errno_description(&parser, tang_http_parser_errno(parser)));
             return EXIT_SUCCESS;
         }
 
         memmove(req, &req[r], rcvd - r);
         rcvd -= r;
     }
-
     return EXIT_SUCCESS;
 }
 

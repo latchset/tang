@@ -36,7 +36,7 @@ HTTP_METHOD_MAP(XX)
 };
 
 static int
-on_url(http_parser *parser, const char *at, size_t length)
+on_url(http_parser_t *parser, const char *at, size_t length)
 {
     struct http_state *state = parser->data;
 
@@ -51,7 +51,7 @@ on_url(http_parser *parser, const char *at, size_t length)
 }
 
 static int
-on_body(http_parser *parser, const char *at, size_t length)
+on_body(http_parser_t *parser, const char *at, size_t length)
 {
     struct http_state *state = parser->data;
 
@@ -66,7 +66,7 @@ on_body(http_parser *parser, const char *at, size_t length)
 }
 
 static int
-on_message_complete(http_parser *parser)
+on_message_complete(http_parser_t *parser)
 {
     struct http_state *state = parser->data;
     const char *addr = NULL;
@@ -132,7 +132,7 @@ egress:
     return 0;
 }
 
-const http_parser_settings http_settings = {
+const http_settings_t http_settings = {
     .on_url = on_url,
     .on_body = on_body,
     .on_message_complete = on_message_complete,
@@ -140,7 +140,7 @@ const http_parser_settings http_settings = {
 
 int
 http_reply(const char *file, int line,
-           enum http_status code, const char *fmt, ...)
+           http_status_t code, const char *fmt, ...)
 {
     const char *msg = NULL;
     va_list ap;

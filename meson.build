@@ -55,13 +55,22 @@ add_project_arguments('-DVERSION="'+meson.project_version() + '"', language : 'c
 jose = dependency('jose', version: '>=8')
 a2x = find_program('a2x', required: false)
 compiler = meson.get_compiler('c')
-if not compiler.has_header('http_parser.h',args : '-I/usr/local/include')
-  error('http-parser devel files not found.')
-endif
-if host_machine.system() == 'freebsd'
-  http_parser = compiler.find_library('http_parser',dirs : '/usr/local/lib')
+
+http_lib = []
+if compiler.has_header('llhttp.h', args: '-I/usr/local/include')
+  http_lib = 'llhttp'
+  add_project_arguments('-DUSE_LLHTTP', language: 'c')
 else
-  http_parser = compiler.find_library('http_parser')
+  if not compiler.has_header('http_parser.h', args: '-I/usr/local/include')
+    error('neither llhttp nor http-parser devel files found.')
+  endif
+  http_lib = 'http_parser'
+endif
+
+if host_machine.system() == 'freebsd'
+  http_parser = compiler.find_library(http_lib, dirs : '/usr/local/lib')
+else
+  http_parser = compiler.find_library(http_lib)
 endif
 
 licenses = ['COPYING']

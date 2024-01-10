@@ -21,7 +21,6 @@ jobs:
           - ubuntu:jammy
           - ubuntu:focal
           - ubuntu:bionic
-          - ubuntu:kinetic
         stable: [true]
         include:
           - os: quay.io/fedora/fedora:rawhide

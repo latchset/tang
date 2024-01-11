@@ -178,10 +178,9 @@ static void spawn_process(int fd, const char *jwkdir,
 
 static void handle_child(int sig)
 {
-	pid_t pid;
 	int status;
 
-	while ((pid = waitpid(-1, &status, WNOHANG)) > 0);
+	while ((waitpid(-1, &status, WNOHANG)) > 0);
 }
 
 int run_service(const char *jwkdir, int port, process_request_func pfunc)

@@ -77,16 +77,18 @@ If you really want to build from source on Fedora, you will need the following
 packages:
 
 1. llhttp - ``llhttp-devel``
-2. systemd - ``systemd``
+2. systemd - ``systemd`` (Desirable but not strictly required.)
 3. jose - ``jose``, ``libjose-devel``
-4. curl - curl (only needed for running tests)
+4. curl - ``curl`` (only needed for running tests)
+5. socat - ``socat`` (only needed for running tests)
 
 #### OpenWrt
 
 Tang is also capable of running on devices without systemd even for example
 OpenWrt (see: [this PR](https://github.com/openwrt/packages/pull/5447)).
 Instead of using systemd for socket activation you can use another daemon for
-spawning services like xinetd.
+spawning services like xinetd. As of version 12 tang can also be run as a
+standalone server without a separate socket listener.
 
 An example of configuration file for Tang using xinetd can be found in the
 `units/` directory as 'tangdx'.  Using that will also require installing the
@@ -132,7 +134,7 @@ protect.
 Building Tang is fairly straightforward:
 
     $ mkdir build && cd build
-    $ meson .. --prefix=/usr
+    $ meson setup .. --prefix=/usr
     $ ninja
     $ sudo ninja install
 

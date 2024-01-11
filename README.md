@@ -241,7 +241,7 @@ generates a new (random) JWK (`cJWK`). The client performs its half of a
 standard ECDH exchange producing `dJWK` which it uses to encrypt the data.
 Afterwards, it discards `dJWK` and the private key from `cJWK`.
 
-The client then store http_parser. s `cJWK` for later use in the recovery step. Generally
+The client then stores `cJWK` for later use in the recovery step. Generally
 speaking, the client may also store other data, such as the URL of the Tang
 server or the trusted advertisement signing keys.
 

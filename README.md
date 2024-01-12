@@ -63,10 +63,12 @@ identifying information from the client.
 Tang requires a two other software libraries:
 
 1. jose >= 8 - https://github.com/latchset/jose
-2. Either llhttp or http_parser >= 2.8
-   https://github.com/nodejs/llhttp
-   https://github.com/nodejs/http-parser
-   http_parser is unmaintained, but llhttp is not availalbe in all distributions    
+2. Either:
+   - llhttp - https://github.com/nodejs/llhttp
+   - http_parser >= 2.8 - https://github.com/nodejs/http-parser
+
+http_parser is unmaintained, but llhttp is not availalbe in all
+distributions - notably Debian and CentOS.
 
 #### Fedora
 

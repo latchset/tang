@@ -60,11 +60,13 @@ identifying information from the client.
 ## Getting Started
 ### Dependencies
 
-Tang requires a few other software libraries:
+Tang requires a two other software libraries:
 
-1. llhttp - https://github.com/nodejs/llhttp
-2. systemd - https://github.com/systemd/systemd
-3. jose >= 8 - https://github.com/latchset/jose
+1. jose >= 8 - https://github.com/latchset/jose
+2. Either llhttp or http_parser >= 2.8
+   https://github.com/nodejs/llhttp
+   https://github.com/nodejs/http-parser
+   http_parser is unmaintained, but llhttp is not availalbe in all distributions    
 
 #### Fedora
 
@@ -77,7 +79,7 @@ If you really want to build from source on Fedora, you will need the following
 packages:
 
 1. llhttp - ``llhttp-devel``
-2. systemd - ``systemd`` (Desirable but not strictly required.)
+2. systemd - ``systemd`` (desirable but not strictly required)
 3. jose - ``jose``, ``libjose-devel``
 4. curl - ``curl`` (only needed for running tests)
 5. socat - ``socat`` (only needed for running tests)

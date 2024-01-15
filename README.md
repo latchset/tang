@@ -60,7 +60,7 @@ identifying information from the client.
 ## Getting Started
 ### Dependencies
 
-Tang requires a two other software libraries:
+Tang requires two other software libraries:
 
 1. jose >= 8 - https://github.com/latchset/jose
 2. Either:

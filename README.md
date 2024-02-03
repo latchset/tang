@@ -60,11 +60,15 @@ identifying information from the client.
 ## Getting Started
 ### Dependencies
 
-Tang requires a few other software libraries:
+Tang requires two other software libraries:
 
-1. http-parser >= 2.8.0 - https://github.com/nodejs/http-parser
-2. systemd - https://github.com/systemd/systemd
-3. jose >= 8 - https://github.com/latchset/jose
+1. jose >= 8 - https://github.com/latchset/jose
+2. Either:
+   - llhttp - https://github.com/nodejs/llhttp
+   - http_parser >= 2.8 - https://github.com/nodejs/http-parser
+
+http_parser is unmaintained, but llhttp is not availalbe in all
+distributions - notably Debian and CentOS.
 
 #### Fedora
 
@@ -76,44 +80,49 @@ additional settings (such as SETGID directories) out of the box. To install it:
 If you really want to build from source on Fedora, you will need the following
 packages:
 
-1. http-parser - ``http-parser-devel``
-2. systemd - ``systemd``
+1. llhttp - ``llhttp-devel``
+2. systemd - ``systemd`` (desirable but not strictly required)
 3. jose - ``jose``, ``libjose-devel``
-4. curl - curl (only needed for running tests)
+4. curl - ``curl`` (only needed for running tests)
+5. socat - ``socat`` (only needed for running tests)
 
 #### OpenWrt
 
 Tang is also capable of running on devices without systemd even for example
 OpenWrt (see: [this PR](https://github.com/openwrt/packages/pull/5447)).
 Instead of using systemd for socket activation you can use another daemon for
-spawning services like xinetd.
+spawning services like xinetd. As of version 12 tang can also be run as a
+standalone server without a separate socket listener.
 
 An example of configuration file for Tang using xinetd can be found in the
 `units/` directory as 'tangdx'.  Using that will also require installing the
 wrapper from the 'units/' directroy 'tangdw' in '/usr/libexec/tangdw'.
 
-#### FreeBSD, HardenedBSD and OPNsense
+#### FreeBSD
 
-Tang is also capable of running on FreeBSD Unix variants. The build is simple
-and differs only sligtly from the general instructions.
+Tang is also capable of running on FreeBSD Unix variants. It is available in
+the ports tree and package system.  As root you can install it with:
 
-    (as root) # pkg install jose git meson pkgconf jansson openssl asciidoc http-parser socat
-    $ mkdir build && cd build
-    $ meson .. --prefix=/usr/local --localstatedir=/usr/local/var
-    $ ninja
-    (as root) # ninja install
-    (as root) # mkdir -m 0700 /usr/local/var/db/tang
-    (as root) service tangd enable
-    (as root) service tangd start
+    # pkg install tang
+    # service tangd enable
+    # service tangd start
 
-Once built it does not require the many packages above, but still requires
-jose, socat and http_parser. 
+#### OPNsense
 
-FreeBSD, HardendedBSD, and OPNsense use inetd rather than systemd or
-xinetd. To limit the need to manage inetd configuration which has a shared
-config file, tangd is instead packaged to depend on `socat`.  Of course,
-if desired it may be configured to run instead from inetd.conf in which case
-the socat package will no longer be required.
+Tang can be installed on OPNsense by enabling the FreeBSD package repositories
+and then installing. There are some extra steps to minimize the installation.
+
+As root enable the FreeBSD repository, download tang, jose, and llhttp.
+Then disable the FreeBSD repository to prevent installing extraneous
+dependencies not needed by tang. And finally install the downloaded packages
+and start the server:
+
+    # vi /usr/local/etc/pkg/repos/FreeBSD.conf (set enabled to yes)
+    # pkg download tang jose llhttp
+    # vi /usr/local/etc/pkg/repos/FreeBSD.conf (set enabled back to no)
+    # pkg install /var/cache/pkg/tang-*.pkg /var/cache/pkg/jose-*.pkg /var/cache/pkg/llhttp-*.pkg
+    # service tangd enable
+    # service tangd start
 
 #### Docker Container
 
@@ -129,13 +138,28 @@ protect.
 Building Tang is fairly straightforward:
 
     $ mkdir build && cd build
-    $ meson .. --prefix=/usr
+    $ meson setup .. --prefix=/usr
     $ ninja
     $ sudo ninja install
 
 You can even run the tests if you'd like:
 
     $ meson test
+
+#### FreeBSD
+
+The build is simple and differs only sligtly from the general instructions.
+
+    (as root) # pkg install jose git meson pkgconf jansson asciidoc llhttp socat
+    $ mkdir build && cd build
+    $ meson setup .. --prefix=/usr/local
+    $ ninja
+    $ meson test # if you want to run the tests
+    (as root) # ninja install
+    (as root) # mkdir -m 0700 /var/db/tang
+
+Once built it does not require the many packages above, but still requires
+jose and llhttp. 
 
 ### Server Enablement
 

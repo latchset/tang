@@ -71,6 +71,27 @@ be changed with the *-p* option.
 
     tang -l -p 9090
 
+== ENDPOINT
+
+The Tang server can be provided an endpoint. This endpoint will act as a prefix
+for the URL to be accessed by the client. This endpoint can be specified with
+the *-e* option.
+
+    tang -l -p 9090 -e this/is/an/endpoint
+
+When endpoint is specified, the endpoint will be prepended to the normal adv/rec
+URL. If no endpoint is provided, and assuming port 9090 is used, Tang server
+will listen on next URLs:
+
+    http://localhost:9090/adv (GET)
+    http://localhost:9090/rec (POST)
+
+If endpoint is provided, and assuming endpoint is /this/is/an/endpoint/, and
+assuming also port 9090 is used, Tang server will listen on next URLs:
+
+    http://localhost:9090/this/is/an/endpoint/adv (GET)
+    http://localhost:9090/this/is/an/endpoint/rec (POST)
+
 == KEY ROTATION
 
 In order to preserve the security of the system over the long run, you need to

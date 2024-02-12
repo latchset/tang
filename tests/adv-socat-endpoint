@@ -1,0 +1,33 @@
+#!/bin/sh -ex
+#
+# Copyright (c) 2023 Red Hat, Inc.
+# Author: Sergio Arroutbi <sarroutb@redhat.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+. adv
+
+sanity_check
+
+adv_startup
+
+port=$(random_port)
+export PORT=$((port+3))
+export ENDPOINT="/api/dee-hms"
+start_server_endpoint "${PORT}" "${ENDPOINT}"
+export PID=$!
+wait_for_port ${PORT}
+
+adv_second_phase

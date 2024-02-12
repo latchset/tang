@@ -197,6 +197,44 @@ static struct http_dispatch s_dispatch[] = {
 
 #define DEFAULT_PORT 9090
 
+static size_t
+tang_http_parser_execute(http_parser_t *parser, const char* data, size_t len)
+{
+#ifdef USE_LLHTTP
+    llhttp_errno_t error;
+    size_t parsed_len;
+
+    /*
+     * Unlike http_parser, which returns the number of parsed
+     * bytes in the _execute() call, llhttp returns an error
+     * code.
+     */
+
+    if (data == NULL || len == 0) {
+        error = llhttp_finish(parser);
+    } else {
+        error = llhttp_execute(parser, data, len);
+    }
+
+    parsed_len = len;
+    /*
+     * Adjust number of parsed bytes in case of error.
+     */
+    if (error != HPE_OK) {
+        parsed_len = llhttp_get_error_pos(parser) - data;
+
+        /* This isn't a real pause, just a way to stop parsing early. */
+        if (error == HPE_PAUSED_UPGRADE) {
+            llhttp_resume_after_upgrade(parser);
+        }
+    }
+
+    return parsed_len;
+#else
+    return http_parser_execute(parser, &http_settings, data, len);
+#endif
+}
+
 static int
 process_request(const char *jwkdir, int in_fileno)
 {
@@ -229,8 +267,14 @@ process_request(const char *jwkdir, int in_fileno)
 
         rcvd += r;
 
-        r = tang_http_parser_execute(&parser, &http_settings, req, rcvd);
-        if (tang_http_parser_errno(parser) != 0) {
+        r = tang_http_parser_execute(&parser, req, rcvd);
+        switch (tang_http_parser_errno(parser)) {
+        case HPE_OK:
+            break;
+        case HPE_PAUSED:
+            tang_http_parser_resume(&parser);
+            break;
+        default:
             fprintf(stderr, "HTTP Parsing Error: %s\n",
                     tang_http_errno_description(&parser, tang_http_parser_errno(parser)));
             return EXIT_SUCCESS;

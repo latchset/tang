@@ -30,10 +30,9 @@ typedef llhttp_status_t http_status_t;
 typedef llhttp_settings_t http_settings_t;
 typedef llhttp_t http_parser_t;
 #define tang_http_parser_init(parser, settings) llhttp_init(parser, HTTP_REQUEST, settings)
-#define tang_http_parser_execute(parser, settings, req, rcvd) llhttp_execute(parser, req, rcvd)
 #define tang_http_parser_errno(parser) parser.error
 #define tang_http_errno_description(parser, errno) llhttp_get_error_reason(parser)
-
+#define tang_http_parser_resume(parser) llhttp_resume(parser)
 #else
 /* Legacy http-parser. */
 #include <http_parser.h>
@@ -44,10 +43,9 @@ typedef http_parser_settings http_settings_t;
 typedef struct http_parser http_parser_t;
 
 #define tang_http_parser_init(parser, settings) http_parser_init(parser, HTTP_REQUEST)
-#define tang_http_parser_execute(parser, settings, req, rcvd) http_parser_execute(parser, settings, req, rcvd)
 #define tang_http_parser_errno(parser) parser.http_errno
 #define tang_http_errno_description(parser, errno) http_errno_description(errno)
-
+#define tang_http_parser_resume(parser) http_parser_pause(parser, 0)
 #endif /* USE_LLHTTP */
 
 struct http_dispatch {

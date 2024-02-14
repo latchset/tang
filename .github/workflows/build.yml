@@ -17,16 +17,15 @@ jobs:
       matrix:
         os:
           - fedora:latest
-          - centos:7
           - quay.io/centos/centos:stream8
           - quay.io/centos/centos:stream9
           - debian:testing
           - debian:latest
+          - ubuntu:latest
           - ubuntu:rolling
           - ubuntu:lunar
           - ubuntu:jammy
           - ubuntu:focal
-          - ubuntu:bionic
         stable: [true]
         include:
           - os: quay.io/fedora/fedora:rawhide
@@ -34,7 +33,7 @@ jobs:
           - os: ubuntu:devel
             stable: false
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Show OS information
         run: cat /etc/os-release 2>/dev/null || \

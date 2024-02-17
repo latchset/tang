@@ -1,0 +1,15 @@
+task:
+  skip: "changesIncludeOnly('**.md','.github/workflows/**')"
+  freebsd_instance:
+    matrix:
+      - image_family: freebsd-13-2
+      - image_family: freebsd-14-0
+      - image_family: freebsd-15-0-snap
+
+  install_script: pkg install -y jose git meson pkgconf jansson asciidoc llhttp socat
+
+  script:
+    - mkdir build && cd build
+    - meson setup .. --prefix=/usr/local
+    - ninja
+    - meson test

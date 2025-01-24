@@ -201,6 +201,9 @@ int run_service(const char *jwkdir, int port, process_request_func pfunc)
 	r = listen_port(&slist, port);
 	if (r < 0) {
 		fprintf(stderr, "Could not listen port (%d)\n", port);
+		if (slist) {
+			free_socket_list(slist);
+		}
 		return -1;
 	}
 

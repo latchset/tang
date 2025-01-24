@@ -23,7 +23,7 @@ jobs:
           - debian:latest
           - ubuntu:latest
           - ubuntu:rolling
-          - ubuntu:lunar
+          - ubuntu:noble
           - ubuntu:jammy
           - ubuntu:focal
         stable: [true]

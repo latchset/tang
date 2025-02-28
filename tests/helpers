@@ -75,6 +75,10 @@ start_standalone_server() {
     ${VALGRIND} tangd -p ${1} -l ${TMP}/db &
 }
 
+start_standalone_server_fg() {
+    ${VALGRIND} tangd -p ${1} -l ${TMP}/db
+}
+
 start_standalone_server_endpoint() {
     ${VALGRIND} tangd -p ${1} -l ${TMP}/db -e ${2} &
 }

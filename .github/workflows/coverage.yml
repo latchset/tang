@@ -55,9 +55,10 @@ jobs:
 
       - uses: codecov/codecov-action@v5
         with:
-          file: build/coverage.xml
+          files: build/coverage.xml
           fail_ci_if_error: true # optional (default = false)
           verbose: true # optional (default = false)
+          token: ${{ secrets.CODECOV_TOKEN_20250228 }}
 
     container:
       image: ${{matrix.os}}

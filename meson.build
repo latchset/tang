@@ -74,7 +74,7 @@ if meson.is_cross_build()
     message('Compiler version :'+ compiler.version())
     message('Compiler ID :' + compiler.get_id())
     message('Library search directory :'+ lib_dir)
-    message('Include directiry :' + inc_dir)
+    message('Include directory :' + inc_dir)
     message('----------------')
 endif
 

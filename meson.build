@@ -104,7 +104,9 @@ units = []
 subdir('doc')
 subdir('src')
 subdir('units')
-subdir('tests')
+if not meson.is_cross_build()
+  subdir('tests')
+endif
 
 install_data(libexecbins, install_dir: libexecdir)
 install_data(bins, install_dir: bindir)

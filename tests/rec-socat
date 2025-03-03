@@ -31,3 +31,6 @@ export PID=$!
 wait_for_port ${PORT}
 
 rec_second_phase
+
+# Start the server in a wrong port
+start_standalone_server_fg "-1" && false || true

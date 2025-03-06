@@ -54,23 +54,45 @@ add_project_arguments('-DVERSION="'+meson.project_version() + '"', language : 'c
 
 jose = dependency('jose', version: '>=8')
 a2x = find_program('a2x', required: false)
-compiler = meson.get_compiler('c')
+compiler = meson.get_compiler('c', native : true)
+
+if meson.is_cross_build()
+    compiler = meson.get_compiler('c', native : false)
+endif
+
+message(compiler.version())
+message(compiler.get_id())
 
 http_lib = []
-if compiler.has_header('llhttp.h', args: '-I/usr/local/include')
+
+inc_dir = meson.get_external_property('inc_dir', '-I/usr/local/include')
+lib_dir = meson.get_external_property('lib_dir','/usr/local/lib')
+
+if meson.is_cross_build()
+    message('----------------')
+    message('*** THIS IS A CROSS BUILD ***')
+    message('Compiler version :'+ compiler.version())
+    message('Compiler ID :' + compiler.get_id())
+    message('Library search directory :'+ lib_dir)
+    message('Include directory :' + inc_dir)
+    message('----------------')
+endif
+
+if compiler.has_header('llhttp.h', args: inc_dir)
   http_lib = 'llhttp'
   add_project_arguments('-DUSE_LLHTTP', language: 'c')
 else
-  if not compiler.has_header('http_parser.h', args: '-I/usr/local/include')
+  if not compiler.has_header('http_parser.h', args: inc_dir)
     error('neither llhttp nor http-parser devel files found.')
   endif
+  
   http_lib = 'http_parser'
 endif
 
 if host_machine.system() == 'freebsd'
   http_parser = compiler.find_library(http_lib, dirs : '/usr/local/lib')
 else
-  http_parser = compiler.find_library(http_lib)
+  http_parser = compiler.find_library(http_lib, dirs: [lib_dir])
 endif
 
 licenses = ['COPYING']
@@ -82,7 +104,9 @@ units = []
 subdir('doc')
 subdir('src')
 subdir('units')
-subdir('tests')
+if not meson.is_cross_build()
+  subdir('tests')
+endif
 
 install_data(libexecbins, install_dir: libexecdir)
 install_data(bins, install_dir: bindir)

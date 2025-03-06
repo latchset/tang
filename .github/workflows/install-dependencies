@@ -6,7 +6,7 @@ ubuntu:focal)
     apt clean
     apt update
     apt -y install gcc pkg-config libjose-dev jose libhttp-parser-dev \
-                   systemd gcovr curl socat iproute2 asciidoc git python3-pip
+                   systemd gcovr curl socat iproute2 asciidoc git python3-pip ninja-build 
     apt remove -y meson
     pip3 install --upgrade meson
     ;;

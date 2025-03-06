@@ -42,12 +42,6 @@ jobs:
       - name: Install build dependencies
         run: bash .github/workflows/install-dependencies
 
-      - name: Remove and upgrade meson (only for ubuntu:focal)
-        if: matrix.os == 'ubuntu:focal'
-        run: |
-          apt remove -y meson
-          pip3 install --upgrade meson
-
       - name: Build tang
         run: |
           mkdir -p build && cd build

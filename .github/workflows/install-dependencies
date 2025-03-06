@@ -1,6 +1,16 @@
 #!/bin/sh -ex
 
 case "${DISTRO}" in
+ubuntu:focal)
+    export DEBIAN_FRONTEND=noninteractive
+    apt clean
+    apt update
+    apt -y install gcc pkg-config libjose-dev jose libhttp-parser-dev \
+                   systemd gcovr curl socat iproute2 asciidoc git python3-pip
+    apt remove -y meson
+    pip3 install --upgrade meson
+    ;;
+
 debian:*|ubuntu:*)
     export DEBIAN_FRONTEND=noninteractive
     apt clean

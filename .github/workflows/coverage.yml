@@ -5,9 +5,11 @@ on:
   push:
     paths-ignore:
       - '**.md'
+      - '.cirrus.yml'
   pull_request:
     paths-ignore:
       - '**.md'
+      - '.cirrus.yml'
 
 jobs:
   build:

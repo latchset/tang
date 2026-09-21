@@ -22,6 +22,10 @@ fetch() {
     curl -sfg "http://127.0.0.1:${PORT}${1}"
 }
 
+fetch_headers() {
+    curl -sfg -D "${2}" -o /dev/null "http://127.0.0.1:${PORT}${1}"
+}
+
 ver() {
     jose jws ver -i- -k "${1}"
 }

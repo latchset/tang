@@ -47,10 +47,16 @@ adv_second_phase () {
     fetch "${ENDPOINT}"/adv | ver $TMP/db/sig.jwk
     fetch "${ENDPOINT}"/adv/ | ver $TMP/db/sig.jwk
 
+<<<<<<< HEAD
     # Verify /version endpoint reports tang_pub capability
     ver_resp=$(fetch "${ENDPOINT}"/version)
     printf '%s' "$ver_resp" | jose fmt -j- -Og tang_version -u- >/dev/null
     printf '%s' "$ver_resp" | jose fmt -j- -Og features -Og tang_pub >/dev/null
+=======
+    # Verify Tang-Capabilities header advertises tang_pub
+    fetch_headers "${ENDPOINT}"/adv $TMP/adv_headers
+    grep -q "Tang-Capabilities:.*tang_pub" $TMP/adv_headers
+>>>>>>> c0521e0 (Return ECMR public key and advertise capability in /rec and /adv)
 
     # Fetching by any thumbprint should work
     fetch "${ENDPOINT}"/adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/sig.jwk

@@ -100,6 +100,7 @@ adv(http_method_t method, const char *path, const char *body,
 
     return http_reply(HTTP_STATUS_OK,
                       "Content-Type: application/jose+json\r\n"
+                      "Tang-Capabilities: tang_pub\r\n"
                       "Content-Length: %zu\r\n"
                       "\r\n%s", strlen(adv), adv);
 }

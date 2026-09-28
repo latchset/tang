@@ -36,6 +36,9 @@ struct tang_keys_info {
 
     size_t m_keys_count;          /* Number of regular keys. */
     size_t m_rotated_keys_count;  /* Number of rotated keys. */
+
+    int m_has_pqc;                /* Non-zero if a PQC key (e.g. ML-KEM) is
+                                     available among regular keys. */
 };
 
 void cleanup_tang_keys_info(struct tang_keys_info**);

@@ -38,6 +38,10 @@ rec_startup () {
     jose jwk pub -i $TMP/exc.jwk -o $TMP/exc.pub.jwk
 }
 
+jose_supports_mlkem () {
+    jose alg 2>/dev/null | grep -q "ML-KEM"
+}
+
 rec_second_phase () {
     # Make sure that GET fails
     curl -sf http://127.0.0.1:$PORT/rec && expected_fail
@@ -60,6 +64,8 @@ rec_second_phase () {
 
     # Verify tang_pub thumbprint matches the requested key identifier
     [ "$(jose jwk thp -i $TMP/tang_pub.jwk)" = "$exc_kid" ]
+
+    rec_kem_test ""
 }
 
 rec_second_phase_endpoint () {
@@ -84,4 +90,77 @@ rec_second_phase_endpoint () {
 
     # Verify tang_pub thumbprint matches the requested key identifier
     [ "$(jose jwk thp -i $TMP/tang_pub.jwk)" = "$exc_kid" ]
+
+    rec_kem_test "${ENDPOINT}/"
+}
+
+rec_kem_test () {
+    prefix="${1}"
+
+    if ! jose_supports_mlkem; then
+        echo "jose does not support ML-KEM, skipping /rec-kem tests" >&2
+        return 0
+    fi
+
+    # Find the ML-KEM key in the server db
+    kem_jwk=""
+    for f in "$TMP"/db/*.jwk; do
+        kty=$(jose fmt -j "$f" -Og kty -u- 2>/dev/null) || continue
+        if [ "$kty" = "AKP" ]; then
+            kem_jwk="$f"
+            break
+        fi
+    done
+    if [ -z "$kem_jwk" ]; then
+        echo "No ML-KEM key found in server db, skipping /rec-kem tests" >&2
+        return 0
+    fi
+
+    kem_kid=$(jose jwk thp -i "$kem_jwk" -a S256)
+
+    # Get public key for encapsulation
+    jose jwk pub -i "$kem_jwk" -o "$TMP/kem.pub.jwk"
+
+    # Encapsulate to get client shared secret and ciphertext
+    encap_result=$(jose jwk encap -i "$TMP/kem.pub.jwk")
+    client_ss=$(printf '%s' "$encap_result" | jose fmt -j- -Og ss -Og k -u-)
+    ct=$(printf '%s' "$encap_result" | jose fmt -j- -Og ct -u-)
+
+    # POST ciphertext to /rec-kem and get server shared secret
+    body=$(printf '{"ct":"%s"}' "$ct")
+    server_resp=$(curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -d "$body" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+    server_ss=$(printf '%s' "$server_resp" | jose fmt -j- -Og k -u-)
+
+    # Shared secrets must match
+    [ "$client_ss" = "$server_ss" ]
+
+    # Verify error cases: GET should fail
+    curl -sf "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}" && expected_fail
+
+    # Invalid JSON body
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d "not-json" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+    [ "$code" = "400" ]
+
+    # Missing ct field
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d '{"foo":"bar"}' \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+    [ "$code" = "400" ]
+
+    # Nonexistent thumbprint
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d "$body" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/nonexistent")
+    [ "$code" = "404" ]
+
+    # ECMR key thumbprint on /rec-kem should be forbidden
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d "$body" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${exc_kid}")
+    [ "$code" = "403" ]
 }

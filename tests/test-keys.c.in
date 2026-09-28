@@ -89,7 +89,7 @@ test_create_new_keys(void)
     ASSERT(newdir);
     __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(newdir);
     ASSERT(tki);
-    ASSERT(tki->m_keys_count == 2);
+    ASSERT(tki->m_keys_count >= 2);
 
     /* Make sure keys have proper permissions. */
     verify_keys_permissions(newdir);

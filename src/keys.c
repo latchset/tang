@@ -302,17 +302,32 @@ prepare_payload_and_sign(struct tang_keys_info* tki)
     return 1;
 }
 
+struct key_spec {
+    const char* alg;
+    int optional;
+};
+
 static int
 create_new_keys(const char* jwkdir)
 {
-    const char* alg[] = {"ES512", "ECMR", NULL};
+    const struct key_spec specs[] = {
+        {"ES512",      0},
+        {"ECMR",       0},
+        {"ML-KEM-768", 1},
+        {NULL,         0}
+    };
     char path[PATH_MAX];
 
     /* Set default umask for file creation. */
     umask(0337);
-    for (int i = 0; alg[i] != NULL; i++) {
-        json_auto_t* jwk = jwk_generate(alg[i]);
+    for (int i = 0; specs[i].alg != NULL; i++) {
+        json_auto_t* jwk = jwk_generate(specs[i].alg);
         if (!jwk) {
+            if (specs[i].optional) {
+                fprintf(stderr, "Skipping optional key %s (not supported)\n",
+                        specs[i].alg);
+                continue;
+            }
             return 0;
         }
         __attribute__ ((__cleanup__(cleanup_str))) char* thp = jwk_thumbprint(jwk, DEFAULT_THP_HASH);
@@ -387,6 +402,11 @@ load_keys(const char* jwkdir)
                 tki->m_rotated_keys_count++;
             } else {
                 tki->m_keys_count++;
+                const char* kty = json_string_value(
+                    json_object_get(json, "kty"));
+                if (kty && strcmp(kty, "AKP") == 0) {
+                    tki->m_has_pqc = 1;
+                }
             }
 
             if (json_array_append(arr, json) == -1) {

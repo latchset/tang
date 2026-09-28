@@ -52,3 +52,11 @@ jwe=$(jose jwk gen -i '{"alg":"ECMR"}')
 [ -z "$exc" ] && exc=$(echo "$jwe" | jose jwk thp -i- -a "${THP_DEFAULT_HASH}")
 echo "$jwe" > "$1/$exc.jwk"
 set_perms "$1/$exc.jwk"
+
+if pqc=$(jose jwk gen -i '{"alg":"ML-KEM-768"}' 2>/dev/null); then
+    pqc_thp=$(echo "$pqc" | jose jwk thp -i- -a "${THP_DEFAULT_HASH}")
+    echo "$pqc" > "$1/$pqc_thp.jwk"
+    set_perms "$1/$pqc_thp.jwk"
+else
+    echo "Skipping ML-KEM-768 key generation (not supported by jose)" >&2
+fi

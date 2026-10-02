@@ -67,6 +67,82 @@ str_cleanup(char **str)
         free(*str);
 }
 
+static void
+secure_zero(void *p, size_t len)
+{
+    volatile unsigned char *v = p;
+    while (len--)
+        *v++ = 0;
+}
+
+static void
+str_cleanse(char **str)
+{
+    if (str && *str) {
+        secure_zero(*str, strlen(*str));
+        free(*str);
+    }
+}
+
+static json_t *
+jwe_from_compact(const char *compact)
+{
+    const char *dots[4];
+    int n = 0;
+
+    for (const char *c = compact; *c && n < 4; c++) {
+        if (*c == '.')
+            dots[n++] = c;
+    }
+    if (n != 4)
+        return NULL;
+
+    const char *p0 = compact;
+    const char *p1 = dots[0] + 1;
+    const char *p2 = dots[1] + 1;
+    const char *p3 = dots[2] + 1;
+    const char *p4 = dots[3] + 1;
+
+    json_auto_t *jwe = json_object();
+    if (!jwe)
+        return NULL;
+
+    json_object_set_new(jwe, "protected",
+        json_stringn(p0, dots[0] - p0));
+    json_object_set_new(jwe, "encrypted_key",
+        json_stringn(p1, dots[1] - p1));
+    json_object_set_new(jwe, "iv",
+        json_stringn(p2, dots[2] - p2));
+    json_object_set_new(jwe, "ciphertext",
+        json_stringn(p3, dots[3] - p3));
+    json_object_set_new(jwe, "tag", json_string(p4));
+
+    return json_incref(jwe);
+}
+
+static char *
+jwe_to_compact(const json_t *jwe)
+{
+    const char *prot = json_string_value(json_object_get(jwe, "protected"));
+    const char *ekey = json_string_value(json_object_get(jwe, "encrypted_key"));
+    const char *iv   = json_string_value(json_object_get(jwe, "iv"));
+    const char *ct   = json_string_value(json_object_get(jwe, "ciphertext"));
+    const char *tag  = json_string_value(json_object_get(jwe, "tag"));
+
+    if (!prot || !iv || !ct || !tag)
+        return NULL;
+    if (!ekey)
+        ekey = "";
+
+    size_t len = strlen(prot) + strlen(ekey) + strlen(iv)
+               + strlen(ct) + strlen(tag) + 5;
+    char *out = malloc(len);
+    if (!out)
+        return NULL;
+    snprintf(out, len, "%s.%s.%s.%s.%s", prot, ekey, iv, ct, tag);
+    return out;
+}
+
 static int
 adv(http_method_t method, const char *path, const char *body,
     regmatch_t matches[], void *misc)
@@ -196,6 +272,96 @@ rec(http_method_t method, const char *path, const char *body,
 }
 
 static int
+rec_kem_secure(json_t *kem_jwk, const json_t *req, char **out)
+{
+    const char *encrypted_blob = NULL;
+    const char *transport_ct_str = NULL;
+
+    if (json_unpack((json_t *)req, "{s:s, s:s}",
+                    "encrypted_blob", &encrypted_blob,
+                    "transport_ct", &transport_ct_str) < 0)
+        return HTTP_STATUS_BAD_REQUEST;
+
+    /* Step 1: Decapsulate forward channel */
+    json_auto_t *fwd_ss =
+        jose_jwk_kem_dec(NULL, kem_jwk, json_string(transport_ct_str));
+    if (!fwd_ss)
+        return HTTP_STATUS_BAD_REQUEST;
+
+    /* Step 2: Decrypt inner payload with forward-channel shared secret */
+    json_auto_t *blob_jwe = jwe_from_compact(encrypted_blob);
+    if (!blob_jwe)
+        return HTTP_STATUS_BAD_REQUEST;
+
+    size_t ptl = 0;
+    void *pt = jose_jwe_dec(NULL, blob_jwe, NULL, fwd_ss, &ptl);
+    json_decref(fwd_ss);
+    fwd_ss = NULL;
+    if (!pt)
+        return HTTP_STATUS_BAD_REQUEST;
+
+    json_auto_t *payload = json_loadb(pt, ptl, 0, NULL);
+    secure_zero(pt, ptl);
+    free(pt);
+    if (!payload)
+        return HTTP_STATUS_BAD_REQUEST;
+
+    const char *kem_ct = NULL;
+    json_t *clevis_kem_pub = NULL;
+    if (json_unpack(payload, "{s:s, s:o}",
+                    "kem_ct", &kem_ct,
+                    "clevis_kem_pub", &clevis_kem_pub) < 0)
+        return HTTP_STATUS_BAD_REQUEST;
+
+    /* Step 3: Recover the KEM shared secret */
+    json_auto_t *enc_kem_key =
+        jose_jwk_kem_dec(NULL, kem_jwk, json_string(kem_ct));
+    if (!enc_kem_key)
+        return HTTP_STATUS_BAD_REQUEST;
+
+    /* Step 4: Create return channel via KEM encapsulation */
+    json_auto_t *ret_encap = jose_jwk_kem_enc(NULL, clevis_kem_pub);
+    if (!ret_encap)
+        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+    const char *tang_ct =
+        json_string_value(json_object_get(ret_encap, "ct"));
+    json_t *ret_ss = json_object_get(ret_encap, "ss");
+    if (!tang_ct || !ret_ss)
+        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+    /* Step 5: Encrypt enc_kem_key under the return-channel shared secret */
+    __attribute__((cleanup(str_cleanse))) char *ek_json =
+        json_dumps(enc_kem_key, JSON_SORT_KEYS | JSON_COMPACT);
+    if (!ek_json)
+        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+    json_auto_t *resp_jwe = json_pack(
+        "{s:{s:s,s:s}}", "protected", "alg", "dir", "enc", "A256GCM");
+    if (!resp_jwe)
+        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+    if (!jose_jwe_enc(NULL, resp_jwe, NULL, ret_ss,
+                      ek_json, strlen(ek_json)))
+        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+    __attribute__((cleanup(str_cleanup))) char *jwe_compact =
+        jwe_to_compact(resp_jwe);
+    if (!jwe_compact)
+        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+    json_auto_t *response = json_pack(
+        "{s:s, s:s}",
+        "encrypted_key", jwe_compact,
+        "transport_ct", tang_ct);
+    if (!response)
+        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+    *out = json_dumps(response, JSON_SORT_KEYS | JSON_COMPACT);
+    return *out ? HTTP_STATUS_OK : HTTP_STATUS_INTERNAL_SERVER_ERROR;
+}
+
+static int
 rec_kem(http_method_t method, const char *path, const char *body,
         regmatch_t matches[], void *misc)
 {
@@ -204,17 +370,13 @@ rec_kem(http_method_t method, const char *path, const char *body,
     __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info *tki = NULL;
     size_t size = matches[1].rm_eo - matches[1].rm_so;
     const char *jwkdir = misc;
-    json_auto_t *jwk = NULL;
+    json_auto_t *kem_jwk = NULL;
     json_auto_t *req = NULL;
-    json_auto_t *rep = NULL;
     const char *kty = NULL;
-    const char *ct = NULL;
+    int status;
 
     req = json_loads(body, 0, NULL);
     if (!req)
-        return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
-
-    if (json_unpack(req, "{s:s}", "ct", &ct) < 0)
         return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 
     tki = read_keys(jwkdir);
@@ -225,26 +387,22 @@ rec_kem(http_method_t method, const char *path, const char *body,
     if (!thp)
         return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
-    jwk = find_jwk(tki, thp);
-    if (!jwk)
+    kem_jwk = find_jwk(tki, thp);
+    if (!kem_jwk)
         return http_reply(HTTP_STATUS_NOT_FOUND, NULL);
 
-    if (json_unpack(jwk, "{s:s}", "kty", &kty) < 0)
+    if (json_unpack(kem_jwk, "{s:s}", "kty", &kty) < 0)
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
     if (strcmp(kty, "AKP") != 0)
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
-    if (!jose_jwk_prm(NULL, jwk, true, "deriveKey"))
+    if (!jose_jwk_prm(NULL, kem_jwk, true, "deriveKey"))
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
-    rep = jose_jwk_kem_dec(NULL, jwk, json_string(ct));
-    if (!rep)
-        return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
-
-    enc = json_dumps(rep, JSON_SORT_KEYS | JSON_COMPACT);
-    if (!enc)
-        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+    status = rec_kem_secure(kem_jwk, req, &enc);
+    if (status != HTTP_STATUS_OK)
+        return http_reply(status, NULL);
 
     return http_reply(HTTP_STATUS_OK,
                       "Content-Type: application/jwk+json\r\n"

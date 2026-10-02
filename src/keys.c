@@ -130,7 +130,8 @@ free_tang_keys_info(struct tang_keys_info* tki)
     }
 
     json_t* to_free[] = {tki->m_keys, tki->m_rotated_keys,
-                         tki->m_payload, tki->m_sign
+                         tki->m_payload, tki->m_kem_payload,
+                         tki->m_sign
     };
     size_t len = sizeof(to_free) / sizeof(to_free[0]);
 
@@ -164,10 +165,11 @@ new_tang_keys_info(void)
     tki->m_keys = json_array();
     tki->m_rotated_keys = json_array();
     tki->m_payload = json_array();
+    tki->m_kem_payload = json_array();
     tki->m_sign = json_array();
 
     if (!tki->m_keys || !tki->m_rotated_keys ||
-        !tki->m_payload || !tki->m_sign) {
+        !tki->m_payload || !tki->m_kem_payload || !tki->m_sign) {
         free_tang_keys_info(tki);
         return NULL;
     }
@@ -291,8 +293,12 @@ prepare_payload_and_sign(struct tang_keys_info* tki)
                 continue;
             }
         } else if (jwk_valid_for_deriving_keys(jwk)) {
-            if (json_array_append(tki->m_payload, jwk) == -1) {
-                continue;
+            const char* kty = json_string_value(
+                json_object_get(jwk, "kty"));
+            if (kty && strcmp(kty, "AKP") == 0) {
+                json_array_append(tki->m_kem_payload, jwk);
+            } else {
+                json_array_append(tki->m_payload, jwk);
             }
         }
     }
@@ -469,6 +475,20 @@ find_jws(struct tang_keys_info* tki, const char* thp)
         return NULL;
     }
     json_auto_t* jws = jwk_sign(tki->m_payload, sign);
+    if (!jws) {
+        return NULL;
+    }
+    return json_incref(jws);
+}
+
+json_t*
+find_jws_kem(struct tang_keys_info* tki)
+{
+    if (!tki || json_array_size(tki->m_kem_payload) == 0) {
+        return NULL;
+    }
+
+    json_auto_t* jws = jwk_sign(tki->m_kem_payload, tki->m_sign);
     if (!jws) {
         return NULL;
     }

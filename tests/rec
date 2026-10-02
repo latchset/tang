@@ -121,62 +121,62 @@ rec_kem_test () {
 
     # Step 1: Simulate the stored KEM binding (client encapsulates at bind time)
     stored_encap=$(jose jwk encap -i "$TMP/kem.pub.jwk")
-    client_ss=$(printf '%s' "$stored_encap" | jose fmt -j- -Og ss -o-)
-    kem_ct=$(printf '%s' "$stored_encap" | jose fmt -j- -Og ct -u-)
+    enc_key=$(printf '%s' "$stored_encap" | jose fmt -j- -Og ss -o-)
+    clevis_kem_ct=$(printf '%s' "$stored_encap" | jose fmt -j- -Og ct -u-)
 
-    # Compute ek_digest (JWK thumbprint of the shared secret)
-    printf '%s' "$client_ss" > "$TMP/client_ss.jwk"
-    ek_digest=$(jose jwk thp -i "$TMP/client_ss.jwk" -a S256)
+    # Compute ek_digest (JWK thumbprint of enc_key)
+    printf '%s' "$enc_key" > "$TMP/enc_key.jwk"
+    ek_digest=$(jose jwk thp -i "$TMP/enc_key.jwk" -a S256)
 
     # Step 2: Generate client ephemeral KEM keypair for return channel
-    jose jwk gen -i '{"alg":"ML-KEM-768"}' -o "$TMP/clevis_kem.jwk"
-    jose jwk pub -i "$TMP/clevis_kem.jwk" -o "$TMP/clevis_kem.pub.jwk"
+    jose jwk gen -i '{"alg":"ML-KEM-768"}' -o "$TMP/clevis_kem_priv.jwk"
+    jose jwk pub -i "$TMP/clevis_kem_priv.jwk" -o "$TMP/clevis_kem_pub.jwk"
 
     # Step 3: Forward channel — encapsulate to tang's KEM pub
     fwd_encap=$(jose jwk encap -i "$TMP/kem.pub.jwk")
-    transport_ct=$(printf '%s' "$fwd_encap" | jose fmt -j- -Og ct -u-)
-    printf '%s' "$fwd_encap" | jose fmt -j- -Og ss -o- > "$TMP/fwd_ss.jwk"
+    clevis_transport_ct=$(printf '%s' "$fwd_encap" | jose fmt -j- -Og ct -u-)
+    printf '%s' "$fwd_encap" | jose fmt -j- -Og ss -o- > "$TMP/clevis_transport_key.jwk"
 
-    # Step 4: Build inner payload {kem_ct, clevis_kem_pub, ek_digest}
-    clevis_kem_pub=$(cat "$TMP/clevis_kem.pub.jwk")
-    printf '{"kem_ct":"%s","clevis_kem_pub":%s,"ek_digest":"%s"}' \
-        "$kem_ct" "$clevis_kem_pub" "$ek_digest" \
+    # Step 4: Build inner payload {clevis_kem_ct, clevis_kem_pub, ek_digest}
+    clevis_kem_pub=$(cat "$TMP/clevis_kem_pub.jwk")
+    printf '{"clevis_kem_ct":"%s","clevis_kem_pub":%s,"ek_digest":"%s"}' \
+        "$clevis_kem_ct" "$clevis_kem_pub" "$ek_digest" \
         > "$TMP/inner_payload.json"
 
-    # Step 5: Encrypt inner payload under forward shared secret → encrypted_blob
-    encrypted_blob=$(jose jwe enc \
+    # Step 5: Encrypt inner payload under clevis_transport_key → clevis_encrypted_blob
+    clevis_encrypted_blob=$(jose jwe enc \
         -i '{"protected":{"alg":"dir","enc":"A256GCM"}}' \
         -I "$TMP/inner_payload.json" \
-        -k "$TMP/fwd_ss.jwk" -c)
+        -k "$TMP/clevis_transport_key.jwk" -c)
 
-    # Step 6: POST {encrypted_blob, transport_ct} to /rec-kem
-    req_body=$(printf '{"encrypted_blob":"%s","transport_ct":"%s"}' \
-        "$encrypted_blob" "$transport_ct")
+    # Step 6: POST {clevis_encrypted_blob, clevis_transport_ct} to /rec-kem
+    req_body=$(printf '{"clevis_encrypted_blob":"%s","clevis_transport_ct":"%s"}' \
+        "$clevis_encrypted_blob" "$clevis_transport_ct")
     server_resp=$(curl -sf -X POST \
         -H "Content-Type: application/json" \
         -d "$req_body" \
         "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
 
-    # Step 7: Parse response {encrypted_key, transport_ct}
-    resp_transport_ct=$(printf '%s' "$server_resp" | jose fmt -j- -Og transport_ct -u-)
-    resp_encrypted_key=$(printf '%s' "$server_resp" | jose fmt -j- -Og encrypted_key -u-)
+    # Step 7: Parse response {tang_encrypted_key, tang_transport_ct}
+    tang_transport_ct=$(printf '%s' "$server_resp" | jose fmt -j- -Og tang_transport_ct -u-)
+    tang_encrypted_key=$(printf '%s' "$server_resp" | jose fmt -j- -Og tang_encrypted_key -u-)
 
-    # Step 8: Decapsulate return channel with client KEM private key
-    ret_ss=$(jose jwk decap -i "$TMP/clevis_kem.jwk" -c "$resp_transport_ct")
-    printf '%s' "$ret_ss" > "$TMP/ret_ss.jwk"
+    # Step 8: Decapsulate return channel with clevis_kem_priv
+    tang_transport_key=$(jose jwk decap -i "$TMP/clevis_kem_priv.jwk" -c "$tang_transport_ct")
+    printf '%s' "$tang_transport_key" > "$TMP/tang_transport_key.jwk"
 
-    # Step 9: Split compact JWE into JSON and decrypt enc_kem_key
+    # Step 9: Split compact JWE into JSON and decrypt enc_key
     IFS='.' read -r prot ekey iv ct tag <<EOF
-$resp_encrypted_key
+$tang_encrypted_key
 EOF
     printf '{"protected":"%s","encrypted_key":"%s","iv":"%s","ciphertext":"%s","tag":"%s"}' \
         "$prot" "$ekey" "$iv" "$ct" "$tag" > "$TMP/resp_jwe.json"
-    recovered_ss=$(jose jwe dec -i "$TMP/resp_jwe.json" -k "$TMP/ret_ss.jwk")
+    recovered_enc_key=$(jose jwe dec -i "$TMP/resp_jwe.json" -k "$TMP/tang_transport_key.jwk")
 
-    # Step 10: Verify recovered shared secret matches the original
-    client_ss_k=$(printf '%s' "$client_ss" | jose fmt -j- -Og k -u-)
-    recovered_ss_k=$(printf '%s' "$recovered_ss" | jose fmt -j- -Og k -u-)
-    [ "$client_ss_k" = "$recovered_ss_k" ]
+    # Step 10: Verify recovered enc_key matches the original
+    enc_key_k=$(printf '%s' "$enc_key" | jose fmt -j- -Og k -u-)
+    recovered_enc_key_k=$(printf '%s' "$recovered_enc_key" | jose fmt -j- -Og k -u-)
+    [ "$enc_key_k" = "$recovered_enc_key_k" ]
 
     # Error cases
     curl -sf "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}" && expected_fail
@@ -203,17 +203,17 @@ EOF
 
     # Wrong ek_digest must be rejected
     bad_fwd_encap=$(jose jwk encap -i "$TMP/kem.pub.jwk")
-    bad_transport_ct=$(printf '%s' "$bad_fwd_encap" | jose fmt -j- -Og ct -u-)
-    printf '%s' "$bad_fwd_encap" | jose fmt -j- -Og ss -o- > "$TMP/bad_fwd_ss.jwk"
-    printf '{"kem_ct":"%s","clevis_kem_pub":%s,"ek_digest":"%s"}' \
-        "$kem_ct" "$clevis_kem_pub" "INVALID_DIGEST_VALUE" \
+    bad_clevis_transport_ct=$(printf '%s' "$bad_fwd_encap" | jose fmt -j- -Og ct -u-)
+    printf '%s' "$bad_fwd_encap" | jose fmt -j- -Og ss -o- > "$TMP/bad_clevis_transport_key.jwk"
+    printf '{"clevis_kem_ct":"%s","clevis_kem_pub":%s,"ek_digest":"%s"}' \
+        "$clevis_kem_ct" "$clevis_kem_pub" "INVALID_DIGEST_VALUE" \
         > "$TMP/bad_payload.json"
     bad_blob=$(jose jwe enc \
         -i '{"protected":{"alg":"dir","enc":"A256GCM"}}' \
         -I "$TMP/bad_payload.json" \
-        -k "$TMP/bad_fwd_ss.jwk" -c)
-    bad_req=$(printf '{"encrypted_blob":"%s","transport_ct":"%s"}' \
-        "$bad_blob" "$bad_transport_ct")
+        -k "$TMP/bad_clevis_transport_key.jwk" -c)
+    bad_req=$(printf '{"clevis_encrypted_blob":"%s","clevis_transport_ct":"%s"}' \
+        "$bad_blob" "$bad_clevis_transport_ct")
     code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
         -H "Content-Type: application/json" \
         -d "$bad_req" \

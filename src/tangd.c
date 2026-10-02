@@ -273,31 +273,31 @@ rec(http_method_t method, const char *path, const char *body,
 }
 
 static int
-rec_kem_secure(json_t *kem_jwk, const json_t *req, char **out)
+rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
 {
-    const char *encrypted_blob = NULL;
-    const char *transport_ct_str = NULL;
+    const char *clevis_encrypted_blob = NULL;
+    const char *clevis_transport_ct = NULL;
 
     if (json_unpack((json_t *)req, "{s:s, s:s}",
-                    "encrypted_blob", &encrypted_blob,
-                    "transport_ct", &transport_ct_str) < 0)
+                    "clevis_encrypted_blob", &clevis_encrypted_blob,
+                    "clevis_transport_ct", &clevis_transport_ct) < 0)
         return HTTP_STATUS_BAD_REQUEST;
 
     /* Step 1: Decapsulate forward channel */
-    json_auto_t *fwd_ss =
-        jose_jwk_kem_dec(NULL, kem_jwk, json_string(transport_ct_str));
-    if (!fwd_ss)
+    json_auto_t *clevis_transport_key =
+        jose_jwk_kem_dec(NULL, tang_kem_priv, json_string(clevis_transport_ct));
+    if (!clevis_transport_key)
         return HTTP_STATUS_BAD_REQUEST;
 
     /* Step 2: Decrypt inner payload with forward-channel shared secret */
-    json_auto_t *blob_jwe = jwe_from_compact(encrypted_blob);
+    json_auto_t *blob_jwe = jwe_from_compact(clevis_encrypted_blob);
     if (!blob_jwe)
         return HTTP_STATUS_BAD_REQUEST;
 
     size_t ptl = 0;
-    void *pt = jose_jwe_dec(NULL, blob_jwe, NULL, fwd_ss, &ptl);
-    json_decref(fwd_ss);
-    fwd_ss = NULL;
+    void *pt = jose_jwe_dec(NULL, blob_jwe, NULL, clevis_transport_key, &ptl);
+    json_decref(clevis_transport_key);
+    clevis_transport_key = NULL;
     if (!pt)
         return HTTP_STATUS_BAD_REQUEST;
 
@@ -307,22 +307,22 @@ rec_kem_secure(json_t *kem_jwk, const json_t *req, char **out)
     if (!payload)
         return HTTP_STATUS_BAD_REQUEST;
 
-    const char *kem_ct = NULL;
+    const char *clevis_kem_ct = NULL;
     const char *ek_digest = NULL;
     json_t *clevis_kem_pub = NULL;
     if (json_unpack(payload, "{s:s, s:o, s:s}",
-                    "kem_ct", &kem_ct,
+                    "clevis_kem_ct", &clevis_kem_ct,
                     "clevis_kem_pub", &clevis_kem_pub,
                     "ek_digest", &ek_digest) < 0)
         return HTTP_STATUS_BAD_REQUEST;
 
     /* Step 3: Recover the KEM shared secret */
-    json_auto_t *enc_kem_key =
-        jose_jwk_kem_dec(NULL, kem_jwk, json_string(kem_ct));
-    if (!enc_kem_key)
+    json_auto_t *enc_key =
+        jose_jwk_kem_dec(NULL, tang_kem_priv, json_string(clevis_kem_ct));
+    if (!enc_key)
         return HTTP_STATUS_BAD_REQUEST;
 
-    /* Step 3b: Verify enc_kem_key digest to prevent oracle attacks */
+    /* Step 3b: Verify enc_key digest to prevent oracle attacks */
     size_t dlen = jose_jwk_thp_buf(NULL, NULL, "S256", NULL, 0);
     if (dlen == SIZE_MAX)
         return HTTP_STATUS_INTERNAL_SERVER_ERROR;
@@ -334,7 +334,7 @@ rec_kem_secure(json_t *kem_jwk, const json_t *req, char **out)
     uint8_t hash_buf[dlen];
     char thp_buf[elen + 1];
 
-    if (!jose_jwk_thp_buf(NULL, enc_kem_key, "S256", hash_buf, dlen))
+    if (!jose_jwk_thp_buf(NULL, enc_key, "S256", hash_buf, dlen))
         return HTTP_STATUS_INTERNAL_SERVER_ERROR;
 
     if (jose_b64_enc_buf(hash_buf, dlen, thp_buf, elen) != elen)
@@ -350,16 +350,16 @@ rec_kem_secure(json_t *kem_jwk, const json_t *req, char **out)
     if (!ret_encap)
         return HTTP_STATUS_INTERNAL_SERVER_ERROR;
 
-    const char *tang_ct =
+    const char *tang_transport_ct =
         json_string_value(json_object_get(ret_encap, "ct"));
-    json_t *ret_ss = json_object_get(ret_encap, "ss");
-    if (!tang_ct || !ret_ss)
+    json_t *tang_transport_key = json_object_get(ret_encap, "ss");
+    if (!tang_transport_ct || !tang_transport_key)
         return HTTP_STATUS_INTERNAL_SERVER_ERROR;
 
-    /* Step 5: Encrypt enc_kem_key under the return-channel shared secret */
-    __attribute__((cleanup(str_cleanse))) char *ek_json =
-        json_dumps(enc_kem_key, JSON_SORT_KEYS | JSON_COMPACT);
-    if (!ek_json)
+    /* Step 5: Encrypt enc_key under the return-channel shared secret */
+    __attribute__((cleanup(str_cleanse))) char *enc_key_json =
+        json_dumps(enc_key, JSON_SORT_KEYS | JSON_COMPACT);
+    if (!enc_key_json)
         return HTTP_STATUS_INTERNAL_SERVER_ERROR;
 
     json_auto_t *resp_jwe = json_pack(
@@ -367,19 +367,19 @@ rec_kem_secure(json_t *kem_jwk, const json_t *req, char **out)
     if (!resp_jwe)
         return HTTP_STATUS_INTERNAL_SERVER_ERROR;
 
-    if (!jose_jwe_enc(NULL, resp_jwe, NULL, ret_ss,
-                      ek_json, strlen(ek_json)))
+    if (!jose_jwe_enc(NULL, resp_jwe, NULL, tang_transport_key,
+                      enc_key_json, strlen(enc_key_json)))
         return HTTP_STATUS_INTERNAL_SERVER_ERROR;
 
-    __attribute__((cleanup(str_cleanup))) char *jwe_compact =
+    __attribute__((cleanup(str_cleanup))) char *tang_encrypted_key =
         jwe_to_compact(resp_jwe);
-    if (!jwe_compact)
+    if (!tang_encrypted_key)
         return HTTP_STATUS_INTERNAL_SERVER_ERROR;
 
     json_auto_t *response = json_pack(
         "{s:s, s:s}",
-        "encrypted_key", jwe_compact,
-        "transport_ct", tang_ct);
+        "tang_encrypted_key", tang_encrypted_key,
+        "tang_transport_ct", tang_transport_ct);
     if (!response)
         return HTTP_STATUS_INTERNAL_SERVER_ERROR;
 
@@ -396,7 +396,7 @@ rec_kem(http_method_t method, const char *path, const char *body,
     __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info *tki = NULL;
     size_t size = matches[1].rm_eo - matches[1].rm_so;
     const char *jwkdir = misc;
-    json_auto_t *kem_jwk = NULL;
+    json_auto_t *tang_kem_priv = NULL;
     json_auto_t *req = NULL;
     const char *kty = NULL;
     int status;
@@ -413,20 +413,20 @@ rec_kem(http_method_t method, const char *path, const char *body,
     if (!thp)
         return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
-    kem_jwk = find_jwk(tki, thp);
-    if (!kem_jwk)
+    tang_kem_priv = find_jwk(tki, thp);
+    if (!tang_kem_priv)
         return http_reply(HTTP_STATUS_NOT_FOUND, NULL);
 
-    if (json_unpack(kem_jwk, "{s:s}", "kty", &kty) < 0)
+    if (json_unpack(tang_kem_priv, "{s:s}", "kty", &kty) < 0)
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
     if (strcmp(kty, "AKP") != 0)
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
-    if (!jose_jwk_prm(NULL, kem_jwk, true, "deriveKey"))
+    if (!jose_jwk_prm(NULL, tang_kem_priv, true, "deriveKey"))
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
-    status = rec_kem_secure(kem_jwk, req, &enc);
+    status = rec_kem_secure(tang_kem_priv, req, &enc);
     if (status != HTTP_STATUS_OK)
         return http_reply(status, NULL);
 

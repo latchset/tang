@@ -117,50 +117,82 @@ rec_kem_test () {
     fi
 
     kem_kid=$(jose jwk thp -i "$kem_jwk" -a S256)
-
-    # Get public key for encapsulation
     jose jwk pub -i "$kem_jwk" -o "$TMP/kem.pub.jwk"
 
-    # Encapsulate to get client shared secret and ciphertext
-    encap_result=$(jose jwk encap -i "$TMP/kem.pub.jwk")
-    client_ss=$(printf '%s' "$encap_result" | jose fmt -j- -Og ss -Og k -u-)
-    ct=$(printf '%s' "$encap_result" | jose fmt -j- -Og ct -u-)
+    # Step 1: Simulate the stored KEM binding (client encapsulates at bind time)
+    stored_encap=$(jose jwk encap -i "$TMP/kem.pub.jwk")
+    client_ss=$(printf '%s' "$stored_encap" | jose fmt -j- -Og ss -o-)
+    kem_ct=$(printf '%s' "$stored_encap" | jose fmt -j- -Og ct -u-)
 
-    # POST ciphertext to /rec-kem and get server shared secret
-    body=$(printf '{"ct":"%s"}' "$ct")
+    # Step 2: Generate client ephemeral KEM keypair for return channel
+    jose jwk gen -i '{"alg":"ML-KEM-768"}' -o "$TMP/clevis_kem.jwk"
+    jose jwk pub -i "$TMP/clevis_kem.jwk" -o "$TMP/clevis_kem.pub.jwk"
+
+    # Step 3: Forward channel — encapsulate to tang's KEM pub
+    fwd_encap=$(jose jwk encap -i "$TMP/kem.pub.jwk")
+    transport_ct=$(printf '%s' "$fwd_encap" | jose fmt -j- -Og ct -u-)
+    printf '%s' "$fwd_encap" | jose fmt -j- -Og ss -o- > "$TMP/fwd_ss.jwk"
+
+    # Step 4: Build inner payload {kem_ct, clevis_kem_pub}
+    clevis_kem_pub=$(cat "$TMP/clevis_kem.pub.jwk")
+    printf '{"kem_ct":"%s","clevis_kem_pub":%s}' "$kem_ct" "$clevis_kem_pub" \
+        > "$TMP/inner_payload.json"
+
+    # Step 5: Encrypt inner payload under forward shared secret → encrypted_blob
+    encrypted_blob=$(jose jwe enc \
+        -i '{"protected":{"alg":"dir","enc":"A256GCM"}}' \
+        -I "$TMP/inner_payload.json" \
+        -k "$TMP/fwd_ss.jwk" -c)
+
+    # Step 6: POST {encrypted_blob, transport_ct} to /rec-kem
+    req_body=$(printf '{"encrypted_blob":"%s","transport_ct":"%s"}' \
+        "$encrypted_blob" "$transport_ct")
     server_resp=$(curl -sf -X POST \
         -H "Content-Type: application/json" \
-        -d "$body" \
+        -d "$req_body" \
         "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
-    server_ss=$(printf '%s' "$server_resp" | jose fmt -j- -Og k -u-)
 
-    # Shared secrets must match
-    [ "$client_ss" = "$server_ss" ]
+    # Step 7: Parse response {encrypted_key, transport_ct}
+    resp_transport_ct=$(printf '%s' "$server_resp" | jose fmt -j- -Og transport_ct -u-)
+    resp_encrypted_key=$(printf '%s' "$server_resp" | jose fmt -j- -Og encrypted_key -u-)
 
-    # Verify error cases: GET should fail
+    # Step 8: Decapsulate return channel with client KEM private key
+    ret_ss=$(jose jwk decap -i "$TMP/clevis_kem.jwk" -c "$resp_transport_ct")
+    printf '%s' "$ret_ss" > "$TMP/ret_ss.jwk"
+
+    # Step 9: Split compact JWE into JSON and decrypt enc_kem_key
+    IFS='.' read -r prot ekey iv ct tag <<EOF
+$resp_encrypted_key
+EOF
+    printf '{"protected":"%s","encrypted_key":"%s","iv":"%s","ciphertext":"%s","tag":"%s"}' \
+        "$prot" "$ekey" "$iv" "$ct" "$tag" > "$TMP/resp_jwe.json"
+    recovered_ss=$(jose jwe dec -i "$TMP/resp_jwe.json" -k "$TMP/ret_ss.jwk")
+
+    # Step 10: Verify recovered shared secret matches the original
+    client_ss_k=$(printf '%s' "$client_ss" | jose fmt -j- -Og k -u-)
+    recovered_ss_k=$(printf '%s' "$recovered_ss" | jose fmt -j- -Og k -u-)
+    [ "$client_ss_k" = "$recovered_ss_k" ]
+
+    # Error cases
     curl -sf "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}" && expected_fail
 
-    # Invalid JSON body
     code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
         -d "not-json" \
         "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
     [ "$code" = "400" ]
 
-    # Missing ct field
     code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
         -d '{"foo":"bar"}' \
         "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
     [ "$code" = "400" ]
 
-    # Nonexistent thumbprint
     code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-        -d "$body" \
+        -d "$req_body" \
         "http://127.0.0.1:$PORT/${prefix}rec-kem/nonexistent")
     [ "$code" = "404" ]
 
-    # ECMR key thumbprint on /rec-kem should be forbidden
     code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-        -d "$body" \
+        -d "$req_body" \
         "http://127.0.0.1:$PORT/${prefix}rec-kem/${exc_kid}")
     [ "$code" = "403" ]
 }

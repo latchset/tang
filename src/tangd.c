@@ -29,6 +29,7 @@
 #include <getopt.h>
 
 #include <jose/jose.h>
+#include <jose/b64.h>
 #include "keys.h"
 #include "socket.h"
 
@@ -307,16 +308,41 @@ rec_kem_secure(json_t *kem_jwk, const json_t *req, char **out)
         return HTTP_STATUS_BAD_REQUEST;
 
     const char *kem_ct = NULL;
+    const char *ek_digest = NULL;
     json_t *clevis_kem_pub = NULL;
-    if (json_unpack(payload, "{s:s, s:o}",
+    if (json_unpack(payload, "{s:s, s:o, s:s}",
                     "kem_ct", &kem_ct,
-                    "clevis_kem_pub", &clevis_kem_pub) < 0)
+                    "clevis_kem_pub", &clevis_kem_pub,
+                    "ek_digest", &ek_digest) < 0)
         return HTTP_STATUS_BAD_REQUEST;
 
     /* Step 3: Recover the KEM shared secret */
     json_auto_t *enc_kem_key =
         jose_jwk_kem_dec(NULL, kem_jwk, json_string(kem_ct));
     if (!enc_kem_key)
+        return HTTP_STATUS_BAD_REQUEST;
+
+    /* Step 3b: Verify enc_kem_key digest to prevent oracle attacks */
+    size_t dlen = jose_jwk_thp_buf(NULL, NULL, "S256", NULL, 0);
+    if (dlen == SIZE_MAX)
+        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+    size_t elen = jose_b64_enc_buf(NULL, dlen, NULL, 0);
+    if (elen == SIZE_MAX)
+        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+    uint8_t hash_buf[dlen];
+    char thp_buf[elen + 1];
+
+    if (!jose_jwk_thp_buf(NULL, enc_kem_key, "S256", hash_buf, dlen))
+        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+    if (jose_b64_enc_buf(hash_buf, dlen, thp_buf, elen) != elen)
+        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+    thp_buf[elen] = '\0';
+
+    if (strcmp(thp_buf, ek_digest) != 0)
         return HTTP_STATUS_BAD_REQUEST;
 
     /* Step 4: Create return channel via KEM encapsulation */

@@ -124,6 +124,10 @@ rec_kem_test () {
     client_ss=$(printf '%s' "$stored_encap" | jose fmt -j- -Og ss -o-)
     kem_ct=$(printf '%s' "$stored_encap" | jose fmt -j- -Og ct -u-)
 
+    # Compute ek_digest (JWK thumbprint of the shared secret)
+    printf '%s' "$client_ss" > "$TMP/client_ss.jwk"
+    ek_digest=$(jose jwk thp -i "$TMP/client_ss.jwk" -a S256)
+
     # Step 2: Generate client ephemeral KEM keypair for return channel
     jose jwk gen -i '{"alg":"ML-KEM-768"}' -o "$TMP/clevis_kem.jwk"
     jose jwk pub -i "$TMP/clevis_kem.jwk" -o "$TMP/clevis_kem.pub.jwk"
@@ -133,9 +137,10 @@ rec_kem_test () {
     transport_ct=$(printf '%s' "$fwd_encap" | jose fmt -j- -Og ct -u-)
     printf '%s' "$fwd_encap" | jose fmt -j- -Og ss -o- > "$TMP/fwd_ss.jwk"
 
-    # Step 4: Build inner payload {kem_ct, clevis_kem_pub}
+    # Step 4: Build inner payload {kem_ct, clevis_kem_pub, ek_digest}
     clevis_kem_pub=$(cat "$TMP/clevis_kem.pub.jwk")
-    printf '{"kem_ct":"%s","clevis_kem_pub":%s}' "$kem_ct" "$clevis_kem_pub" \
+    printf '{"kem_ct":"%s","clevis_kem_pub":%s,"ek_digest":"%s"}' \
+        "$kem_ct" "$clevis_kem_pub" "$ek_digest" \
         > "$TMP/inner_payload.json"
 
     # Step 5: Encrypt inner payload under forward shared secret → encrypted_blob
@@ -195,4 +200,23 @@ EOF
         -d "$req_body" \
         "http://127.0.0.1:$PORT/${prefix}rec-kem/${exc_kid}")
     [ "$code" = "403" ]
+
+    # Wrong ek_digest must be rejected
+    bad_fwd_encap=$(jose jwk encap -i "$TMP/kem.pub.jwk")
+    bad_transport_ct=$(printf '%s' "$bad_fwd_encap" | jose fmt -j- -Og ct -u-)
+    printf '%s' "$bad_fwd_encap" | jose fmt -j- -Og ss -o- > "$TMP/bad_fwd_ss.jwk"
+    printf '{"kem_ct":"%s","clevis_kem_pub":%s,"ek_digest":"%s"}' \
+        "$kem_ct" "$clevis_kem_pub" "INVALID_DIGEST_VALUE" \
+        > "$TMP/bad_payload.json"
+    bad_blob=$(jose jwe enc \
+        -i '{"protected":{"alg":"dir","enc":"A256GCM"}}' \
+        -I "$TMP/bad_payload.json" \
+        -k "$TMP/bad_fwd_ss.jwk" -c)
+    bad_req=$(printf '{"encrypted_blob":"%s","transport_ct":"%s"}' \
+        "$bad_blob" "$bad_transport_ct")
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Content-Type: application/json" \
+        -d "$bad_req" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+    [ "$code" = "400" ]
 }

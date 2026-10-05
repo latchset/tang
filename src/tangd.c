@@ -311,8 +311,12 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
         return HTTP_STATUS_BAD_REQUEST;
 
     /* Step 1: Decapsulate forward channel */
+    json_auto_t *fwd_ct_json = json_string(clevis_transport_ct);
+    if (!fwd_ct_json)
+        return HTTP_STATUS_BAD_REQUEST;
+
     json_auto_t *clevis_transport_key =
-        jose_jwk_kem_dec(NULL, tang_kem_priv, json_string(clevis_transport_ct));
+        jose_jwk_kem_dec(NULL, tang_kem_priv, fwd_ct_json);
     if (!clevis_transport_key)
         return HTTP_STATUS_BAD_REQUEST;
 
@@ -344,8 +348,12 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
         return HTTP_STATUS_BAD_REQUEST;
 
     /* Step 3: Recover the KEM shared secret */
+    json_auto_t *kem_ct_json = json_string(clevis_kem_ct);
+    if (!kem_ct_json)
+        return HTTP_STATUS_BAD_REQUEST;
+
     json_auto_t *enc_key =
-        jose_jwk_kem_dec(NULL, tang_kem_priv, json_string(clevis_kem_ct));
+        jose_jwk_kem_dec(NULL, tang_kem_priv, kem_ct_json);
     if (!enc_key)
         return HTTP_STATUS_BAD_REQUEST;
 

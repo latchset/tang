@@ -300,6 +300,83 @@ test_read_keys(void)
 }
 
 static void
+test_cleanup_null(void)
+{
+    free_tang_keys_info(NULL);
+    cleanup_tang_keys_info(NULL);
+    struct tang_keys_info* null_tki = NULL;
+    cleanup_tang_keys_info(&null_tki);
+}
+
+static void
+test_jwk_sign_null_inputs(void)
+{
+    ASSERT(jwk_sign(NULL, NULL) == NULL);
+
+    json_auto_t* arr = json_array();
+    ASSERT(jwk_sign(arr, NULL) == NULL);
+    ASSERT(jwk_sign(NULL, arr) == NULL);
+
+    json_auto_t* obj = json_object();
+    ASSERT(jwk_sign(obj, arr) == NULL);
+    ASSERT(jwk_sign(arr, obj) == NULL);
+}
+
+static void
+test_read_keys_no_kem(void)
+{
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(jwkdir);
+    ASSERT(tki);
+    ASSERT(tki->m_has_pqc == 0);
+    ASSERT(json_array_size(tki->m_kem_payload) == 0);
+}
+
+static void
+test_read_keys_with_kem(void)
+{
+    json_auto_t* kem = jwk_generate("ML-KEM-768");
+    if (!kem) {
+        fprintf(stderr, "Skipping KEM tests (ML-KEM-768 not supported)\n");
+        return;
+    }
+
+    umask(0022);
+    __attribute__((cleanup(cleanup_str))) char* newdir = create_tempdir();
+    ASSERT(newdir);
+
+    json_auto_t* sig = jwk_generate("ES512");
+    ASSERT(sig);
+    __attribute__((cleanup(cleanup_str))) char* sig_thp = jwk_thumbprint(sig, "S256");
+    ASSERT(sig_thp);
+    char sig_path[PATH_MAX];
+    snprintf(sig_path, PATH_MAX, "%s/%s.jwk", newdir, sig_thp);
+    ASSERT(json_dump_file(sig, sig_path, 0) == 0);
+
+    json_auto_t* exc = jwk_generate("ECMR");
+    ASSERT(exc);
+    __attribute__((cleanup(cleanup_str))) char* exc_thp = jwk_thumbprint(exc, "S256");
+    ASSERT(exc_thp);
+    char exc_path[PATH_MAX];
+    snprintf(exc_path, PATH_MAX, "%s/%s.jwk", newdir, exc_thp);
+    ASSERT(json_dump_file(exc, exc_path, 0) == 0);
+
+    __attribute__((cleanup(cleanup_str))) char* kem_thp = jwk_thumbprint(kem, "S256");
+    ASSERT(kem_thp);
+    char kem_path[PATH_MAX];
+    snprintf(kem_path, PATH_MAX, "%s/%s.jwk", newdir, kem_thp);
+    ASSERT(json_dump_file(kem, kem_path, 0) == 0);
+
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(newdir);
+    ASSERT(tki);
+    ASSERT(tki->m_keys_count == 3);
+    ASSERT(tki->m_has_pqc == 1);
+    ASSERT(json_array_size(tki->m_kem_payload) == 1);
+    ASSERT(json_array_size(tki->m_payload) == 2);
+
+    remove_tempdir(newdir);
+}
+
+static void
 run_tests(void)
 {
     test_read_keys();
@@ -308,6 +385,10 @@ run_tests(void)
     test_jwk_generate();
     test_is_hash();
     test_create_new_keys();
+    test_cleanup_null();
+    test_jwk_sign_null_inputs();
+    test_read_keys_no_kem();
+    test_read_keys_with_kem();
 }
 
 int main(int argc, char** argv)

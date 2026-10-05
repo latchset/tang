@@ -85,6 +85,10 @@ adv_startup () {
 }
 
 adv_second_phase () {
+    # Verify tangd CLI flags
+    tangd -v 2>/dev/null
+    tangd -h 2>/dev/null
+
     # Make sure requests on the root fail
     fetch "${ENDPOINT}"/ && expected_fail
 

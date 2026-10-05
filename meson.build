@@ -60,6 +60,17 @@ if meson.is_cross_build()
     compiler = meson.get_compiler('c', native : false)
 endif
 
+has_pqc = compiler.links('''
+#include <jose/jose.h>
+int main(void) {
+    json_auto_t *j = json_pack("{s:s}", "alg", "ML-KEM-768");
+    if (!jose_jwk_gen(NULL, j))
+        return 1;
+    json_auto_t *enc = jose_jwk_kem_enc(NULL, j);
+    return enc ? 0 : 1;
+}
+''', dependencies: jose, name: 'ML-KEM KEM API support in jose')
+
 message(compiler.version())
 message(compiler.get_id())
 

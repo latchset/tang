@@ -1,8 +1,11 @@
+pqc_source = has_pqc ? 'pqc.c' : 'pqc_noop.c'
+
 tangd = executable('tangd',
   'http.c',
   'keys.c',
   'tangd.c',
   'socket.c',
+  pqc_source,
   dependencies: [jose, http_parser],
   install: true,
   install_dir: libexecdir

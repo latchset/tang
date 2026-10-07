@@ -38,20 +38,30 @@ str_cleanup(char **str)
         free(*str);
 }
 
-static void
-secure_zero(void *p, size_t len)
+#ifdef HAVE_EXPLICIT_BZERO
+void explicit_bzero(void *, size_t);
+#define SECURE_WIPE(ptr, len) explicit_bzero((ptr), (len))
+#elif defined(__STDC_LIB_EXT1__)
+#define SECURE_WIPE(ptr, len) memset_s((ptr), (len), 0, (len))
+#else
+static inline void
+secure_wipe_fallback(void *ptr, size_t len)
 {
-    volatile unsigned char *v = p;
-    while (len--)
-        *v++ = 0;
+    if (!ptr)
+        return;
+    memset(ptr, 0, len);
+    __asm__ __volatile__("" : : "r"(ptr) : "memory");
 }
+#define SECURE_WIPE(ptr, len) secure_wipe_fallback((ptr), (len))
+#endif
 
 static void
 str_cleanse(char **str)
 {
     if (str && *str) {
-        secure_zero(*str, strlen(*str));
+        SECURE_WIPE(*str, strlen(*str));
         free(*str);
+        *str = NULL;
     }
 }
 
@@ -150,7 +160,7 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
         return HTTP_STATUS_BAD_REQUEST;
 
     json_auto_t *payload = json_loadb(pt, ptl, 0, NULL);
-    secure_zero(pt, ptl);
+    SECURE_WIPE(pt, ptl);
     free(pt);
     if (!payload)
         return HTTP_STATUS_BAD_REQUEST;

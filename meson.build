@@ -60,6 +60,12 @@ if meson.is_cross_build()
     compiler = meson.get_compiler('c', native : false)
 endif
 
+has_explicit_bzero = compiler.has_function(
+  'explicit_bzero',
+  prefix: '#define _DEFAULT_SOURCE\n#include <string.h>',
+  args: ['-D_DEFAULT_SOURCE'],
+)
+
 has_pqc = compiler.links('''
 #include <jose/jose.h>
 int main(void) {

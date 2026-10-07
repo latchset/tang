@@ -53,6 +53,7 @@ add_project_arguments(
 add_project_arguments('-DVERSION="'+meson.project_version() + '"', language : 'c')
 
 jose = dependency('jose', version: '>=8')
+libcrypto = dependency('libcrypto')
 a2x = find_program('a2x', required: false)
 compiler = meson.get_compiler('c', native : true)
 

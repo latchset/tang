@@ -6,7 +6,7 @@ tangd = executable('tangd',
   'tangd.c',
   'socket.c',
   pqc_source,
-  dependencies: [jose, http_parser],
+  dependencies: [jose, libcrypto, http_parser],
   install: true,
   install_dir: libexecdir
 )

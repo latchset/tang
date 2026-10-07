@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <openssl/crypto.h>
 #include <jose/jose.h>
 #include <jose/b64.h>
 
@@ -36,23 +37,6 @@ str_cleanup(char **str)
 {
     if (str)
         free(*str);
-}
-
-static void
-secure_zero(void *p, size_t len)
-{
-    volatile unsigned char *v = p;
-    while (len--)
-        *v++ = 0;
-}
-
-static void
-str_cleanse(char **str)
-{
-    if (str && *str) {
-        secure_zero(*str, strlen(*str));
-        free(*str);
-    }
 }
 
 static json_t *
@@ -150,8 +134,7 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
         return HTTP_STATUS_BAD_REQUEST;
 
     json_auto_t *payload = json_loadb(pt, ptl, 0, NULL);
-    secure_zero(pt, ptl);
-    free(pt);
+    OPENSSL_clear_free(pt, ptl);
     if (!payload)
         return HTTP_STATUS_BAD_REQUEST;
 
@@ -206,7 +189,7 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
     if (!tang_transport_ct || !tang_transport_key)
         return HTTP_STATUS_INTERNAL_SERVER_ERROR;
 
-    __attribute__((cleanup(str_cleanse))) char *enc_key_json =
+    __attribute__((cleanup(str_cleanup))) char *enc_key_json =
         json_dumps(enc_key, JSON_SORT_KEYS | JSON_COMPACT);
     if (!enc_key_json)
         return HTTP_STATUS_INTERNAL_SERVER_ERROR;

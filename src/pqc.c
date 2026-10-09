@@ -65,6 +65,17 @@ str_cleanse(char **str)
     }
 }
 
+static void
+wipe_jwk_secret(json_t *jwk)
+{
+    json_t *k = json_object_get(jwk, "k");
+    if (k && json_is_string(k)) {
+        char *kval = (char *)json_string_value(k);
+        if (kval)
+            SECURE_WIPE(kval, strlen(kval));
+    }
+}
+
 static json_t *
 jwe_from_compact(const char *compact)
 {
@@ -154,6 +165,7 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
     size_t ptl = 0;
     void *pt = jose_jwe_dec(NULL, blob_jwe, NULL,
                             clevis_transport_key, &ptl);
+    wipe_jwk_secret(clevis_transport_key);
     json_decref(clevis_transport_key);
     clevis_transport_key = NULL;
     if (!pt)
@@ -243,6 +255,10 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
         return HTTP_STATUS_INTERNAL_SERVER_ERROR;
 
     *out = json_dumps(response, JSON_SORT_KEYS | JSON_COMPACT);
+
+    wipe_jwk_secret(enc_key);
+    wipe_jwk_secret(tang_transport_key);
+
     return *out ? HTTP_STATUS_OK : HTTP_STATUS_INTERNAL_SERVER_ERROR;
 }
 

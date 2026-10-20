@@ -1,0 +1,672 @@
+/* vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80: */
+/*
+ * Copyright (c) 2025 Red Hat, Inc.
+ * Author: Sergio Arroutbi <sarroutbi@redhat.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "http.h"
+#undef http_reply
+
+#include <stdarg.h>
+
+/* Stub http_reply: returns the status code without writing to stdout. */
+int
+http_reply(const char *file, int line,
+           http_status_t code, const char *fmt, ...)
+{
+    return (int)code;
+}
+
+#define http_reply(code, ...) \
+    http_reply(__FILE__, __LINE__, code, __VA_ARGS__)
+
+#include "pqc.c"
+#include "keys.c"
+#include "test-util.h"
+
+const char* jwkdir = "@testjwkdir@";
+
+static char*
+copy_fixture(void)
+{
+    char* tmpdir = create_tempdir();
+    if (!tmpdir)
+        return NULL;
+    char cmd[PATH_MAX * 2];
+    snprintf(cmd, sizeof(cmd),
+             "cp -a %s/*.jwk %s/ 2>/dev/null;"
+             " cp -a %s/.*.jwk %s/ 2>/dev/null",
+             jwkdir, tmpdir, jwkdir, tmpdir);
+    if (system(cmd) == -1)
+        fprintf(stderr, "Warning: failed to copy fixture files\n");
+    return tmpdir;
+}
+
+static void
+test_jwe_from_compact_valid(void)
+{
+    const char *compact = "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0"
+                          "."
+                          "."
+                          "aGVsbG8"
+                          "."
+                          "Y2lwaGVydGV4dA"
+                          "."
+                          "dGFn";
+
+    json_auto_t *jwe = jwe_from_compact(compact);
+    ASSERT(jwe);
+
+    const char *prot = json_string_value(json_object_get(jwe, "protected"));
+    ASSERT(prot);
+    ASSERT(strcmp(prot, "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0") == 0);
+
+    const char *ekey = json_string_value(
+        json_object_get(jwe, "encrypted_key"));
+    ASSERT(ekey);
+    ASSERT(strcmp(ekey, "") == 0);
+
+    const char *iv = json_string_value(json_object_get(jwe, "iv"));
+    ASSERT(iv);
+    ASSERT(strcmp(iv, "aGVsbG8") == 0);
+
+    const char *ct = json_string_value(json_object_get(jwe, "ciphertext"));
+    ASSERT(ct);
+    ASSERT(strcmp(ct, "Y2lwaGVydGV4dA") == 0);
+
+    const char *tag = json_string_value(json_object_get(jwe, "tag"));
+    ASSERT(tag);
+    ASSERT(strcmp(tag, "dGFn") == 0);
+}
+
+static void
+test_jwe_from_compact_invalid(void)
+{
+    ASSERT(jwe_from_compact("") == NULL);
+    ASSERT(jwe_from_compact("no-dots") == NULL);
+    ASSERT(jwe_from_compact("one.dot") == NULL);
+    ASSERT(jwe_from_compact("a.b.c") == NULL);
+
+    /* 5+ dots: first 4 are used, remainder becomes part of the tag. */
+    json_auto_t *extra = jwe_from_compact("a.b.c.d.e.f");
+    ASSERT(extra);
+    ASSERT(strcmp(json_string_value(json_object_get(extra, "tag")),
+                 "e.f") == 0);
+}
+
+static void
+test_jwe_roundtrip(void)
+{
+    const char *compact = "prot.ekey.iv.ct.tag";
+    json_auto_t *jwe = jwe_from_compact(compact);
+    ASSERT(jwe);
+
+    __attribute__((cleanup(str_cleanup))) char *out = jwe_to_compact(jwe);
+    ASSERT(out);
+    ASSERT(strcmp(out, compact) == 0);
+}
+
+static void
+test_jwe_to_compact_missing_fields(void)
+{
+    json_auto_t *jwe = json_object();
+    ASSERT(jwe_to_compact(jwe) == NULL);
+
+    json_object_set_new(jwe, "protected", json_string("prot"));
+    ASSERT(jwe_to_compact(jwe) == NULL);
+
+    json_object_set_new(jwe, "iv", json_string("iv"));
+    ASSERT(jwe_to_compact(jwe) == NULL);
+
+    json_object_set_new(jwe, "ciphertext", json_string("ct"));
+    ASSERT(jwe_to_compact(jwe) == NULL);
+
+    json_object_set_new(jwe, "tag", json_string("tag"));
+    __attribute__((cleanup(str_cleanup))) char *out = jwe_to_compact(jwe);
+    ASSERT(out);
+    ASSERT(strcmp(out, "prot..iv.ct.tag") == 0);
+}
+
+static void
+test_parse_query_alg_basic(void)
+{
+    __attribute__((cleanup(cleanup_str))) char *alg = NULL;
+
+    alg = parse_query_alg("?alg=ML-KEM-768", 16);
+    ASSERT(alg);
+    ASSERT(strcmp(alg, "ML-KEM-768") == 0);
+    free(alg);
+    alg = NULL;
+
+    alg = parse_query_alg("?alg=ML-KEM-512", 16);
+    ASSERT(alg);
+    ASSERT(strcmp(alg, "ML-KEM-512") == 0);
+}
+
+static void
+test_parse_query_alg_with_extra_params(void)
+{
+    __attribute__((cleanup(cleanup_str))) char *alg = NULL;
+
+    alg = parse_query_alg("?alg=ML-KEM-768&foo=bar", 23);
+    ASSERT(alg);
+    ASSERT(strcmp(alg, "ML-KEM-768") == 0);
+    free(alg);
+    alg = NULL;
+
+    alg = parse_query_alg("?foo=bar&alg=ML-KEM-1024", 25);
+    ASSERT(alg);
+    ASSERT(strcmp(alg, "ML-KEM-1024") == 0);
+    free(alg);
+    alg = NULL;
+
+    alg = parse_query_alg("?foo=bar&baz=qux", 17);
+    ASSERT(alg == NULL);
+}
+
+static void
+test_parse_query_alg_edge_cases(void)
+{
+    ASSERT(parse_query_alg(NULL, 0) == NULL);
+    ASSERT(parse_query_alg("", 0) == NULL);
+    ASSERT(parse_query_alg("alg=foo", 7) == NULL);
+    ASSERT(parse_query_alg("?alg=", 5) == NULL);
+
+    __attribute__((cleanup(cleanup_str))) char *alg = NULL;
+
+    alg = parse_query_alg("?alg=X", 6);
+    ASSERT(alg);
+    ASSERT(strcmp(alg, "X") == 0);
+}
+
+static void
+test_is_valid_alg_param(void)
+{
+    ASSERT(is_valid_alg_param("ML-KEM-768") == 1);
+    ASSERT(is_valid_alg_param("ML-KEM-512") == 1);
+    ASSERT(is_valid_alg_param("ML-KEM-1024") == 1);
+    ASSERT(is_valid_alg_param("A") == 1);
+    ASSERT(is_valid_alg_param("abc123-XYZ") == 1);
+
+    ASSERT(is_valid_alg_param("") == 0);
+    ASSERT(is_valid_alg_param("ML;KEM") == 0);
+    ASSERT(is_valid_alg_param("ML KEM") == 0);
+    ASSERT(is_valid_alg_param("alg=foo") == 0);
+    ASSERT(is_valid_alg_param("<script>") == 0);
+    ASSERT(is_valid_alg_param("a/b") == 0);
+    ASSERT(is_valid_alg_param("alg\ninjection") == 0);
+
+    char long_alg[MAX_ALG_LEN + 2];
+    memset(long_alg, 'A', MAX_ALG_LEN + 1);
+    long_alg[MAX_ALG_LEN + 1] = '\0';
+    ASSERT(is_valid_alg_param(long_alg) == 0);
+
+    char max_alg[MAX_ALG_LEN + 1];
+    memset(max_alg, 'A', MAX_ALG_LEN);
+    max_alg[MAX_ALG_LEN] = '\0';
+    ASSERT(is_valid_alg_param(max_alg) == 1);
+}
+
+static void
+test_wipe_jwk_secret_null_safety(void)
+{
+    json_auto_t *empty = json_object();
+    wipe_jwk_secret(empty);
+
+    json_auto_t *no_k = json_pack("{s:s}", "kty", "oct");
+    wipe_jwk_secret(no_k);
+
+    json_auto_t *k_not_string = json_pack("{s:i}", "k", 42);
+    wipe_jwk_secret(k_not_string);
+}
+
+static void
+test_wipe_jwk_secret_wipes(void)
+{
+    json_auto_t *jwk = json_pack("{s:s, s:s}",
+                                 "kty", "oct", "k", "SECRETDATA");
+    const char *kval = json_string_value(json_object_get(jwk, "k"));
+    ASSERT(kval);
+    ASSERT(strcmp(kval, "SECRETDATA") == 0);
+
+    wipe_jwk_secret(jwk);
+
+    kval = json_string_value(json_object_get(jwk, "k"));
+    ASSERT(kval);
+    int all_zero = 1;
+    for (size_t i = 0; i < strlen("SECRETDATA"); i++) {
+        if (kval[i] != '\0') {
+            all_zero = 0;
+            break;
+        }
+    }
+    ASSERT(all_zero);
+}
+
+static void
+test_wipe_and_release_null_safety(void)
+{
+    wipe_and_release(NULL);
+
+    json_t *null_ptr = NULL;
+    wipe_and_release(&null_ptr);
+    ASSERT(null_ptr == NULL);
+}
+
+static void
+test_wipe_and_release(void)
+{
+    json_t *jwk = json_pack("{s:s, s:s}", "kty", "oct", "k", "SECRET");
+    ASSERT(jwk);
+    wipe_and_release(&jwk);
+    ASSERT(jwk == NULL);
+}
+
+static void
+test_str_cleanse_func(void)
+{
+    char *s = strdup("sensitive-data");
+    ASSERT(s);
+    str_cleanse(&s);
+    ASSERT(s == NULL);
+
+    char *null_str = NULL;
+    str_cleanse(&null_str);
+    ASSERT(null_str == NULL);
+
+    str_cleanse(NULL);
+}
+
+static void
+test_find_jws_kem_null_tki(void)
+{
+    ASSERT(find_jws_kem(NULL, "ML-KEM-768") == NULL);
+    ASSERT(find_jws_kem(NULL, NULL) == NULL);
+}
+
+static void
+test_find_jws_kem_filtering(void)
+{
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *tki = read_keys(tmpdir);
+    ASSERT(tki);
+
+    if (!tki->m_has_pqc) {
+        fprintf(stderr, "No PQC support, skipping find_jws_kem test\n");
+        remove_tempdir(tmpdir);
+        return;
+    }
+
+    json_auto_t *jws_default = find_jws_kem(tki, NULL);
+    ASSERT(jws_default);
+
+    json_auto_t *jws_768 = find_jws_kem(tki, "ML-KEM-768");
+    ASSERT(jws_768);
+
+    json_auto_t *jws_unknown = find_jws_kem(tki, "UNSUPPORTED-ALG");
+    ASSERT(jws_unknown == NULL);
+
+    const char *algs[] = {"ML-KEM-512", "ML-KEM-768", "ML-KEM-1024", NULL};
+    for (int i = 0; algs[i]; i++) {
+        json_auto_t *jws = find_jws_kem(tki, algs[i]);
+        if (jws) {
+            ASSERT(jose_jws_ver(NULL, jws, NULL, tki->m_sign, 1));
+        }
+    }
+
+    remove_tempdir(tmpdir);
+}
+
+static void
+test_find_jws_kem_empty_payload(void)
+{
+    struct tang_keys_info tki_empty;
+    memset(&tki_empty, 0, sizeof(tki_empty));
+    tki_empty.m_kem_payload = json_array();
+    tki_empty.m_sign = json_array();
+    tki_empty.m_keys = json_array();
+    tki_empty.m_rotated_keys = json_array();
+    tki_empty.m_payload = json_array();
+
+    ASSERT(find_jws_kem(&tki_empty, "ML-KEM-768") == NULL);
+    ASSERT(find_jws_kem(&tki_empty, NULL) == NULL);
+
+    json_decref(tki_empty.m_kem_payload);
+    json_decref(tki_empty.m_sign);
+    json_decref(tki_empty.m_keys);
+    json_decref(tki_empty.m_rotated_keys);
+    json_decref(tki_empty.m_payload);
+}
+
+static void
+test_rec_kem_secure_bad_json(void)
+{
+    json_auto_t *priv = NULL;
+
+    if (!jose_jwk_gen(NULL,
+            (priv = json_pack("{s:s}", "alg", "ML-KEM-768")))) {
+        fprintf(stderr,
+                "No ML-KEM support, skipping rec_kem_secure tests\n");
+        return;
+    }
+
+    char *out = NULL;
+
+    json_auto_t *empty = json_object();
+    ASSERT(rec_kem_secure(priv, empty, &out) == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(out == NULL);
+
+    json_auto_t *missing_field = json_pack("{s:s}",
+        "clevis_encrypted_blob", "foo");
+    ASSERT(rec_kem_secure(priv, missing_field, &out)
+           == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(out == NULL);
+}
+
+static void
+test_rec_kem_secure_bad_transport_ct(void)
+{
+    json_auto_t *priv = NULL;
+
+    if (!jose_jwk_gen(NULL,
+            (priv = json_pack("{s:s}", "alg", "ML-KEM-768")))) {
+        fprintf(stderr,
+                "No ML-KEM support, skipping rec_kem_secure tests\n");
+        return;
+    }
+
+    char *out = NULL;
+
+    json_auto_t *req = json_pack("{s:s, s:s}",
+        "clevis_encrypted_blob", "a.b.c.d.e",
+        "clevis_transport_ct", "INVALID_CIPHERTEXT");
+    ASSERT(rec_kem_secure(priv, req, &out) == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(out == NULL);
+}
+
+static void
+test_rec_kem_secure_bad_blob(void)
+{
+    json_auto_t *priv = NULL;
+
+    if (!jose_jwk_gen(NULL,
+            (priv = json_pack("{s:s}", "alg", "ML-KEM-768")))) {
+        fprintf(stderr,
+                "No ML-KEM support, skipping rec_kem_secure tests\n");
+        return;
+    }
+
+    json_auto_t *pub = json_deep_copy(priv);
+    jose_jwk_pub(NULL, pub);
+
+    json_auto_t *enc = jose_jwk_kem_enc(NULL, pub);
+    ASSERT(enc);
+    const char *ct = json_string_value(json_object_get(enc, "ct"));
+    ASSERT(ct);
+
+    char *out = NULL;
+    json_auto_t *req = json_pack("{s:s, s:s}",
+        "clevis_encrypted_blob", "not-a-valid-jwe",
+        "clevis_transport_ct", ct);
+    ASSERT(rec_kem_secure(priv, req, &out) == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(out == NULL);
+}
+
+static void
+test_rec_kem_secure_bad_inner_payload(void)
+{
+    json_auto_t *priv = NULL;
+
+    if (!jose_jwk_gen(NULL,
+            (priv = json_pack("{s:s}", "alg", "ML-KEM-768")))) {
+        fprintf(stderr,
+                "No ML-KEM support, skipping rec_kem_secure tests\n");
+        return;
+    }
+
+    json_auto_t *pub = json_deep_copy(priv);
+    jose_jwk_pub(NULL, pub);
+
+    json_auto_t *fwd_enc = jose_jwk_kem_enc(NULL, pub);
+    ASSERT(fwd_enc);
+    const char *fwd_ct = json_string_value(json_object_get(fwd_enc, "ct"));
+    json_t *fwd_ss = json_object_get(fwd_enc, "ss");
+    ASSERT(fwd_ct && fwd_ss);
+
+    const char *bad_payload = "{\"garbage\":true}";
+    json_auto_t *jwe_hdr = json_pack(
+        "{s:{s:s,s:s}}", "protected", "alg", "dir", "enc", "A256GCM");
+    ASSERT(jose_jwe_enc(NULL, jwe_hdr, NULL, fwd_ss,
+                        bad_payload, strlen(bad_payload)));
+
+    __attribute__((cleanup(str_cleanup))) char *blob = jwe_to_compact(jwe_hdr);
+    ASSERT(blob);
+
+    char *out = NULL;
+    json_auto_t *req = json_pack("{s:s, s:s}",
+        "clevis_encrypted_blob", blob,
+        "clevis_transport_ct", fwd_ct);
+    ASSERT(rec_kem_secure(priv, req, &out) == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(out == NULL);
+}
+
+static void
+test_rec_kem_secure_wrong_digest(void)
+{
+    json_auto_t *priv = NULL;
+
+    if (!jose_jwk_gen(NULL,
+            (priv = json_pack("{s:s}", "alg", "ML-KEM-768")))) {
+        fprintf(stderr,
+                "No ML-KEM support, skipping rec_kem_secure tests\n");
+        return;
+    }
+
+    json_auto_t *pub = json_deep_copy(priv);
+    jose_jwk_pub(NULL, pub);
+
+    json_auto_t *stored_enc = jose_jwk_kem_enc(NULL, pub);
+    ASSERT(stored_enc);
+    const char *clevis_kem_ct = json_string_value(
+        json_object_get(stored_enc, "ct"));
+
+    json_auto_t *fwd_enc = jose_jwk_kem_enc(NULL, pub);
+    ASSERT(fwd_enc);
+    const char *fwd_ct = json_string_value(json_object_get(fwd_enc, "ct"));
+    json_t *fwd_ss = json_object_get(fwd_enc, "ss");
+    ASSERT(fwd_ct && fwd_ss);
+
+    json_auto_t *clevis_kem_priv = json_pack("{s:s}", "alg", "ML-KEM-768");
+    ASSERT(jose_jwk_gen(NULL, clevis_kem_priv));
+    json_auto_t *clevis_kem_pub = json_deep_copy(clevis_kem_priv);
+    jose_jwk_pub(NULL, clevis_kem_pub);
+
+    json_auto_t *inner = json_pack("{s:s, s:O, s:s}",
+        "clevis_kem_ct", clevis_kem_ct,
+        "clevis_kem_pub", clevis_kem_pub,
+        "ek_digest", "WRONG_DIGEST_VALUE");
+
+    __attribute__((cleanup(str_cleanup))) char *inner_str =
+        json_dumps(inner, JSON_COMPACT);
+    ASSERT(inner_str);
+
+    json_auto_t *jwe_hdr = json_pack(
+        "{s:{s:s,s:s}}", "protected", "alg", "dir", "enc", "A256GCM");
+    ASSERT(jose_jwe_enc(NULL, jwe_hdr, NULL, fwd_ss,
+                        inner_str, strlen(inner_str)));
+
+    __attribute__((cleanup(str_cleanup))) char *blob = jwe_to_compact(jwe_hdr);
+    ASSERT(blob);
+
+    char *out = NULL;
+    json_auto_t *req = json_pack("{s:s, s:s}",
+        "clevis_encrypted_blob", blob,
+        "clevis_transport_ct", fwd_ct);
+    ASSERT(rec_kem_secure(priv, req, &out) == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(out == NULL);
+}
+
+static void
+test_rec_kem_secure_success(void)
+{
+    json_auto_t *priv = NULL;
+
+    if (!jose_jwk_gen(NULL,
+            (priv = json_pack("{s:s}", "alg", "ML-KEM-768")))) {
+        fprintf(stderr,
+                "No ML-KEM support, skipping rec_kem_secure tests\n");
+        return;
+    }
+
+    json_auto_t *pub = json_deep_copy(priv);
+    jose_jwk_pub(NULL, pub);
+
+    json_auto_t *stored_enc = jose_jwk_kem_enc(NULL, pub);
+    ASSERT(stored_enc);
+    json_t *enc_key = json_object_get(stored_enc, "ss");
+    const char *clevis_kem_ct = json_string_value(
+        json_object_get(stored_enc, "ct"));
+    ASSERT(enc_key && clevis_kem_ct);
+
+    size_t dlen = jose_jwk_thp_buf(NULL, NULL, "S256", NULL, 0);
+    ASSERT(dlen != SIZE_MAX);
+    size_t elen = jose_b64_enc_buf(NULL, dlen, NULL, 0);
+    ASSERT(elen != SIZE_MAX);
+    uint8_t hash_buf[dlen];
+    char thp_buf[elen + 1];
+    ASSERT(jose_jwk_thp_buf(NULL, enc_key, "S256", hash_buf, dlen));
+    ASSERT(jose_b64_enc_buf(hash_buf, dlen, thp_buf, elen) == elen);
+    thp_buf[elen] = '\0';
+
+    json_auto_t *fwd_enc = jose_jwk_kem_enc(NULL, pub);
+    ASSERT(fwd_enc);
+    const char *fwd_ct = json_string_value(json_object_get(fwd_enc, "ct"));
+    json_t *fwd_ss = json_object_get(fwd_enc, "ss");
+    ASSERT(fwd_ct && fwd_ss);
+
+    json_auto_t *clevis_kem_priv = json_pack("{s:s}", "alg", "ML-KEM-768");
+    ASSERT(jose_jwk_gen(NULL, clevis_kem_priv));
+    json_auto_t *clevis_kem_pub = json_deep_copy(clevis_kem_priv);
+    jose_jwk_pub(NULL, clevis_kem_pub);
+
+    json_auto_t *inner = json_pack("{s:s, s:O, s:s}",
+        "clevis_kem_ct", clevis_kem_ct,
+        "clevis_kem_pub", clevis_kem_pub,
+        "ek_digest", thp_buf);
+
+    __attribute__((cleanup(str_cleanup))) char *inner_str =
+        json_dumps(inner, JSON_COMPACT);
+    ASSERT(inner_str);
+
+    json_auto_t *jwe_hdr = json_pack(
+        "{s:{s:s,s:s}}", "protected", "alg", "dir", "enc", "A256GCM");
+    ASSERT(jose_jwe_enc(NULL, jwe_hdr, NULL, fwd_ss,
+                        inner_str, strlen(inner_str)));
+
+    __attribute__((cleanup(str_cleanup))) char *blob = jwe_to_compact(jwe_hdr);
+    ASSERT(blob);
+
+    char *out = NULL;
+    json_auto_t *req = json_pack("{s:s, s:s}",
+        "clevis_encrypted_blob", blob,
+        "clevis_transport_ct", fwd_ct);
+    int status = rec_kem_secure(priv, req, &out);
+    ASSERT_WITH_MSG(status == HTTP_STATUS_OK,
+                    "expected 200, got %d", status);
+    ASSERT(out);
+
+    json_auto_t *resp = json_loads(out, 0, NULL);
+    free(out);
+    ASSERT(resp);
+    const char *tang_encrypted_key = json_string_value(
+        json_object_get(resp, "tang_encrypted_key"));
+    const char *tang_transport_ct = json_string_value(
+        json_object_get(resp, "tang_transport_ct"));
+    ASSERT(tang_encrypted_key);
+    ASSERT(tang_transport_ct);
+
+    json_auto_t *tang_ct_json = json_string(tang_transport_ct);
+    json_auto_t *tang_ss = jose_jwk_kem_dec(NULL,
+        clevis_kem_priv, tang_ct_json);
+    ASSERT(tang_ss);
+
+    json_auto_t *resp_jwe = jwe_from_compact(tang_encrypted_key);
+    ASSERT(resp_jwe);
+
+    size_t ptl = 0;
+    void *pt = jose_jwe_dec(NULL, resp_jwe, NULL, tang_ss, &ptl);
+    ASSERT(pt);
+
+    json_auto_t *recovered = json_loadb(pt, ptl, 0, NULL);
+    SECURE_WIPE(pt, ptl);
+    free(pt);
+    ASSERT(recovered);
+
+    const char *orig_k = json_string_value(
+        json_object_get(enc_key, "k"));
+    const char *recov_k = json_string_value(
+        json_object_get(recovered, "k"));
+    ASSERT(orig_k && recov_k);
+    ASSERT(strcmp(orig_k, recov_k) == 0);
+}
+
+static void
+test_pqc_is_available(void)
+{
+    ASSERT(pqc_is_available() == 1);
+}
+
+static void
+run_tests(void)
+{
+    test_jwe_from_compact_valid();
+    test_jwe_from_compact_invalid();
+    test_jwe_roundtrip();
+    test_jwe_to_compact_missing_fields();
+
+    test_parse_query_alg_basic();
+    test_parse_query_alg_with_extra_params();
+    test_parse_query_alg_edge_cases();
+
+    test_is_valid_alg_param();
+
+    test_wipe_jwk_secret_null_safety();
+    test_wipe_jwk_secret_wipes();
+    test_wipe_and_release_null_safety();
+    test_wipe_and_release();
+    test_str_cleanse_func();
+
+    test_find_jws_kem_null_tki();
+    test_find_jws_kem_filtering();
+    test_find_jws_kem_empty_payload();
+
+    test_rec_kem_secure_bad_json();
+    test_rec_kem_secure_bad_transport_ct();
+    test_rec_kem_secure_bad_blob();
+    test_rec_kem_secure_bad_inner_payload();
+    test_rec_kem_secure_wrong_digest();
+    test_rec_kem_secure_success();
+
+    test_pqc_is_available();
+}
+
+int main(int argc, char** argv)
+{
+    run_tests();
+    return 0;
+}

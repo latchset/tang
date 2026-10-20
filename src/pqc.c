@@ -138,11 +138,22 @@ jwe_to_compact(const json_t *jwe)
     return out;
 }
 
+static void
+wipe_and_release(json_t **jwk)
+{
+    if (jwk && *jwk) {
+        wipe_jwk_secret(*jwk);
+        json_decref(*jwk);
+        *jwk = NULL;
+    }
+}
+
 static int
 rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
 {
     const char *clevis_encrypted_blob = NULL;
     const char *clevis_transport_ct = NULL;
+    int status = HTTP_STATUS_BAD_REQUEST;
 
     if (json_unpack((json_t *)req, "{s:s, s:s}",
                     "clevis_encrypted_blob", &clevis_encrypted_blob,
@@ -153,21 +164,21 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
     if (!fwd_ct_json)
         return HTTP_STATUS_BAD_REQUEST;
 
-    json_auto_t *clevis_transport_key =
+    json_t *clevis_transport_key =
         jose_jwk_kem_dec(NULL, tang_kem_priv, fwd_ct_json);
     if (!clevis_transport_key)
         return HTTP_STATUS_BAD_REQUEST;
 
     json_auto_t *blob_jwe = jwe_from_compact(clevis_encrypted_blob);
-    if (!blob_jwe)
+    if (!blob_jwe) {
+        wipe_and_release(&clevis_transport_key);
         return HTTP_STATUS_BAD_REQUEST;
+    }
 
     size_t ptl = 0;
     void *pt = jose_jwe_dec(NULL, blob_jwe, NULL,
                             clevis_transport_key, &ptl);
-    wipe_jwk_secret(clevis_transport_key);
-    json_decref(clevis_transport_key);
-    clevis_transport_key = NULL;
+    wipe_and_release(&clevis_transport_key);
     if (!pt)
         return HTTP_STATUS_BAD_REQUEST;
 
@@ -190,11 +201,6 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
     if (!kem_ct_json)
         return HTTP_STATUS_BAD_REQUEST;
 
-    json_auto_t *enc_key =
-        jose_jwk_kem_dec(NULL, tang_kem_priv, kem_ct_json);
-    if (!enc_key)
-        return HTTP_STATUS_BAD_REQUEST;
-
     size_t dlen = jose_jwk_thp_buf(NULL, NULL, "S256", NULL, 0);
     if (dlen == SIZE_MAX)
         return HTTP_STATUS_INTERNAL_SERVER_ERROR;
@@ -206,60 +212,94 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
     uint8_t hash_buf[dlen];
     char thp_buf[elen + 1];
 
-    if (!jose_jwk_thp_buf(NULL, enc_key, "S256", hash_buf, dlen))
-        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+    json_t *enc_key =
+        jose_jwk_kem_dec(NULL, tang_kem_priv, kem_ct_json);
+    if (!enc_key)
+        return HTTP_STATUS_BAD_REQUEST;
 
-    if (jose_b64_enc_buf(hash_buf, dlen, thp_buf, elen) != elen)
-        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+    json_t *ret_encap = NULL;
+    json_t *tang_transport_key = NULL;
+    char *enc_key_json = NULL;
+    json_t *resp_jwe = NULL;
+    char *tang_encrypted_key = NULL;
+    json_t *response = NULL;
+
+    if (!jose_jwk_thp_buf(NULL, enc_key, "S256", hash_buf, dlen)) {
+        status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+        goto cleanup;
+    }
+
+    if (jose_b64_enc_buf(hash_buf, dlen, thp_buf, elen) != elen) {
+        status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+        goto cleanup;
+    }
 
     thp_buf[elen] = '\0';
 
     if (strcmp(thp_buf, ek_digest) != 0)
-        return HTTP_STATUS_BAD_REQUEST;
+        goto cleanup;
 
-    json_auto_t *ret_encap = jose_jwk_kem_enc(NULL, clevis_kem_pub);
-    if (!ret_encap)
-        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+    ret_encap = jose_jwk_kem_enc(NULL, clevis_kem_pub);
+    if (!ret_encap) {
+        status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+        goto cleanup;
+    }
 
     const char *tang_transport_ct =
         json_string_value(json_object_get(ret_encap, "ct"));
-    json_t *tang_transport_key =
-        json_object_get(ret_encap, "ss");
-    if (!tang_transport_ct || !tang_transport_key)
-        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+    tang_transport_key = json_object_get(ret_encap, "ss");
+    if (!tang_transport_ct || !tang_transport_key) {
+        status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+        goto cleanup;
+    }
 
-    __attribute__((cleanup(str_cleanse))) char *enc_key_json =
-        json_dumps(enc_key, JSON_SORT_KEYS | JSON_COMPACT);
-    if (!enc_key_json)
-        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+    enc_key_json = json_dumps(enc_key, JSON_SORT_KEYS | JSON_COMPACT);
+    if (!enc_key_json) {
+        status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+        goto cleanup;
+    }
 
-    json_auto_t *resp_jwe = json_pack(
+    resp_jwe = json_pack(
         "{s:{s:s,s:s}}", "protected", "alg", "dir", "enc", "A256GCM");
-    if (!resp_jwe)
-        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+    if (!resp_jwe) {
+        status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+        goto cleanup;
+    }
 
     if (!jose_jwe_enc(NULL, resp_jwe, NULL, tang_transport_key,
-                      enc_key_json, strlen(enc_key_json)))
-        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+                      enc_key_json, strlen(enc_key_json))) {
+        status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+        goto cleanup;
+    }
 
-    __attribute__((cleanup(str_cleanup))) char *tang_encrypted_key =
-        jwe_to_compact(resp_jwe);
-    if (!tang_encrypted_key)
-        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+    tang_encrypted_key = jwe_to_compact(resp_jwe);
+    if (!tang_encrypted_key) {
+        status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+        goto cleanup;
+    }
 
-    json_auto_t *response = json_pack(
+    response = json_pack(
         "{s:s, s:s}",
         "tang_encrypted_key", tang_encrypted_key,
         "tang_transport_ct", tang_transport_ct);
-    if (!response)
-        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+    if (!response) {
+        status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+        goto cleanup;
+    }
 
     *out = json_dumps(response, JSON_SORT_KEYS | JSON_COMPACT);
+    status = *out ? HTTP_STATUS_OK : HTTP_STATUS_INTERNAL_SERVER_ERROR;
 
-    wipe_jwk_secret(enc_key);
-    wipe_jwk_secret(tang_transport_key);
-
-    return *out ? HTTP_STATUS_OK : HTTP_STATUS_INTERNAL_SERVER_ERROR;
+cleanup:
+    if (tang_transport_key)
+        wipe_jwk_secret(tang_transport_key);
+    wipe_and_release(&enc_key);
+    str_cleanse(&enc_key_json);
+    free(tang_encrypted_key);
+    json_decref(ret_encap);
+    json_decref(resp_jwe);
+    json_decref(response);
+    return status;
 }
 
 #define MAX_ALG_LEN 32

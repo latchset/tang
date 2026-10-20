@@ -36,7 +36,8 @@ copy_fixture(void)
              " cp -a %s/invalid.jwk %s/ 2>/dev/null",
              jwkdir, tmpdir, jwkdir, tmpdir,
              jwkdir, tmpdir, jwkdir, tmpdir);
-    system(cmd);
+    if (system(cmd) == -1)
+        fprintf(stderr, "Warning: failed to copy fixture files\n");
     return tmpdir;
 }
 
@@ -488,6 +489,49 @@ test_create_new_keys_kem_variants(void)
 }
 
 static void
+test_jwk_thumbprint_edge_cases(void)
+{
+    ASSERT(jwk_thumbprint(NULL, "S256") == NULL);
+
+    json_auto_t *jwk = jwk_generate("ES512");
+    ASSERT(jwk);
+
+    ASSERT(jwk_thumbprint(jwk, NULL) == NULL);
+    ASSERT(jwk_thumbprint(jwk, "") == NULL);
+    ASSERT(jwk_thumbprint(jwk, "INVALID") == NULL);
+
+    const char **hashes = supported_hashes();
+    for (int i = 0; hashes[i]; i++) {
+        __attribute__((cleanup(cleanup_str))) char *thp =
+            jwk_thumbprint(jwk, hashes[i]);
+        ASSERT_WITH_MSG(thp, "hash = %s", hashes[i]);
+        ASSERT(strlen(thp) > 0);
+    }
+}
+
+static void
+test_prepare_payload_and_sign_null(void)
+{
+    ASSERT(prepare_payload_and_sign(NULL) == 0);
+}
+
+static void
+test_find_by_thp_null(void)
+{
+    ASSERT(find_by_thp(NULL, "anything") == NULL);
+
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *tki = read_keys(tmpdir);
+    ASSERT(tki);
+
+    ASSERT(find_by_thp(tki, "nonexistent-thumbprint") == NULL);
+
+    remove_tempdir(tmpdir);
+}
+
+static void
 run_tests(void)
 {
     test_read_keys();
@@ -501,6 +545,9 @@ run_tests(void)
     test_read_keys_auto_generate_kem();
     test_read_keys_with_kem();
     test_create_new_keys_kem_variants();
+    test_jwk_thumbprint_edge_cases();
+    test_prepare_payload_and_sign_null();
+    test_find_by_thp_null();
 }
 
 int main(int argc, char** argv)

@@ -262,17 +262,79 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
     return *out ? HTTP_STATUS_OK : HTTP_STATUS_INTERNAL_SERVER_ERROR;
 }
 
-static json_t*
-find_jws_kem(struct tang_keys_info* tki)
-{
-    if (!tki || json_array_size(tki->m_kem_payload) == 0) {
-        return NULL;
-    }
+#define MAX_ALG_LEN 32
 
-    json_auto_t* jws = jwk_sign(tki->m_kem_payload, tki->m_sign);
-    if (!jws) {
-        return NULL;
+static int
+is_valid_alg_param(const char *alg)
+{
+    size_t len = strlen(alg);
+    if (len == 0 || len > MAX_ALG_LEN)
+        return 0;
+    for (size_t i = 0; i < len; i++) {
+        char c = alg[i];
+        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+              (c >= '0' && c <= '9') || c == '-'))
+            return 0;
     }
+    return 1;
+}
+
+static char *
+parse_query_alg(const char *query, size_t len)
+{
+    if (!query || len == 0 || query[0] != '?')
+        return NULL;
+
+    const char *p = query + 1;
+    const char *end = query + len;
+    const char *key = "alg=";
+    size_t klen = 4;
+
+    while (p < end) {
+        if ((size_t)(end - p) >= klen && strncmp(p, key, klen) == 0) {
+            const char *val = p + klen;
+            const char *vend = memchr(val, '&', end - val);
+            if (!vend)
+                vend = end;
+            if (vend == val)
+                return NULL;
+            return strndup(val, vend - val);
+        }
+        const char *next = memchr(p, '&', end - p);
+        if (!next)
+            break;
+        p = next + 1;
+    }
+    return NULL;
+}
+
+static json_t*
+find_jws_kem(struct tang_keys_info *tki, const char *alg)
+{
+    if (!tki)
+        return NULL;
+
+    if (!alg)
+        alg = "ML-KEM-768";
+
+    json_auto_t *payload = json_array();
+    if (!payload)
+        return NULL;
+
+    size_t idx;
+    json_t *jwk;
+    json_array_foreach(tki->m_kem_payload, idx, jwk) {
+        const char *key_alg = json_string_value(
+            json_object_get(jwk, "alg"));
+        if (key_alg && strcmp(key_alg, alg) == 0)
+            json_array_append(payload, jwk);
+    }
+    if (json_array_size(payload) == 0)
+        return NULL;
+
+    json_auto_t *jws = jwk_sign(payload, tki->m_sign);
+    if (!jws)
+        return NULL;
     return json_incref(jws);
 }
 
@@ -281,6 +343,7 @@ adv_kem(http_method_t method, const char *path, const char *body,
         regmatch_t matches[], void *misc)
 {
     __attribute__((cleanup(str_cleanup))) char *out = NULL;
+    __attribute__((cleanup(str_cleanup))) char *alg = NULL;
     __attribute__((cleanup(cleanup_tang_keys_info)))
         struct tang_keys_info *tki = NULL;
     json_auto_t *jws = NULL;
@@ -290,7 +353,14 @@ adv_kem(http_method_t method, const char *path, const char *body,
     if (!tki || tki->m_keys_count == 0)
         return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
-    jws = find_jws_kem(tki);
+    if (matches[1].rm_so < matches[1].rm_eo) {
+        size_t qlen = matches[1].rm_eo - matches[1].rm_so;
+        alg = parse_query_alg(&path[matches[1].rm_so], qlen);
+        if (alg && !is_valid_alg_param(alg))
+            return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
+    }
+
+    jws = find_jws_kem(tki, alg);
     if (!jws)
         return http_reply(HTTP_STATUS_NOT_FOUND, NULL);
 

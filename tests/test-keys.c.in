@@ -22,6 +22,24 @@
 
 const char* jwkdir = "@testjwkdir@";
 
+static char*
+copy_fixture(void)
+{
+    char* tmpdir = create_tempdir();
+    if (!tmpdir)
+        return NULL;
+    char cmd[PATH_MAX * 2];
+    snprintf(cmd, sizeof(cmd),
+             "cp -a %s/*.jwk %s/ 2>/dev/null;"
+             " cp -a %s/.*.jwk %s/ 2>/dev/null;"
+             " cp -a %s/empty.jwk %s/ 2>/dev/null;"
+             " cp -a %s/invalid.jwk %s/ 2>/dev/null",
+             jwkdir, tmpdir, jwkdir, tmpdir,
+             jwkdir, tmpdir, jwkdir, tmpdir);
+    system(cmd);
+    return tmpdir;
+}
+
 struct thp_result {
     const char* thp;
     int valid;
@@ -170,7 +188,9 @@ test_find_jws(void)
         {"XXXXXXXXXXXXXXXXXX", 0}
     };
 
-    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(jwkdir);
+    __attribute__((cleanup(cleanup_str))) char* tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(tmpdir);
     for (int i = 0, len = ARRAY_COUNT(test_data); i < len; i++) {
         json_auto_t* jws = find_jws(tki, test_data[i].thp);
         ASSERT_WITH_MSG(!!jws == test_data[i].valid, "i = %d, thp = %s", i, test_data[i].thp);
@@ -219,6 +239,7 @@ test_find_jws(void)
             ASSERT_WITH_MSG(jose_jws_ver(NULL, jws, NULL, sign, 1), "i = %d, hash = %s, key idx = %d, thp = %s", i, hashes[i], idx, thp);
         }
     }
+    remove_tempdir(tmpdir);
 }
 
 static void
@@ -242,7 +263,9 @@ test_find_jwk(void)
         {"XXXXXXXXXXXXXXXXXX", 0},
     };
 
-    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(jwkdir);
+    __attribute__((cleanup(cleanup_str))) char* tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(tmpdir);
 
     for (int i = 0, len = ARRAY_COUNT(test_data); i < len; i++) {
         json_auto_t* tjwk = find_jwk(tki, test_data[i].thp);
@@ -274,29 +297,37 @@ test_find_jwk(void)
             ASSERT_WITH_MSG(tjwk, "i = %d, hash = %s, key idx = %d, thp = %s", i, hashes[i], idx, thp);
         }
     }
+    remove_tempdir(tmpdir);
 }
 
 static void
 test_read_keys(void)
 {
-    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(jwkdir);
+    __attribute__((cleanup(cleanup_str))) char* tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(tmpdir);
     ASSERT(tki);
 
     /*
-     * Keys in tests/keys:
-     * - .uZ0s8YTXcGcuWduWWBSiR2OjOVg.jwk
-     * - .r4E2wG1u_YyKUo0N0rIK7jJF5Xg.jwk
-     * - qgmqJSo6AEEuVQY7zVlklqdTMqY.jwk
-     * - -bWkGaJi0Zdvxaj4DCp28umLcRA.jwk
+     * Original keys in tests/keys:
+     * - .uZ0s8YTXcGcuWduWWBSiR2OjOVg.jwk  (rotated)
+     * - .r4E2wG1u_YyKUo0N0rIK7jJF5Xg.jwk  (rotated)
+     * - qgmqJSo6AEEuVQY7zVlklqdTMqY.jwk   (active)
+     * - -bWkGaJi0Zdvxaj4DCp28umLcRA.jwk    (active)
+     *
+     * ML-KEM keys are auto-generated when none exist,
+     * so m_keys_count >= 2.
      */
-    ASSERT(tki->m_keys_count == 2);
+    ASSERT(tki->m_keys_count >= 2);
     ASSERT(tki->m_rotated_keys_count == 2);
-    ASSERT(json_array_size(tki->m_keys) == 2);
+    ASSERT(json_array_size(tki->m_keys) >= 2);
     ASSERT(json_array_size(tki->m_rotated_keys) == 2);
 
     const char* invalid_jwkdir = "foobar";
     __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki2 = read_keys(invalid_jwkdir);
     ASSERT(tki2 == NULL);
+
+    remove_tempdir(tmpdir);
 }
 
 static void
@@ -323,22 +354,31 @@ test_jwk_sign_null_inputs(void)
 }
 
 static void
-test_read_keys_no_kem(void)
+test_read_keys_auto_generate_kem(void)
 {
-    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(jwkdir);
+    __attribute__((cleanup(cleanup_str))) char* tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(tmpdir);
     ASSERT(tki);
-    ASSERT(tki->m_has_pqc == 0);
-    ASSERT(json_array_size(tki->m_kem_payload) == 0);
+
+    if (!tki->m_has_pqc) {
+        fprintf(stderr, "No PQC support, skipping auto-generate KEM test\n");
+        remove_tempdir(tmpdir);
+        return;
+    }
+
+    ASSERT(tki->m_has_pqc == 1);
+    ASSERT(json_array_size(tki->m_kem_payload) >= 1);
+    ASSERT(tki->m_keys_count > 2);
+
+    remove_tempdir(tmpdir);
 }
 
 static void
 test_read_keys_with_kem(void)
 {
-    json_auto_t* kem = jwk_generate("ML-KEM-768");
-    if (!kem) {
-        fprintf(stderr, "Skipping KEM tests (ML-KEM-768 not supported)\n");
-        return;
-    }
+    const char* kem_algs[] = {"ML-KEM-512", "ML-KEM-768", "ML-KEM-1024", NULL};
+    int kem_count = 0;
 
     umask(0022);
     __attribute__((cleanup(cleanup_str))) char* newdir = create_tempdir();
@@ -360,19 +400,90 @@ test_read_keys_with_kem(void)
     snprintf(exc_path, PATH_MAX, "%s/%s.jwk", newdir, exc_thp);
     ASSERT(json_dump_file(exc, exc_path, 0) == 0);
 
-    __attribute__((cleanup(cleanup_str))) char* kem_thp = jwk_thumbprint(kem, "S256");
-    ASSERT(kem_thp);
-    char kem_path[PATH_MAX];
-    snprintf(kem_path, PATH_MAX, "%s/%s.jwk", newdir, kem_thp);
-    ASSERT(json_dump_file(kem, kem_path, 0) == 0);
+    for (int i = 0; kem_algs[i]; i++) {
+        json_auto_t* kem = jwk_generate(kem_algs[i]);
+        if (!kem) {
+            fprintf(stderr, "Skipping %s (not supported)\n", kem_algs[i]);
+            continue;
+        }
+        __attribute__((cleanup(cleanup_str))) char* kem_thp =
+            jwk_thumbprint(kem, "S256");
+        ASSERT(kem_thp);
+        char kem_path[PATH_MAX];
+        snprintf(kem_path, PATH_MAX, "%s/%s.jwk", newdir, kem_thp);
+        ASSERT(json_dump_file(kem, kem_path, 0) == 0);
+        kem_count++;
+    }
 
-    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(newdir);
+    if (kem_count == 0) {
+        fprintf(stderr, "Skipping KEM tests (no ML-KEM variant supported)\n");
+        remove_tempdir(newdir);
+        return;
+    }
+
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki =
+        read_keys(newdir);
     ASSERT(tki);
-    ASSERT(tki->m_keys_count == 3);
+    ASSERT(tki->m_keys_count == (size_t)(2 + kem_count));
     ASSERT(tki->m_has_pqc == 1);
-    ASSERT(json_array_size(tki->m_kem_payload) == 1);
+    ASSERT(json_array_size(tki->m_kem_payload) == (size_t)kem_count);
     ASSERT(json_array_size(tki->m_payload) == 2);
 
+    /* Verify each KEM key has a distinct ML-KEM algorithm. */
+    size_t idx;
+    json_t* jwk;
+    const char* seen[3] = {NULL, NULL, NULL};
+    int seen_count = 0;
+    json_array_foreach(tki->m_kem_payload, idx, jwk) {
+        const char* alg = json_string_value(json_object_get(jwk, "alg"));
+        ASSERT(alg);
+        ASSERT(strncmp(alg, "ML-KEM-", 7) == 0);
+        for (int j = 0; j < seen_count; j++) {
+            ASSERT_WITH_MSG(strcmp(seen[j], alg) != 0,
+                "Duplicate KEM alg: %s", alg);
+        }
+        ASSERT(seen_count < 3);
+        seen[seen_count++] = alg;
+    }
+
+    remove_tempdir(newdir);
+}
+
+static void
+test_create_new_keys_kem_variants(void)
+{
+    __attribute__((cleanup(cleanup_str))) char* newdir = create_tempdir();
+    ASSERT(newdir);
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki =
+        read_keys(newdir);
+    ASSERT(tki);
+    ASSERT(tki->m_keys_count >= 2);
+
+    if (!tki->m_has_pqc) {
+        fprintf(stderr, "No PQC support, skipping KEM variant test\n");
+        remove_tempdir(newdir);
+        return;
+    }
+
+    ASSERT(json_array_size(tki->m_kem_payload) >= 1);
+
+    size_t idx;
+    json_t* jwk;
+    const char* seen[3] = {NULL, NULL, NULL};
+    int seen_count = 0;
+    json_array_foreach(tki->m_kem_payload, idx, jwk) {
+        const char* alg = json_string_value(json_object_get(jwk, "alg"));
+        ASSERT(alg);
+        ASSERT(strncmp(alg, "ML-KEM-", 7) == 0);
+        for (int j = 0; j < seen_count; j++) {
+            ASSERT_WITH_MSG(strcmp(seen[j], alg) != 0,
+                "Duplicate KEM alg: %s", alg);
+        }
+        ASSERT(seen_count < 3);
+        seen[seen_count++] = alg;
+    }
+
+    verify_keys_permissions(newdir);
     remove_tempdir(newdir);
 }
 
@@ -387,8 +498,9 @@ run_tests(void)
     test_create_new_keys();
     test_cleanup_null();
     test_jwk_sign_null_inputs();
-    test_read_keys_no_kem();
+    test_read_keys_auto_generate_kem();
     test_read_keys_with_kem();
+    test_create_new_keys_kem_variants();
 }
 
 int main(int argc, char** argv)

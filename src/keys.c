@@ -309,6 +309,10 @@ prepare_payload_and_sign(struct tang_keys_info* tki)
     return 1;
 }
 
+static const char* const kem_algorithms[] = {
+    "ML-KEM-512", "ML-KEM-768", "ML-KEM-1024", NULL
+};
+
 struct key_spec {
     const char* alg;
     int optional;
@@ -317,16 +321,17 @@ struct key_spec {
 static int
 create_new_keys(const char* jwkdir)
 {
-    const struct key_spec specs[] = {
-        {"ES512",      0},
-        {"ECMR",       0},
-        {"ML-KEM-768", 1},
-        {NULL,         0}
-    };
+    struct key_spec specs[6];
+    int n = 0;
+    specs[n++] = (struct key_spec){"ES512", 0};
+    specs[n++] = (struct key_spec){"ECMR",  0};
+    for (int i = 0; kem_algorithms[i]; i++)
+        specs[n++] = (struct key_spec){kem_algorithms[i], 1};
+    specs[n] = (struct key_spec){NULL, 0};
     char path[PATH_MAX];
 
-    /* Set default umask for file creation. */
-    umask(0337);
+    int result = 1;
+    mode_t old_umask = umask(0337);
     for (int i = 0; specs[i].alg != NULL; i++) {
         json_auto_t* jwk = jwk_generate(specs[i].alg);
         if (!jwk) {
@@ -335,29 +340,34 @@ create_new_keys(const char* jwkdir)
                         specs[i].alg);
                 continue;
             }
-            return 0;
+            result = 0;
+            break;
         }
         __attribute__ ((__cleanup__(cleanup_str))) char* thp = jwk_thumbprint(jwk, DEFAULT_THP_HASH);
         if (!thp) {
-            return 0;
+            result = 0;
+            break;
         }
         if (snprintf(path, PATH_MAX, "%s/%s.jwk", jwkdir, thp) < 0) {
             fprintf(stderr, "Unable to prepare variable with file full path (%s)\n", thp);
-            return 0;
+            result = 0;
+            break;
         }
         path[sizeof(path) - 1] = '\0';
         if (json_dump_file(jwk, path, 0) == -1) {
             fprintf(stderr, "Error saving JWK to file (%s)\n", path);
-            return 0;
+            result = 0;
+            break;
         }
-
         /* Set 0440 permission for the new key. */
         if (chmod(path, S_IRUSR | S_IRGRP) == -1) {
             fprintf(stderr, "Unable to set permissions for JWK file (%s)\n", path);
-            return 0;
+            result = 0;
+            break;
         }
     }
-    return 1;
+    umask(old_umask);
+    return result;
 }
 
 static struct tang_keys_info*
@@ -426,6 +436,46 @@ load_keys(const char* jwkdir)
     return tki;
 }
 
+static int
+generate_kem_keys(const char* jwkdir)
+{
+    char path[PATH_MAX];
+    int generated = 0;
+
+    mode_t old_umask = umask(0337);
+    for (int i = 0; kem_algorithms[i]; i++) {
+        json_auto_t* jwk = jwk_generate(kem_algorithms[i]);
+        if (!jwk) {
+            fprintf(stderr, "Skipping optional key %s (not supported)\n",
+                    kem_algorithms[i]);
+            continue;
+        }
+
+        __attribute__((__cleanup__(cleanup_str))) char* thp =
+            jwk_thumbprint(jwk, DEFAULT_THP_HASH);
+        if (!thp)
+            continue;
+
+        if (snprintf(path, PATH_MAX, "%s/%s.jwk", jwkdir, thp) < 0)
+            continue;
+
+        path[sizeof(path) - 1] = '\0';
+        if (json_dump_file(jwk, path, 0) == -1) {
+            fprintf(stderr, "Error saving JWK to file (%s)\n", path);
+            continue;
+        }
+
+        if (chmod(path, S_IRUSR | S_IRGRP) == -1) {
+            fprintf(stderr, "Unable to set permissions for JWK file (%s)\n",
+                    path);
+            continue;
+        }
+        generated++;
+    }
+    umask(old_umask);
+    return generated;
+}
+
 struct tang_keys_info*
 read_keys(const char* jwkdir)
 {
@@ -441,6 +491,11 @@ read_keys(const char* jwkdir)
             return NULL;
         }
         tki = load_keys(jwkdir);
+    } else if (!tki->m_has_pqc && generate_kem_keys(jwkdir) > 0) {
+        free_tang_keys_info(tki);
+        tki = load_keys(jwkdir);
+        if (!tki)
+            return NULL;
     }
 
     if (!prepare_payload_and_sign(tki)) {

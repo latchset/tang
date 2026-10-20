@@ -36,7 +36,7 @@ adv_kem_test () {
         return 0
     fi
 
-    # /adv-kem should return a signed JWS containing only KEM keys
+    # /adv-kem should return a signed JWS containing KEM keys
     kem_adv=$(fetch "${prefix}"/adv-kem)
     if [ -z "$kem_adv" ]; then
         echo "/adv-kem returned empty response" >&2
@@ -46,12 +46,17 @@ adv_kem_test () {
     # Verify the JWS is signed by the signing key
     printf '%s' "$kem_adv" | ver $TMP/db/sig.jwk
 
-    # Extract payload and verify all keys are AKP
+    # Unfiltered /adv-kem payload must contain only ML-KEM-768 AKP keys
     printf '%s' "$kem_adv" | jose fmt -j- -Og payload -SyOg keys -f- \
         | while read -r jwk; do
             kty=$(printf '%s' "$jwk" | jose fmt -j- -Og kty -u-)
             if [ "$kty" != "AKP" ]; then
-                echo "Expected AKP key in /adv-kem, got $kty" >&2
+                echo "Expected AKP key in /adv-kem payload, got $kty" >&2
+                exit 1
+            fi
+            key_alg=$(printf '%s' "$jwk" | jose fmt -j- -Og alg -u-)
+            if [ "$key_alg" != "ML-KEM-768" ]; then
+                echo "Expected ML-KEM-768 in /adv-kem payload, got $key_alg" >&2
                 exit 1
             fi
         done
@@ -72,6 +77,52 @@ adv_kem_test () {
     # Verify cty parameter is present
     printf '%s' "$kem_adv" \
         | jose fmt -j- -Og protected -SyOg cty -Sq "jwk-set+json" -E
+
+    # Count how many supported ML-KEM variants we have
+    supported_algs=""
+    for alg in ML-KEM-512 ML-KEM-768 ML-KEM-1024; do
+        if jose jwk gen -i "{\"alg\":\"$alg\"}" >/dev/null 2>&1; then
+            supported_algs="$supported_algs $alg"
+        fi
+    done
+
+    # Test ?alg= filtering for each supported variant
+    for alg in $supported_algs; do
+        kem_filtered=$(fetch "${prefix}/adv-kem?alg=${alg}")
+        if [ -z "$kem_filtered" ]; then
+            echo "/adv-kem?alg=$alg returned empty response" >&2
+            return 1
+        fi
+
+        # Filtered response must be verifiable
+        printf '%s' "$kem_filtered" | ver $TMP/db/sig.jwk
+
+        # Filtered payload must contain only AKP keys matching the requested alg
+        printf '%s' "$kem_filtered" | jose fmt -j- -Og payload -SyOg keys -f- \
+            | while read -r jwk; do
+                kty=$(printf '%s' "$jwk" | jose fmt -j- -Og kty -u-)
+                if [ "$kty" != "AKP" ]; then
+                    echo "Expected AKP key in filtered /adv-kem payload, got $kty" >&2
+                    exit 1
+                fi
+                key_alg=$(printf '%s' "$jwk" | jose fmt -j- -Og alg -u-)
+                if [ "$key_alg" != "$alg" ]; then
+                    echo "Expected $alg, got $key_alg in filtered /adv-kem" >&2
+                    exit 1
+                fi
+            done
+        [ $? -eq 0 ]
+    done
+
+    # Unsupported algorithm must return 404
+    code=$(curl -sg -o /dev/null -w "%{http_code}" \
+        "http://127.0.0.1:${PORT}${prefix}/adv-kem?alg=UNSUPPORTED")
+    [ "$code" = "404" ]
+
+    # Invalid algorithm (special characters) must return 400
+    code=$(curl -sg -o /dev/null -w "%{http_code}" \
+        "http://127.0.0.1:${PORT}${prefix}/adv-kem?alg=ML;KEM")
+    [ "$code" = "400" ]
 }
 
 adv_startup () {

@@ -197,6 +197,21 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
                     "ek_digest", &ek_digest) < 0)
         return HTTP_STATUS_BAD_REQUEST;
 
+    const char *pub_kty = json_string_value(
+        json_object_get(clevis_kem_pub, "kty"));
+    if (!pub_kty || strcmp(pub_kty, "AKP") != 0)
+        return HTTP_STATUS_BAD_REQUEST;
+
+    const char *pub_alg = json_string_value(
+        json_object_get(clevis_kem_pub, "alg"));
+    if (!pub_alg || (strcmp(pub_alg, "ML-KEM-512") != 0 &&
+                     strcmp(pub_alg, "ML-KEM-768") != 0 &&
+                     strcmp(pub_alg, "ML-KEM-1024") != 0))
+        return HTTP_STATUS_BAD_REQUEST;
+
+    if (!jose_jwk_prm(NULL, clevis_kem_pub, false, "deriveKey"))
+        return HTTP_STATUS_BAD_REQUEST;
+
     json_auto_t *kem_ct_json = json_string(clevis_kem_ct);
     if (!kem_ct_json)
         return HTTP_STATUS_BAD_REQUEST;

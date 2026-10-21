@@ -90,7 +90,7 @@ jwk_thumbprint(const json_t* jwk, const char* alg)
     }
 
     if (!alg || !is_hash(alg)) {
-        fprintf(stderr, "Invalid hash algorithm (%s)\n", alg);
+        fprintf(stderr, "Invalid hash algorithm (%s)\n", alg ? alg : "NULL");
         return NULL;
     }
 

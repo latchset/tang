@@ -65,6 +65,17 @@ str_cleanse(char **str)
     }
 }
 
+static int
+timingsafe_cmp(const void *a, const void *b, size_t len)
+{
+    const volatile unsigned char *pa = a;
+    const volatile unsigned char *pb = b;
+    volatile unsigned char diff = 0;
+    for (size_t i = 0; i < len; i++)
+        diff |= pa[i] ^ pb[i];
+    return diff;
+}
+
 static void
 wipe_jwk_secret(json_t *jwk)
 {
@@ -258,7 +269,8 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
 
     thp_buf[elen] = '\0';
 
-    if (strcmp(thp_buf, ek_digest) != 0)
+    size_t digest_len = strlen(ek_digest);
+    if (digest_len != elen || timingsafe_cmp(thp_buf, ek_digest, elen) != 0)
         goto cleanup;
 
     ret_encap = jose_jwk_kem_enc(NULL, clevis_kem_pub);

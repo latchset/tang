@@ -244,16 +244,8 @@ test_wipe_jwk_secret_wipes(void)
 
     wipe_jwk_secret(jwk);
 
-    kval = json_string_value(json_object_get(jwk, "k"));
-    ASSERT(kval);
-    int all_zero = 1;
-    for (size_t i = 0; i < strlen("SECRETDATA"); i++) {
-        if (kval[i] != '\0') {
-            all_zero = 0;
-            break;
-        }
-    }
-    ASSERT(all_zero);
+    /* After wiping, the "k" field is deleted entirely. */
+    ASSERT(json_object_get(jwk, "k") == NULL);
 }
 
 static void

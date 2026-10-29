@@ -52,3 +52,19 @@ jwe=$(jose jwk gen -i '{"alg":"ECMR"}')
 [ -z "$exc" ] && exc=$(echo "$jwe" | jose jwk thp -i- -a "${THP_DEFAULT_HASH}")
 echo "$jwe" > "$1/$exc.jwk"
 set_perms "$1/$exc.jwk"
+
+for alg in ML-KEM-512 ML-KEM-768 ML-KEM-1024; do
+    existing=$(find "$1" -maxdepth 1 -name '*.jwk' ! -name '.*' \
+        -exec grep -l "\"alg\":\"$alg\"" {} + 2>/dev/null) || true
+    if [ -n "$existing" ]; then
+        echo "Skipping $alg key generation (already exists)" >&2
+        continue
+    fi
+    if pqc=$(jose jwk gen -i "{\"alg\":\"$alg\"}" 2>/dev/null); then
+        pqc_thp=$(echo "$pqc" | jose jwk thp -i- -a "${THP_DEFAULT_HASH}")
+        echo "$pqc" > "$1/$pqc_thp.jwk"
+        set_perms "$1/$pqc_thp.jwk"
+    else
+        echo "Skipping $alg key generation (not supported by jose)" >&2
+    fi
+done

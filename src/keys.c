@@ -90,7 +90,7 @@ jwk_thumbprint(const json_t* jwk, const char* alg)
     }
 
     if (!alg || !is_hash(alg)) {
-        fprintf(stderr, "Invalid hash algorithm (%s)\n", alg);
+        fprintf(stderr, "Invalid hash algorithm (%s)\n", alg ? alg : "NULL");
         return NULL;
     }
 
@@ -130,7 +130,9 @@ free_tang_keys_info(struct tang_keys_info* tki)
     }
 
     json_t* to_free[] = {tki->m_keys, tki->m_rotated_keys,
-                         tki->m_payload, tki->m_sign
+                         tki->m_payload,
+                         tki->m_kem_payload,
+                         tki->m_sign
     };
     size_t len = sizeof(to_free) / sizeof(to_free[0]);
 
@@ -164,10 +166,11 @@ new_tang_keys_info(void)
     tki->m_keys = json_array();
     tki->m_rotated_keys = json_array();
     tki->m_payload = json_array();
+    tki->m_kem_payload = json_array();
     tki->m_sign = json_array();
 
     if (!tki->m_keys || !tki->m_rotated_keys ||
-        !tki->m_payload || !tki->m_sign) {
+        !tki->m_payload || !tki->m_kem_payload || !tki->m_sign) {
         free_tang_keys_info(tki);
         return NULL;
     }
@@ -220,7 +223,7 @@ cleanup_str(char** str)
     *str = NULL;
 }
 
-static json_t*
+json_t*
 jwk_sign(const json_t* to_sign, const json_t* sig_keys)
 {
     if (!sig_keys || !json_is_array(sig_keys) || !json_is_array(to_sign)) {
@@ -291,8 +294,12 @@ prepare_payload_and_sign(struct tang_keys_info* tki)
                 continue;
             }
         } else if (jwk_valid_for_deriving_keys(jwk)) {
-            if (json_array_append(tki->m_payload, jwk) == -1) {
-                continue;
+            const char* kty = json_string_value(
+                json_object_get(jwk, "kty"));
+            if (kty && strcmp(kty, "AKP") == 0) {
+                json_array_append(tki->m_kem_payload, jwk);
+            } else {
+                json_array_append(tki->m_payload, jwk);
             }
         }
     }
@@ -302,40 +309,65 @@ prepare_payload_and_sign(struct tang_keys_info* tki)
     return 1;
 }
 
+static const char* const kem_algorithms[] = {
+    "ML-KEM-512", "ML-KEM-768", "ML-KEM-1024", NULL
+};
+
+struct key_spec {
+    const char* alg;
+    int optional;
+};
+
 static int
 create_new_keys(const char* jwkdir)
 {
-    const char* alg[] = {"ES512", "ECMR", NULL};
+    struct key_spec specs[6];
+    int n = 0;
+    specs[n++] = (struct key_spec){"ES512", 0};
+    specs[n++] = (struct key_spec){"ECMR",  0};
+    for (int i = 0; kem_algorithms[i]; i++)
+        specs[n++] = (struct key_spec){kem_algorithms[i], 1};
+    specs[n] = (struct key_spec){NULL, 0};
     char path[PATH_MAX];
 
-    /* Set default umask for file creation. */
-    umask(0337);
-    for (int i = 0; alg[i] != NULL; i++) {
-        json_auto_t* jwk = jwk_generate(alg[i]);
+    int result = 1;
+    mode_t old_umask = umask(0337);
+    for (int i = 0; specs[i].alg != NULL; i++) {
+        json_auto_t* jwk = jwk_generate(specs[i].alg);
         if (!jwk) {
-            return 0;
+            if (specs[i].optional) {
+                fprintf(stderr, "Skipping optional key %s (not supported)\n",
+                        specs[i].alg);
+                continue;
+            }
+            result = 0;
+            break;
         }
         __attribute__ ((__cleanup__(cleanup_str))) char* thp = jwk_thumbprint(jwk, DEFAULT_THP_HASH);
         if (!thp) {
-            return 0;
+            result = 0;
+            break;
         }
         if (snprintf(path, PATH_MAX, "%s/%s.jwk", jwkdir, thp) < 0) {
             fprintf(stderr, "Unable to prepare variable with file full path (%s)\n", thp);
-            return 0;
+            result = 0;
+            break;
         }
         path[sizeof(path) - 1] = '\0';
         if (json_dump_file(jwk, path, 0) == -1) {
             fprintf(stderr, "Error saving JWK to file (%s)\n", path);
-            return 0;
+            result = 0;
+            break;
         }
-
         /* Set 0440 permission for the new key. */
         if (chmod(path, S_IRUSR | S_IRGRP) == -1) {
             fprintf(stderr, "Unable to set permissions for JWK file (%s)\n", path);
-            return 0;
+            result = 0;
+            break;
         }
     }
-    return 1;
+    umask(old_umask);
+    return result;
 }
 
 static struct tang_keys_info*
@@ -387,6 +419,11 @@ load_keys(const char* jwkdir)
                 tki->m_rotated_keys_count++;
             } else {
                 tki->m_keys_count++;
+                const char* kty = json_string_value(
+                    json_object_get(json, "kty"));
+                if (kty && strcmp(kty, "AKP") == 0) {
+                    tki->m_has_pqc = 1;
+                }
             }
 
             if (json_array_append(arr, json) == -1) {
@@ -397,6 +434,46 @@ load_keys(const char* jwkdir)
     }
     closedir(dir);
     return tki;
+}
+
+static int
+generate_kem_keys(const char* jwkdir)
+{
+    char path[PATH_MAX];
+    int generated = 0;
+
+    mode_t old_umask = umask(0337);
+    for (int i = 0; kem_algorithms[i]; i++) {
+        json_auto_t* jwk = jwk_generate(kem_algorithms[i]);
+        if (!jwk) {
+            fprintf(stderr, "Skipping optional key %s (not supported)\n",
+                    kem_algorithms[i]);
+            continue;
+        }
+
+        __attribute__((__cleanup__(cleanup_str))) char* thp =
+            jwk_thumbprint(jwk, DEFAULT_THP_HASH);
+        if (!thp)
+            continue;
+
+        if (snprintf(path, PATH_MAX, "%s/%s.jwk", jwkdir, thp) < 0)
+            continue;
+
+        path[sizeof(path) - 1] = '\0';
+        if (json_dump_file(jwk, path, 0) == -1) {
+            fprintf(stderr, "Error saving JWK to file (%s)\n", path);
+            continue;
+        }
+
+        if (chmod(path, S_IRUSR | S_IRGRP) == -1) {
+            fprintf(stderr, "Unable to set permissions for JWK file (%s)\n",
+                    path);
+            continue;
+        }
+        generated++;
+    }
+    umask(old_umask);
+    return generated;
 }
 
 struct tang_keys_info*
@@ -414,6 +491,11 @@ read_keys(const char* jwkdir)
             return NULL;
         }
         tki = load_keys(jwkdir);
+    } else if (!tki->m_has_pqc && generate_kem_keys(jwkdir) > 0) {
+        free_tang_keys_info(tki);
+        tki = load_keys(jwkdir);
+        if (!tki)
+            return NULL;
     }
 
     if (!prepare_payload_and_sign(tki)) {

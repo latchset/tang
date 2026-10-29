@@ -27,19 +27,26 @@ struct tang_keys_info {
     json_t* m_keys;               /* Regular keys. */
     json_t* m_rotated_keys;       /* Rotated keys. */
 
-    json_t* m_payload;            /* Payload made of regular keys capable of
+    json_t* m_payload;            /* Payload made of regular EC keys capable of
                                    * either signing+verifying or deriving new
-                                   * keys. */
+                                   * keys (excludes KEM keys). */
+
+    json_t* m_kem_payload;        /* Payload made of KEM keys (kty=AKP) for
+                                   * the /adv-kem endpoint. */
 
     json_t* m_sign;               /* Set of signing keys made from regular
                                      keys. */
 
     size_t m_keys_count;          /* Number of regular keys. */
     size_t m_rotated_keys_count;  /* Number of rotated keys. */
+
+    int m_has_pqc;                /* Non-zero if a PQC key (e.g. ML-KEM) is
+                                     available among regular keys. */
 };
 
 void cleanup_tang_keys_info(struct tang_keys_info**);
 void free_tang_keys_info(struct tang_keys_info*);
 struct tang_keys_info* read_keys(const char* /* jwkdir */);
+json_t* jwk_sign(const json_t* /* to_sign */, const json_t* /* sig_keys */);
 json_t* find_jws(struct tang_keys_info* /* tki */, const char* /* thp */);
 json_t* find_jwk(struct tang_keys_info* /* tki */, const char* /* thp */);

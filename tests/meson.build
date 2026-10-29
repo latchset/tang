@@ -18,6 +18,27 @@ test_keys = executable('test-keys',
   include_directories: incdir
 )
 
+pqc_test_args = []
+if has_explicit_bzero
+  pqc_test_args += ['-DHAVE_EXPLICIT_BZERO']
+endif
+
+if has_pqc
+  test_pqc_c = configure_file(
+    input: 'test-pqc.c.in',
+    output: 'test-pqc.c',
+    configuration: test_data
+  )
+
+  test_pqc = executable('test-pqc',
+    test_pqc_c,
+    'test-util.c',
+    c_args: pqc_test_args,
+    dependencies: [jose],
+    include_directories: incdir
+  )
+endif
+
 socat = find_program(
   'socat',
   required: false
@@ -49,5 +70,9 @@ test('rec-standalone-endpoint', find_program('rec-standalone-endpoint'), env: en
 test('rec-socat', find_program('rec-socat'), env: env, timeout: 360)
 test('rec-socat-endpoint', find_program('rec-socat-endpoint'), env: env, timeout: 360)
 test('test-keys', test_keys, env: env, timeout: 360)
+
+if has_pqc
+  test('test-pqc', test_pqc, env: env, timeout: 360)
+endif
 
 # vim:set ts=2 sw=2 et:

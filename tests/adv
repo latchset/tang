@@ -80,7 +80,9 @@ adv_second_phase () {
     test "$(tang-show-keys $PORT $ENDPOINT)" = "$(jose jwk thp -a "${THP_DEFAULT_HASH}" -i $TMP/db/sig.jwk)"
 
     # Check that new keys will be created if none exist.
-    rm -rf "${TMP}/db" && mkdir -p "${TMP}/db"
+    # Use find to delete the contents here because deleting the directory
+    # breaks the container-volume link in Podman tests, which is a problem.
+    find "${TMP}/db" -mindepth 1 -depth -delete
     fetch "${ENDPOINT}"/adv
 
     # Now let's make sure the new keys were named using our default thumbprint

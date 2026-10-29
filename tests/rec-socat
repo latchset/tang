@@ -20,7 +20,7 @@
 
 . rec
 
-sanity_check
+sanity_check_socat
 
 rec_startup
 

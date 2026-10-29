@@ -19,7 +19,7 @@
 
 . adv
 
-sanity_check
+sanity_check_socat
 
 adv_startup
 

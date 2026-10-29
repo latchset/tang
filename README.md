@@ -124,14 +124,22 @@ and start the server:
     # service tangd enable
     # service tangd start
 
-#### Docker Container
+#### Docker/Podman Container
 
-Tang is also available as a [Docker
-Container](https://gitlab.com/AdrianKoshka/tang-docker-container/).
+Tang can also be built as a Docker or Podman image using the included
+Containerfile.
 
-Care should be taken to ensure that, when deploying in a container cluster,
-that the Tang keys are not stored on the same physical medium that you wish to
-protect.
+When deploying in a container cluster, care should be taken to ensure that the
+Tang keys are not stored on the same physical medium that you wish to protect.
+
+By default, this container starts in listen mode on port 9090 of all addresses
+within the container, with the key directory set to the container's `/jwkdir`.
+This path should be bound to a key storage location on the container host.
+
+Note that socket activation is **not supported** for Tang Podman containers, as
+Tang uses inetd-style socket activation (`Accept=yes`) rather than systemd-style
+socket activation (`Accept=no`), and Podman quadlets do not support inetd-style
+socket activation due to containers/podman#22874 (among other reasons).
 
 ### Building and Installing from Source
 

@@ -83,10 +83,21 @@ start_standalone_server_endpoint() {
     ${VALGRIND} tangd -p ${1} -l ${TMP}/db -e ${2} &
 }
 
+start_podman_server() {
+    "${PODMAN}" run -d -p "${1}":9090 -v "${TMP}"/db:/jwkdir localhost/tangd
+}
+
+start_podman_server_endpoint() {
+    "${PODMAN}" run -d -p "${1}":9090 -v "${TMP}"/db:/jwkdir localhost/tangd /bin/tangd -p 9090 -l -e "${2}" /jwkdir
+}
+
 on_exit() {
     if [ "${PID}" ]; then
         kill "${PID}" || true
         wait "${PID}" || true
+    fi
+    if [ -n "${PODMAN}" ] && [ -n "${CONTAINER}" ]; then
+        "${PODMAN}" stop --time 1 "${CONTAINER}"
     fi
     [ -d "${TMP}" ] && rm -rf "${TMP}"
 }
@@ -114,9 +125,16 @@ validate_exc() {
         --use deriveKey 2>/dev/null
 }
 
-sanity_check() {
+sanity_check_socat() {
     # Skip test if socat is not available.
     [ -n "${SOCAT}" ] || exit 77
+}
+
+sanity_check_podman() {
+    # Skip test if podman is not available or the image does not exist.
+    if [ -z "${PODMAN}" ] || ! podman image exists localhost/tangd; then
+        exit 77
+    fi
 }
 
 die() {

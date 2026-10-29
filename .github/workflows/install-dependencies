@@ -6,7 +6,7 @@ ubuntu:focal)
     apt clean
     apt update
     apt -y install gcc pkg-config libjose-dev jose libhttp-parser-dev \
-                   systemd gcovr curl socat iproute2 asciidoc git python3-pip ninja-build 
+                   systemd gcovr curl socat iproute2 asciidoc git python3-pip ninja-build
     apt remove -y meson
     pip3 install --upgrade meson
     ;;
@@ -16,7 +16,7 @@ debian:*|ubuntu:*)
     apt clean
     apt update
     apt -y install gcc meson pkg-config libjose-dev jose libhttp-parser-dev \
-                   systemd gcovr curl socat iproute2 asciidoc git
+                   systemd gcovr curl socat iproute2 asciidoc git podman
     ;;
 
 *fedora:*)
@@ -24,7 +24,7 @@ debian:*|ubuntu:*)
     dnf -y clean all
     dnf -y --setopt=deltarpm=0 update
     dnf -y install gcc meson pkgconfig libjose-devel jose llhttp-devel \
-                   systemd gcovr curl socat iproute asciidoc git
+                   systemd gcovr curl socat iproute asciidoc git podman
     ;;
 
 centos:7)
@@ -33,7 +33,7 @@ centos:7)
     yum install -y yum-utils epel-release
     yum config-manager -y --set-enabled PowerTools \
         || yum config-manager -y --set-enabled powertools || :
-    yum -y install meson socat iproute asciidoc git
+    yum -y install meson socat iproute asciidoc git podman
     yum-builddep -y tang
     ;;
 
@@ -43,7 +43,7 @@ centos:7)
     dnf install -y dnf-plugins-core epel-release
     dnf config-manager -y --set-enabled powertools \
         || dnf config-manager -y --set-enabled crb || :
-    dnf -y install meson socat iproute git
+    dnf -y install meson socat iproute git podman
     dnf builddep -y tang --allowerasing --skip-broken --nobest
     ;;
 esac

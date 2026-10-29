@@ -19,8 +19,6 @@
 
 . rec
 
-sanity_check
-
 rec_startup
 
 # Start the server

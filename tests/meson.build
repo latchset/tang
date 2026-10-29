@@ -23,6 +23,11 @@ socat = find_program(
   required: false
 )
 
+podman = find_program(
+  'podman',
+  required: false
+)
+
 env = environment()
 env.prepend('PATH',
   join_paths(meson.source_root(), 'src'),
@@ -40,10 +45,18 @@ if socat.found()
   env.set('SOCAT', socat.path())
 endif
 
+if podman.found()
+  env.set('PODMAN', podman.path())
+endif
+
+test('adv-podman', find_program('adv-podman'), env: env, timeout: 360)
+test('adv-podman-endpoint', find_program('adv-podman-endpoint'), env: env, timeout: 360)
 test('adv-standalone', find_program('adv-standalone'), env: env, timeout: 360)
 test('adv-standalone-endpoint', find_program('adv-standalone-endpoint'), env: env, timeout: 360)
 test('adv-socat', find_program('adv-socat'), env: env, timeout: 360)
 test('adv-socat-endpoint', find_program('adv-socat-endpoint'), env: env, timeout: 360)
+test('rec-podman', find_program('rec-podman'), env: env, timeout: 360)
+test('rec-podman-endpoint', find_program('rec-podman-endpoint'), env: env, timeout: 360)
 test('rec-standalone', find_program('rec-standalone'), env: env, timeout: 360)
 test('rec-standalone-endpoint', find_program('rec-standalone-endpoint'), env: env, timeout: 360)
 test('rec-socat', find_program('rec-socat'), env: env, timeout: 360)

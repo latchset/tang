@@ -1,0 +1,78 @@
+#!/bin/sh -e
+# vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:
+#
+# Verify that a running Tang server returns tang_pub in /rec/$kid responses.
+#
+# Usage: verify-tang-pub [jwkdir] [url]
+#   jwkdir: path to Tang key directory (default: /var/db/tang)
+#   url:    Tang server URL (default: http://localhost)
+
+JWKDIR="${1:-/var/db/tang}"
+URL="${2:-http://localhost}"
+
+if [ ! -d "$JWKDIR" ]; then
+    echo "Error: key directory $JWKDIR does not exist" >&2
+    exit 1
+fi
+
+exc_file=""
+for f in "$JWKDIR"/*.jwk; do
+    [ -f "$f" ] || continue
+    alg=$(jose fmt -j "$f" -Og alg -u- 2>/dev/null) || continue
+    if [ "$alg" = "ECMR" ]; then
+        exc_file="$f"
+        break
+    fi
+done
+
+if [ -z "$exc_file" ]; then
+    echo "Error: no ECMR exchange key found in $JWKDIR" >&2
+    exit 1
+fi
+
+exc_kid=$(jose jwk thp -i "$exc_file")
+echo "Exchange key: $(basename "$exc_file")"
+echo "Thumbprint:   $exc_kid"
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+ver_resp=$(curl -sf "$URL/version" 2>/dev/null) || {
+    echo "FAIL: /version endpoint not available (server may not support tang_pub)" >&2
+    exit 1
+}
+
+if ! printf '%s' "$ver_resp" | jose fmt -j- -Og features -Og tang_pub >/dev/null 2>&1; then
+    echo "FAIL: /version does not report tang_pub capability" >&2
+    exit 1
+fi
+echo "OK: /version reports tang_pub capability"
+
+jose jwk gen -i '{"alg":"ECMR"}' -o "$TMP/client.jwk"
+jose jwk pub -i "$TMP/client.jwk" -o "$TMP/client.pub.jwk"
+
+resp=$(curl -sf -X POST \
+    -H "Content-Type: application/jwk+json" \
+    --data-binary @"$TMP/client.pub.jwk" \
+    "$URL/rec/$exc_kid" 2>/dev/null) || {
+    echo "Error: /rec/$exc_kid request failed" >&2
+    exit 1
+}
+
+tang_pub=$(printf '%s' "$resp" | jose fmt -j- -Og tang_pub -o- 2>/dev/null) || {
+    echo "FAIL: tang_pub not present in /rec/$exc_kid response" >&2
+    exit 1
+}
+
+if printf '%s' "$tang_pub" | jose fmt -j- -Og d 2>/dev/null >/dev/null; then
+    echo "FAIL: tang_pub contains private material" >&2
+    exit 1
+fi
+
+tang_pub_thp=$(printf '%s' "$tang_pub" | jose jwk thp -i-)
+if [ "$tang_pub_thp" != "$exc_kid" ]; then
+    echo "FAIL: tang_pub thumbprint ($tang_pub_thp) does not match key identifier ($exc_kid)" >&2
+    exit 1
+fi
+
+echo "OK: tang_pub is present, public-only, and matches key identifier"

@@ -45,11 +45,21 @@ rec_second_phase () {
 
     # Make a recovery request (NOTE: this is insecure! Don't do this in real code!)
     good=`jose jwk exc -i '{"alg":"ECMR","key_ops":["deriveKey"]}' -l $TMP/exc.jwk -r $TMP/db/exc.jwk`
-    test=`curl -sf -X POST \
+    full_resp=`curl -sf -X POST \
            -H "Content-Type: application/jwk+json" \
            --data-binary @- \
            http://127.0.0.1:$PORT/rec/${exc_kid} < $TMP/exc.pub.jwk`
+
+    # Strip tang_pub from response and verify the exchange result
+    test=`printf '%s' "$full_resp" | jose fmt -j- -Od tang_pub -o-`
     [ "$good" = "$test" ]
+
+    # Verify tang_pub is present and contains no private material
+    printf '%s' "$full_resp" | jose fmt -j- -Og tang_pub -o- > $TMP/tang_pub.jwk
+    ! jose fmt -j $TMP/tang_pub.jwk -Og d 2>/dev/null
+
+    # Verify tang_pub thumbprint matches the requested key identifier
+    [ "$(jose jwk thp -i $TMP/tang_pub.jwk)" = "$exc_kid" ]
 }
 
 rec_second_phase_endpoint () {
@@ -59,9 +69,19 @@ rec_second_phase_endpoint () {
 
     # Make a recovery request (NOTE: this is insecure! Don't do this in real code!)
     good=`jose jwk exc -i '{"alg":"ECMR","key_ops":["deriveKey"]}' -l $TMP/exc.jwk -r $TMP/db/exc.jwk`
-    test=`curl -sf -X POST \
+    full_resp=`curl -sf -X POST \
            -H "Content-Type: application/jwk+json" \
            --data-binary @- \
            http://127.0.0.1:$PORT/$ENDPOINT/rec/${exc_kid} < $TMP/exc.pub.jwk`
+
+    # Strip tang_pub from response and verify the exchange result
+    test=`printf '%s' "$full_resp" | jose fmt -j- -Od tang_pub -o-`
     [ "$good" = "$test" ]
+
+    # Verify tang_pub is present and contains no private material
+    printf '%s' "$full_resp" | jose fmt -j- -Og tang_pub -o- > $TMP/tang_pub.jwk
+    ! jose fmt -j $TMP/tang_pub.jwk -Og d 2>/dev/null
+
+    # Verify tang_pub thumbprint matches the requested key identifier
+    [ "$(jose jwk thp -i $TMP/tang_pub.jwk)" = "$exc_kid" ]
 }

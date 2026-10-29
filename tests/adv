@@ -47,6 +47,11 @@ adv_second_phase () {
     fetch "${ENDPOINT}"/adv | ver $TMP/db/sig.jwk
     fetch "${ENDPOINT}"/adv/ | ver $TMP/db/sig.jwk
 
+    # Verify /version endpoint reports tang_pub capability
+    ver_resp=$(fetch "${ENDPOINT}"/version)
+    printf '%s' "$ver_resp" | jose fmt -j- -Og tang_version -u- >/dev/null
+    printf '%s' "$ver_resp" | jose fmt -j- -Og features -Og tang_pub >/dev/null
+
     # Fetching by any thumbprint should work
     fetch "${ENDPOINT}"/adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/sig.jwk
     fetch "${ENDPOINT}"/adv/`jose jwk thp -a S512 -i $TMP/db/sig.jwk` | ver $TMP/db/sig.jwk

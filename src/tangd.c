@@ -178,6 +178,13 @@ rec(http_method_t method, const char *path, const char *body,
     if (json_object_set_new(rep, "key_ops", json_pack("[s]", "deriveKey")) < 0)
         return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
+    json_auto_t *pub = json_deep_copy(jwk);
+    if (!pub || !jose_jwk_pub(NULL, pub))
+        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+
+    if (json_object_set(rep, "tang_pub", pub) < 0)
+        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+
     enc = json_dumps(rep, JSON_SORT_KEYS | JSON_COMPACT);
     if (!enc)
         return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
@@ -188,10 +195,32 @@ rec(http_method_t method, const char *path, const char *body,
                       "\r\n%s", strlen(enc), enc);
 }
 
+static int
+tang_version(http_method_t method, const char *path, const char *body,
+             regmatch_t matches[], void *misc)
+{
+    __attribute__((cleanup(str_cleanup))) char *out = NULL;
+    json_auto_t *ver = json_pack("{s:s, s:{s:b}}",
+                                 "tang_version", VERSION,
+                                 "features", "tang_pub", 1);
+    if (!ver)
+        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+
+    out = json_dumps(ver, JSON_SORT_KEYS | JSON_COMPACT);
+    if (!out)
+        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+
+    return http_reply(HTTP_STATUS_OK,
+                      "Content-Type: application/json\r\n"
+                      "Content-Length: %zu\r\n"
+                      "\r\n%s", strlen(out), out);
+}
+
 static struct http_dispatch s_dispatch[] = {
-    { adv, 1 << HTTP_GET,  2, "^/+adv/+([0-9A-Za-z_-]+)$" },
-    { adv, 1 << HTTP_GET,  2, "^/+adv/*$" },
-    { rec, 1 << HTTP_POST, 2, "^/+rec/+([0-9A-Za-z_-]+)$" },
+    { adv,          1 << HTTP_GET,  2, "^/+adv/+([0-9A-Za-z_-]+)$" },
+    { adv,          1 << HTTP_GET,  2, "^/+adv/*$" },
+    { rec,          1 << HTTP_POST, 2, "^/+rec/+([0-9A-Za-z_-]+)$" },
+    { tang_version, 1 << HTTP_GET,  1, "^/+version/*$" },
     {}
 };
 
@@ -327,6 +356,7 @@ main(int argc, char *argv[])
     char adv_thp_endpoint[MAX_URL] = {};
     char adv_endpoint[MAX_URL] = {};
     char rec_endpoint[MAX_URL] = {};
+    char ver_endpoint[MAX_URL] = {};
     if (endpoint != NULL) {
         char *endpoint_ptr = (char*)endpoint;
         while (*endpoint_ptr == '/') {
@@ -335,9 +365,11 @@ main(int argc, char *argv[])
         snprintf(adv_thp_endpoint, MAX_URL, "^/%s/+adv/+([0-9A-Za-z_-]+)$", endpoint_ptr);
         snprintf(adv_endpoint, MAX_URL, "^/%s/+adv/*$", endpoint_ptr);
         snprintf(rec_endpoint, MAX_URL, "^/%s/+rec/+([0-9A-Za-z_-]+)$", endpoint_ptr);
+        snprintf(ver_endpoint, MAX_URL, "^/%s/+version/*$", endpoint_ptr);
         s_dispatch[0].re = adv_thp_endpoint;
         s_dispatch[1].re = adv_endpoint;
         s_dispatch[2].re = rec_endpoint;
+        s_dispatch[3].re = ver_endpoint;
     }
     if (listen == 0) { /* process one-shot query from stdin */
         return process_request(jwkdir, STDIN_FILENO);

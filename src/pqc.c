@@ -345,7 +345,7 @@ find_jws_kem(struct tang_keys_info *tki, const char *alg)
         return NULL;
 
     if (!alg)
-        alg = "ML-KEM-768";
+        return NULL;
 
     json_auto_t *payload = json_array();
     if (!payload)
@@ -389,6 +389,9 @@ adv_kem(http_method_t method, const char *path, const char *body,
         if (alg && !is_valid_alg_param(alg))
             return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
     }
+
+    if (!alg)
+        return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 
     jws = find_jws_kem(tki, alg);
     if (!jws)

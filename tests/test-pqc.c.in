@@ -289,8 +289,7 @@ test_find_jws_kem_filtering(void)
         return;
     }
 
-    json_auto_t *jws_default = find_jws_kem(tki, NULL);
-    ASSERT(jws_default);
+    ASSERT(find_jws_kem(tki, NULL) == NULL);
 
     json_auto_t *jws_768 = find_jws_kem(tki, "ML-KEM-768");
     ASSERT(jws_768);

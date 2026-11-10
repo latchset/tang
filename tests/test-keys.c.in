@@ -315,13 +315,10 @@ test_read_keys(void)
      * - .r4E2wG1u_YyKUo0N0rIK7jJF5Xg.jwk  (rotated)
      * - qgmqJSo6AEEuVQY7zVlklqdTMqY.jwk   (active)
      * - -bWkGaJi0Zdvxaj4DCp28umLcRA.jwk    (active)
-     *
-     * ML-KEM keys are auto-generated when none exist,
-     * so m_keys_count >= 2.
      */
-    ASSERT(tki->m_keys_count >= 2);
+    ASSERT(tki->m_keys_count == 2);
     ASSERT(tki->m_rotated_keys_count == 2);
-    ASSERT(json_array_size(tki->m_keys) >= 2);
+    ASSERT(json_array_size(tki->m_keys) == 2);
     ASSERT(json_array_size(tki->m_rotated_keys) == 2);
 
     const char* invalid_jwkdir = "foobar";
@@ -352,27 +349,6 @@ test_jwk_sign_null_inputs(void)
     json_auto_t* obj = json_object();
     ASSERT(jwk_sign(obj, arr) == NULL);
     ASSERT(jwk_sign(arr, obj) == NULL);
-}
-
-static void
-test_read_keys_auto_generate_kem(void)
-{
-    __attribute__((cleanup(cleanup_str))) char* tmpdir = copy_fixture();
-    ASSERT(tmpdir);
-    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(tmpdir);
-    ASSERT(tki);
-
-    if (!tki->m_has_pqc) {
-        fprintf(stderr, "No PQC support, skipping auto-generate KEM test\n");
-        remove_tempdir(tmpdir);
-        return;
-    }
-
-    ASSERT(tki->m_has_pqc == 1);
-    ASSERT(json_array_size(tki->m_kem_payload) >= 1);
-    ASSERT(tki->m_keys_count > 2);
-
-    remove_tempdir(tmpdir);
 }
 
 static void
@@ -542,7 +518,6 @@ run_tests(void)
     test_create_new_keys();
     test_cleanup_null();
     test_jwk_sign_null_inputs();
-    test_read_keys_auto_generate_kem();
     test_read_keys_with_kem();
     test_create_new_keys_kem_variants();
     test_jwk_thumbprint_edge_cases();

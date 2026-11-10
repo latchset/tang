@@ -436,46 +436,6 @@ load_keys(const char* jwkdir)
     return tki;
 }
 
-static int
-generate_kem_keys(const char* jwkdir)
-{
-    char path[PATH_MAX];
-    int generated = 0;
-
-    mode_t old_umask = umask(0337);
-    for (int i = 0; kem_algorithms[i]; i++) {
-        json_auto_t* jwk = jwk_generate(kem_algorithms[i]);
-        if (!jwk) {
-            fprintf(stderr, "Skipping optional key %s (not supported)\n",
-                    kem_algorithms[i]);
-            continue;
-        }
-
-        __attribute__((__cleanup__(cleanup_str))) char* thp =
-            jwk_thumbprint(jwk, DEFAULT_THP_HASH);
-        if (!thp)
-            continue;
-
-        if (snprintf(path, PATH_MAX, "%s/%s.jwk", jwkdir, thp) < 0)
-            continue;
-
-        path[sizeof(path) - 1] = '\0';
-        if (json_dump_file(jwk, path, 0) == -1) {
-            fprintf(stderr, "Error saving JWK to file (%s)\n", path);
-            continue;
-        }
-
-        if (chmod(path, S_IRUSR | S_IRGRP) == -1) {
-            fprintf(stderr, "Unable to set permissions for JWK file (%s)\n",
-                    path);
-            continue;
-        }
-        generated++;
-    }
-    umask(old_umask);
-    return generated;
-}
-
 struct tang_keys_info*
 read_keys(const char* jwkdir)
 {
@@ -491,11 +451,6 @@ read_keys(const char* jwkdir)
             return NULL;
         }
         tki = load_keys(jwkdir);
-    } else if (!tki->m_has_pqc && generate_kem_keys(jwkdir) > 0) {
-        free_tang_keys_info(tki);
-        tki = load_keys(jwkdir);
-        if (!tki)
-            return NULL;
     }
 
     if (!prepare_payload_and_sign(tki)) {

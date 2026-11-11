@@ -150,15 +150,15 @@ rec_kem_secure(json_t *tang_kem_priv, const json_t *req, char **out)
         return HTTP_STATUS_BAD_REQUEST;
     }
 
-    size_t ptl = 0;
-    void *pt = jose_jwe_dec(NULL, blob_jwe, NULL,
-                            clevis_transport_key, &ptl);
+    size_t plaintext_len = 0;
+    void *plaintext = jose_jwe_dec(NULL, blob_jwe, NULL,
+                            clevis_transport_key, &plaintext_len);
     wipe_and_release(&clevis_transport_key);
-    if (!pt)
+    if (!plaintext)
         return HTTP_STATUS_BAD_REQUEST;
 
-    json_auto_t *payload = json_loadb(pt, ptl, 0, NULL);
-    OPENSSL_clear_free(pt, ptl);
+    json_auto_t *payload = json_loadb(plaintext, plaintext_len, 0, NULL);
+    OPENSSL_clear_free(plaintext, plaintext_len);
     if (!payload)
         return HTTP_STATUS_BAD_REQUEST;
 

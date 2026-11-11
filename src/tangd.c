@@ -230,6 +230,7 @@ tang_version(http_method_t method, const char *path, const char *body,
 enum dispatch_idx {
     DISPATCH_ADV_THP,
     DISPATCH_ADV,
+    DISPATCH_ADV_KEM_THP,
     DISPATCH_ADV_KEM,
     DISPATCH_REC,
     DISPATCH_REC_KEM,
@@ -240,6 +241,7 @@ enum dispatch_idx {
 static struct http_dispatch s_dispatch[] = {
     { adv,          1 << HTTP_GET,  2, "^/+adv/+([0-9A-Za-z_-]+)$" },
     { adv,          1 << HTTP_GET,  2, "^/+adv/*$" },
+    { adv_kem_thp,  1 << HTTP_GET,  2, "^/+adv-kem/+([0-9A-Za-z_-]+)$" },
     { adv_kem,      1 << HTTP_GET,  2, "^/+adv-kem/*([?][^[:space:]]*)?$" },
     { rec,          1 << HTTP_POST, 2, "^/+rec/+([0-9A-Za-z_-]+)$" },
     { rec_kem,      1 << HTTP_POST, 2, "^/+rec-kem/+([0-9A-Za-z_-]+)$" },
@@ -378,6 +380,7 @@ main(int argc, char *argv[])
 
     char adv_thp_endpoint[MAX_URL] = {};
     char adv_endpoint[MAX_URL] = {};
+    char adv_kem_thp_endpoint[MAX_URL] = {};
     char adv_kem_endpoint[MAX_URL] = {};
     char rec_endpoint[MAX_URL] = {};
     char rec_kem_endpoint[MAX_URL] = {};
@@ -389,12 +392,14 @@ main(int argc, char *argv[])
         }
         snprintf(adv_thp_endpoint, MAX_URL, "^/%s/+adv/+([0-9A-Za-z_-]+)$", endpoint_ptr);
         snprintf(adv_endpoint, MAX_URL, "^/%s/+adv/*$", endpoint_ptr);
+        snprintf(adv_kem_thp_endpoint, MAX_URL, "^/%s/+adv-kem/+([0-9A-Za-z_-]+)$", endpoint_ptr);
         snprintf(adv_kem_endpoint, MAX_URL, "^/%s/+adv-kem/*([?][^[:space:]]*)?$", endpoint_ptr);
         snprintf(rec_endpoint, MAX_URL, "^/%s/+rec/+([0-9A-Za-z_-]+)$", endpoint_ptr);
         snprintf(rec_kem_endpoint, MAX_URL, "^/%s/+rec-kem/+([0-9A-Za-z_-]+)$", endpoint_ptr);
         snprintf(ver_endpoint, MAX_URL, "^/%s/+version/*$", endpoint_ptr);
         s_dispatch[DISPATCH_ADV_THP].re = adv_thp_endpoint;
         s_dispatch[DISPATCH_ADV].re = adv_endpoint;
+        s_dispatch[DISPATCH_ADV_KEM_THP].re = adv_kem_thp_endpoint;
         s_dispatch[DISPATCH_ADV_KEM].re = adv_kem_endpoint;
         s_dispatch[DISPATCH_REC].re = rec_endpoint;
         s_dispatch[DISPATCH_REC_KEM].re = rec_kem_endpoint;

@@ -102,6 +102,31 @@ adv_kem_test () {
     code=$(curl -sg -o /dev/null -w "%{http_code}" \
         "http://127.0.0.1:${PORT}${prefix}/adv-kem?alg=ML;KEM")
     [ "$code" = "400" ]
+
+    # /adv-kem/<thumbprint> lookup by kid
+    for alg in $supported_algs; do
+        kem_filtered=$(fetch "${prefix}/adv-kem?alg=${alg}")
+        printf '%s' "$kem_filtered" | jose fmt -j- -Og payload -SyOg keys -f- \
+            | while read -r jwk; do
+                for hash_alg in $(jose alg -k hash); do
+                    thp=$(printf '%s' "$jwk" | jose jwk thp -a "$hash_alg" -i-)
+                    kem_by_thp=$(fetch "${prefix}/adv-kem/${thp}")
+                    printf '%s' "$kem_by_thp" | ver $TMP/db/sig.jwk
+                done
+            done
+        [ $? -eq 0 ]
+    done
+
+    # /adv-kem/<thumbprint> with non-KEM key thumbprint must return 404
+    exc_thp=$(jose jwk thp -i $TMP/db/exc.jwk)
+    code=$(curl -sg -o /dev/null -w "%{http_code}" \
+        "http://127.0.0.1:${PORT}${prefix}/adv-kem/${exc_thp}")
+    [ "$code" = "404" ]
+
+    # /adv-kem/<thumbprint> with nonexistent thumbprint must return 404
+    code=$(curl -sg -o /dev/null -w "%{http_code}" \
+        "http://127.0.0.1:${PORT}${prefix}/adv-kem/nonexistent-thp")
+    [ "$code" = "404" ]
 }
 
 adv_startup () {

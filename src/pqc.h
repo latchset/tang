@@ -27,5 +27,8 @@ int pqc_is_available(void);
 int adv_kem(http_method_t method, const char *path, const char *body,
             regmatch_t matches[], void *misc);
 
+int adv_kem_thp(http_method_t method, const char *path, const char *body,
+                regmatch_t matches[], void *misc);
+
 int rec_kem(http_method_t method, const char *path, const char *body,
             regmatch_t matches[], void *misc);

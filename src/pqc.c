@@ -407,6 +407,68 @@ adv_kem(http_method_t method, const char *path, const char *body,
                       "\r\n%s", strlen(out), out);
 }
 
+static json_t*
+find_jws_kem_by_thp(struct tang_keys_info *keys_info, const char *thumbprint)
+{
+    if (!keys_info || !thumbprint)
+        return NULL;
+
+    json_auto_t *key = find_jwk(keys_info, thumbprint);
+    if (!key)
+        return NULL;
+
+    const char *key_type = json_string_value(json_object_get(key, "kty"));
+    if (!key_type || strcmp(key_type, "AKP") != 0)
+        return NULL;
+
+    json_auto_t *payload = json_array();
+    if (!payload)
+        return NULL;
+    json_array_append(payload, key);
+
+    json_auto_t *signed_keys = jwk_sign(payload, keys_info->m_sign);
+    if (!signed_keys)
+        return NULL;
+    return json_incref(signed_keys);
+}
+
+int
+adv_kem_thp(http_method_t method, const char *path, const char *body,
+            regmatch_t matches[], void *misc)
+{
+    __attribute__((cleanup(str_cleanup))) char *output = NULL;
+    __attribute__((cleanup(str_cleanup))) char *thumbprint = NULL;
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *keys_info = NULL;
+    json_auto_t *signed_keys = NULL;
+    const char *jwkdir = misc;
+
+    keys_info = read_keys(jwkdir);
+    if (!keys_info || keys_info->m_keys_count == 0)
+        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+
+    if (matches[1].rm_so >= matches[1].rm_eo)
+        return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
+
+    size_t size = matches[1].rm_eo - matches[1].rm_so;
+    thumbprint = strndup(&path[matches[1].rm_so], size);
+    if (!thumbprint)
+        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+
+    signed_keys = find_jws_kem_by_thp(keys_info, thumbprint);
+    if (!signed_keys)
+        return http_reply(HTTP_STATUS_NOT_FOUND, NULL);
+
+    output = json_dumps(signed_keys, 0);
+    if (!output)
+        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+
+    return http_reply(HTTP_STATUS_OK,
+                      "Content-Type: application/jose+json\r\n"
+                      "Content-Length: %zu\r\n"
+                      "\r\n%s", strlen(output), output);
+}
+
 int
 rec_kem(http_method_t method, const char *path, const char *body,
         regmatch_t matches[], void *misc)

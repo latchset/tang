@@ -330,6 +330,69 @@ test_find_jws_kem_empty_payload(void)
 }
 
 static void
+test_find_jws_kem_by_thp_null(void)
+{
+    ASSERT(find_jws_kem_by_thp(NULL, "anything") == NULL);
+    ASSERT(find_jws_kem_by_thp(NULL, NULL) == NULL);
+}
+
+static void
+test_find_jws_kem_by_thp_lookup(void)
+{
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *keys_info = read_keys(tmpdir);
+    ASSERT(keys_info);
+
+    if (!keys_info->m_has_pqc) {
+        fprintf(stderr, "No PQC support, skipping find_jws_kem_by_thp\n");
+        remove_tempdir(tmpdir);
+        return;
+    }
+
+    size_t idx;
+    json_t *key;
+    json_array_foreach(keys_info->m_kem_payload, idx, key) {
+        __attribute__((cleanup(cleanup_str)))
+            char *thumbprint = jwk_thumbprint(key, "S256");
+        ASSERT(thumbprint);
+
+        json_auto_t *signed_keys =
+            find_jws_kem_by_thp(keys_info, thumbprint);
+        ASSERT(signed_keys);
+        ASSERT(jose_jws_ver(NULL, signed_keys, NULL,
+                            keys_info->m_sign, 1));
+    }
+
+    ASSERT(find_jws_kem_by_thp(keys_info, "nonexistent-thp") == NULL);
+
+    remove_tempdir(tmpdir);
+}
+
+static void
+test_find_jws_kem_by_thp_rejects_non_kem(void)
+{
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *keys_info = read_keys(tmpdir);
+    ASSERT(keys_info);
+
+    size_t idx;
+    json_t *key;
+    json_array_foreach(keys_info->m_payload, idx, key) {
+        __attribute__((cleanup(cleanup_str)))
+            char *thumbprint = jwk_thumbprint(key, "S256");
+        if (!thumbprint)
+            continue;
+        ASSERT(find_jws_kem_by_thp(keys_info, thumbprint) == NULL);
+    }
+
+    remove_tempdir(tmpdir);
+}
+
+static void
 test_rec_kem_secure_bad_json(void)
 {
     json_auto_t *priv = NULL;
@@ -628,6 +691,9 @@ run_tests(void)
     test_find_jws_kem_null_tki();
     test_find_jws_kem_filtering();
     test_find_jws_kem_empty_payload();
+    test_find_jws_kem_by_thp_null();
+    test_find_jws_kem_by_thp_lookup();
+    test_find_jws_kem_by_thp_rejects_non_kem();
 
     test_rec_kem_secure_bad_json();
     test_rec_kem_secure_bad_transport_ct();

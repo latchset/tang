@@ -19,8 +19,23 @@
 
 #pragma once
 
+#include <string.h>
+
 #include "http.h"
 #include "keys.h"
+
+#define KEM_ALG_512   "ML-KEM-512"
+#define KEM_ALG_768   "ML-KEM-768"
+#define KEM_ALG_1024  "ML-KEM-1024"
+
+static inline int
+is_valid_kem_alg(const char *alg)
+{
+    return alg
+        && (strcmp(alg, KEM_ALG_512) == 0
+            || strcmp(alg, KEM_ALG_768) == 0
+            || strcmp(alg, KEM_ALG_1024) == 0);
+}
 
 int pqc_is_available(void);
 

@@ -28,6 +28,7 @@
 #include <jose/jws.h>
 
 #include "keys.h"
+#include "pqc.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -310,7 +311,7 @@ prepare_payload_and_sign(struct tang_keys_info* tki)
 }
 
 static const char* const kem_algorithms[] = {
-    "ML-KEM-512", "ML-KEM-768", "ML-KEM-1024", NULL
+    KEM_ALG_512, KEM_ALG_768, KEM_ALG_1024, NULL
 };
 
 struct key_spec {

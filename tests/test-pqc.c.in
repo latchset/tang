@@ -392,6 +392,26 @@ test_find_jws_kem_by_thp_rejects_non_kem(void)
     remove_tempdir(tmpdir);
 }
 
+static json_t *
+build_enriched_header(const char *ecmr_kid, const char *kem_kid,
+                      const char *kem_alg)
+{
+    char suite[64];
+    snprintf(suite, sizeof(suite), "%s%s", SUITE_PREFIX, kem_alg);
+
+    return json_pack(
+        "{s:{s:s, s:s, s:[ssss], s:s, s:s, s:s, s:s, s:s}}",
+        "protected",
+        "alg", "dir",
+        "enc", "A256GCM",
+        "crit", "kem_ver", "suite", "kem_kid", "msg_dir",
+        "kem_ver", KEM_VERSION,
+        "suite", suite,
+        "kid", ecmr_kid,
+        "kem_kid", kem_kid,
+        "msg_dir", DIR_REQUEST);
+}
+
 static void
 test_rec_kem_secure_bad_json(void)
 {
@@ -405,14 +425,16 @@ test_rec_kem_secure_bad_json(void)
     }
 
     char *out = NULL;
+    const char *kem_kid = "test-kem-kid";
 
     json_auto_t *empty = json_object();
-    ASSERT(rec_kem_secure(priv, empty, &out) == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(rec_kem_secure(priv, kem_kid, empty, &out)
+           == HTTP_STATUS_BAD_REQUEST);
     ASSERT(out == NULL);
 
     json_auto_t *missing_field = json_pack("{s:s}",
         "clevis_encrypted_blob", "foo");
-    ASSERT(rec_kem_secure(priv, missing_field, &out)
+    ASSERT(rec_kem_secure(priv, kem_kid, missing_field, &out)
            == HTTP_STATUS_BAD_REQUEST);
     ASSERT(out == NULL);
 }
@@ -431,10 +453,12 @@ test_rec_kem_secure_bad_transport_ct(void)
 
     char *out = NULL;
 
+    const char *kem_kid = "test-kem-kid";
     json_auto_t *req = json_pack("{s:s, s:s}",
         "clevis_encrypted_blob", "a.b.c.d.e",
         "clevis_transport_ct", "INVALID_CIPHERTEXT");
-    ASSERT(rec_kem_secure(priv, req, &out) == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(rec_kem_secure(priv, kem_kid, req, &out)
+           == HTTP_STATUS_BAD_REQUEST);
     ASSERT(out == NULL);
 }
 
@@ -459,10 +483,12 @@ test_rec_kem_secure_bad_blob(void)
     ASSERT(ct);
 
     char *out = NULL;
+    const char *kem_kid = "test-kem-kid";
     json_auto_t *req = json_pack("{s:s, s:s}",
         "clevis_encrypted_blob", "not-a-valid-jwe",
         "clevis_transport_ct", ct);
-    ASSERT(rec_kem_secure(priv, req, &out) == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(rec_kem_secure(priv, kem_kid, req, &out)
+           == HTTP_STATUS_BAD_REQUEST);
     ASSERT(out == NULL);
 }
 
@@ -487,9 +513,11 @@ test_rec_kem_secure_bad_inner_payload(void)
     json_t *fwd_ss = json_object_get(fwd_enc, "ss");
     ASSERT(fwd_ct && fwd_ss);
 
+    const char *kem_kid = "test-kem-kid";
     const char *bad_payload = "{\"garbage\":true}";
-    json_auto_t *jwe_hdr = json_pack(
-        "{s:{s:s,s:s}}", "protected", "alg", "dir", "enc", "A256GCM");
+    json_auto_t *jwe_hdr = build_enriched_header("ecmr-kid", kem_kid,
+                                                    "ML-KEM-768");
+    ASSERT(jwe_hdr);
     ASSERT(jose_jwe_enc(NULL, jwe_hdr, NULL, fwd_ss,
                         bad_payload, strlen(bad_payload)));
 
@@ -500,7 +528,8 @@ test_rec_kem_secure_bad_inner_payload(void)
     json_auto_t *req = json_pack("{s:s, s:s}",
         "clevis_encrypted_blob", blob,
         "clevis_transport_ct", fwd_ct);
-    ASSERT(rec_kem_secure(priv, req, &out) == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(rec_kem_secure(priv, kem_kid, req, &out)
+           == HTTP_STATUS_BAD_REQUEST);
     ASSERT(out == NULL);
 }
 
@@ -535,6 +564,8 @@ test_rec_kem_secure_wrong_digest(void)
     json_auto_t *clevis_kem_pub = json_deep_copy(clevis_kem_priv);
     jose_jwk_pub(NULL, clevis_kem_pub);
 
+    const char *kem_kid = "test-kem-kid";
+
     json_auto_t *inner = json_pack("{s:s, s:O, s:s}",
         "clevis_kem_ct", clevis_kem_ct,
         "clevis_kem_pub", clevis_kem_pub,
@@ -544,8 +575,9 @@ test_rec_kem_secure_wrong_digest(void)
         json_dumps(inner, JSON_COMPACT);
     ASSERT(inner_str);
 
-    json_auto_t *jwe_hdr = json_pack(
-        "{s:{s:s,s:s}}", "protected", "alg", "dir", "enc", "A256GCM");
+    json_auto_t *jwe_hdr = build_enriched_header("ecmr-kid", kem_kid,
+                                                    "ML-KEM-768");
+    ASSERT(jwe_hdr);
     ASSERT(jose_jwe_enc(NULL, jwe_hdr, NULL, fwd_ss,
                         inner_str, strlen(inner_str)));
 
@@ -556,7 +588,8 @@ test_rec_kem_secure_wrong_digest(void)
     json_auto_t *req = json_pack("{s:s, s:s}",
         "clevis_encrypted_blob", blob,
         "clevis_transport_ct", fwd_ct);
-    ASSERT(rec_kem_secure(priv, req, &out) == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(rec_kem_secure(priv, kem_kid, req, &out)
+           == HTTP_STATUS_BAD_REQUEST);
     ASSERT(out == NULL);
 }
 
@@ -603,6 +636,9 @@ test_rec_kem_secure_success(void)
     json_auto_t *clevis_kem_pub = json_deep_copy(clevis_kem_priv);
     jose_jwk_pub(NULL, clevis_kem_pub);
 
+    const char *kem_kid = "test-kem-kid";
+    const char *ecmr_kid = "test-ecmr-kid";
+
     json_auto_t *inner = json_pack("{s:s, s:O, s:s}",
         "clevis_kem_ct", clevis_kem_ct,
         "clevis_kem_pub", clevis_kem_pub,
@@ -612,8 +648,9 @@ test_rec_kem_secure_success(void)
         json_dumps(inner, JSON_COMPACT);
     ASSERT(inner_str);
 
-    json_auto_t *jwe_hdr = json_pack(
-        "{s:{s:s,s:s}}", "protected", "alg", "dir", "enc", "A256GCM");
+    json_auto_t *jwe_hdr = build_enriched_header(ecmr_kid, kem_kid,
+                                                    "ML-KEM-768");
+    ASSERT(jwe_hdr);
     ASSERT(jose_jwe_enc(NULL, jwe_hdr, NULL, fwd_ss,
                         inner_str, strlen(inner_str)));
 
@@ -624,7 +661,7 @@ test_rec_kem_secure_success(void)
     json_auto_t *req = json_pack("{s:s, s:s}",
         "clevis_encrypted_blob", blob,
         "clevis_transport_ct", fwd_ct);
-    int status = rec_kem_secure(priv, req, &out);
+    int status = rec_kem_secure(priv, kem_kid, req, &out);
     ASSERT_WITH_MSG(status == HTTP_STATUS_OK,
                     "expected 200, got %d", status);
     ASSERT(out);
@@ -661,6 +698,33 @@ test_rec_kem_secure_success(void)
         json_object_get(recovered, "k"));
     ASSERT(orig_k && recov_k);
     ASSERT(strcmp(orig_k, recov_k) == 0);
+
+    /* Validate response enriched protected header */
+    const char *resp_prot_b64 = json_string_value(
+        json_object_get(resp_jwe, "protected"));
+    ASSERT(resp_prot_b64);
+
+    size_t dec_len = jose_b64_dec_buf(
+        resp_prot_b64, strlen(resp_prot_b64), NULL, 0);
+    ASSERT(dec_len != SIZE_MAX);
+    uint8_t dec_buf[dec_len + 1];
+    ASSERT(jose_b64_dec_buf(resp_prot_b64, strlen(resp_prot_b64),
+                            dec_buf, dec_len) == dec_len);
+    dec_buf[dec_len] = '\0';
+
+    json_auto_t *resp_hdr = json_loads((char *)dec_buf, 0, NULL);
+    ASSERT(resp_hdr);
+
+    ASSERT(strcmp(json_string_value(
+        json_object_get(resp_hdr, "kem_ver")), KEM_VERSION) == 0);
+    ASSERT(strcmp(json_string_value(
+        json_object_get(resp_hdr, "suite")), "ECMR+ML-KEM-768") == 0);
+    ASSERT(strcmp(json_string_value(
+        json_object_get(resp_hdr, "kid")), ecmr_kid) == 0);
+    ASSERT(strcmp(json_string_value(
+        json_object_get(resp_hdr, "kem_kid")), kem_kid) == 0);
+    ASSERT(strcmp(json_string_value(
+        json_object_get(resp_hdr, "msg_dir")), DIR_RESPONSE) == 0);
 }
 
 static void

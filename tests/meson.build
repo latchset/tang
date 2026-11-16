@@ -64,6 +64,8 @@ test('rec-standalone-endpoint', find_program('rec-standalone-endpoint'), env: en
 test('rec-socat', find_program('rec-socat'), env: env, timeout: 360)
 test('rec-socat-endpoint', find_program('rec-socat-endpoint'), env: env, timeout: 360)
 test('test-keys', test_keys, env: env, timeout: 360)
+test('keygen', find_program('keygen'), env: env, timeout: 360)
+test('rotate-keys', find_program('rotate-keys'), env: env, timeout: 360)
 
 if has_pqc
   test('test-pqc', test_pqc, env: env, timeout: 360)

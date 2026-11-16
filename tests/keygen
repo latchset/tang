@@ -1,0 +1,90 @@
+#!/bin/sh -ex
+# vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:
+#
+# Copyright (c) 2026 Red Hat, Inc.
+# Author: Sergio Arroutbi <sarroutbi@redhat.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+. helpers
+
+trap 'on_exit' EXIT
+TMP=$(mktemp -d)
+export TMP
+mkdir -p "${TMP}/db"
+
+# Hybrid exchange keys handled by tangd-keygen. They pair with the
+# classical ECMR key to form the hybrid key set.
+KEM_ALGS="ML-KEM-512 ML-KEM-768 ML-KEM-1024"
+
+jose_supports_alg () {
+    jose jwk gen -i "{\"alg\":\"${1}\"}" >/dev/null 2>&1
+}
+
+count_alg_keys () {
+    find "${1}" -maxdepth 1 -name '*.jwk' ! -name '.*' \
+        -exec grep -l "\"alg\":\"${2}\"" {} + 2>/dev/null | wc -l
+}
+
+check_hybrid_keys () {
+    _dir="${1}"
+    for alg in ${KEM_ALGS}; do
+        n=$(count_alg_keys "${_dir}" "${alg}")
+        if jose_supports_alg "${alg}"; then
+            [ "${n}" -eq 1 ]
+        else
+            [ "${n}" -eq 0 ]
+        fi
+    done
+}
+
+# Basic generation with explicit file names.
+tangd-keygen "${TMP}/db" sig exc
+[ -r "${TMP}/db/sig.jwk" ]
+[ -r "${TMP}/db/exc.jwk" ]
+valid_key_perm "${TMP}/db/sig.jwk"
+valid_key_perm "${TMP}/db/exc.jwk"
+
+jose fmt --json "${TMP}/db/sig.jwk" -Og alg -Sq ES512 -E
+jose fmt --json "${TMP}/db/exc.jwk" -Og alg -Sq ECMR -E
+
+# Hybrid keys: one key per supported ML-KEM algorithm, none for the
+# unsupported ones, all with proper permissions.
+check_hybrid_keys "${TMP}/db"
+for f in "${TMP}/db"/*.jwk; do
+    valid_key_perm "${f}"
+done
+
+# Re-running tangd-keygen must not duplicate ML-KEM keys. Classical keys
+# are regenerated (they get new thumbprints), ML-KEM keys are skipped as
+# one key of each algorithm already exists.
+tangd-keygen "${TMP}/db"
+check_hybrid_keys "${TMP}/db"
+for f in "${TMP}/db"/*.jwk; do
+    valid_key_perm "${f}"
+done
+
+# The generated ML-KEM keys must be valid JWKs usable for key derivation.
+for f in "${TMP}/db"/*.jwk; do
+    alg=$(jose fmt --json "${f}" -Og alg -u-)
+    case "${alg}" in
+    ML-KEM-*)
+        jose fmt --json "${f}" -Og kty -Sq AKP -E
+        jose jwk use -i "${f}" -r -u deriveKey -o /dev/null
+        ;;
+    esac
+done
+
+echo "tangd-keygen hybrid key generation test passed" >&2

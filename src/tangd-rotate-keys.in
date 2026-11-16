@@ -92,6 +92,22 @@ cd "${JWKDIR}" || error "Unable to change to keys directory '${JWKDIR}'"
         set_perms "${thp}.jwk"
         log "Created new key ${thp}.jwk" "${VERBOSE}"
     done
+
+    # Hybrid exchange keys: post-quantum ML-KEM keys pairing with the
+    # classical ECMR key. The previous ML-KEM keys were hidden above, so
+    # they are always recreated here; algorithms not supported by jose
+    # are skipped.
+    for alg in ML-KEM-512 ML-KEM-768 ML-KEM-1024; do
+        if jwe="$(jose jwk gen --input "{\"alg\": \"${alg}\"}" 2>/dev/null)"; then
+            thp="$(printf '%s' "${jwe}" | jose jwk thp --input=- \
+                                               -a "${DEFAULT_THP_HASH}")"
+            echo "${jwe}" > "${thp}.jwk"
+            set_perms "${thp}.jwk"
+            log "Created new key ${thp}.jwk (${alg})" "${VERBOSE}"
+        else
+            echo "Skipping ${alg} key generation (not supported by jose)" >&2
+        fi
+    done
 cd - >/dev/null
 
 log "Keys rotated successfully" "${VERBOSE}"

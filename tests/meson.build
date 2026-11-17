@@ -18,6 +18,26 @@ test_keys = executable('test-keys',
   include_directories: incdir
 )
 
+test_pqc_noop = executable('test-pqc-noop',
+  'test-pqc-noop.c',
+  'test-util.c',
+  dependencies: [jose],
+  include_directories: incdir
+)
+
+if has_pqc
+  # A tangd built with the noop PQC handlers, so the hidden-endpoint
+  # behavior can be exercised even when jose supports ML-KEM.
+  tangd_noop = executable('tangd-noop',
+    '../src/http.c',
+    '../src/keys.c',
+    '../src/tangd.c',
+    '../src/socket.c',
+    '../src/pqc_noop.c',
+    dependencies: [jose, http_parser]
+  )
+endif
+
 if has_pqc
   test_pqc_c = configure_file(
     input: 'test-pqc.c.in',
@@ -64,8 +84,10 @@ test('rec-standalone-endpoint', find_program('rec-standalone-endpoint'), env: en
 test('rec-socat', find_program('rec-socat'), env: env, timeout: 360)
 test('rec-socat-endpoint', find_program('rec-socat-endpoint'), env: env, timeout: 360)
 test('test-keys', test_keys, env: env, timeout: 360)
+test('test-pqc-noop', test_pqc_noop, env: env, timeout: 360)
 test('keygen', find_program('keygen'), env: env, timeout: 360)
 test('rotate-keys', find_program('rotate-keys'), env: env, timeout: 360)
+test('noop', find_program('noop'), env: env, timeout: 360)
 
 if has_pqc
   test('test-pqc', test_pqc, env: env, timeout: 360)

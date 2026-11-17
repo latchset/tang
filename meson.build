@@ -53,7 +53,6 @@ add_project_arguments(
 add_project_arguments('-DVERSION="'+meson.project_version() + '"', language : 'c')
 
 jose = dependency('jose', version: '>=8')
-libcrypto = dependency('libcrypto')
 a2x = find_program('a2x', required: false)
 compiler = meson.get_compiler('c', native : true)
 
@@ -71,6 +70,12 @@ int main(void) {
     return enc ? 0 : 1;
 }
 ''', dependencies: jose, name: 'ML-KEM KEM API support in jose')
+
+# libcrypto is only needed by the PQC (hybrid ML-KEM) code path: the
+# noop implementation used when jose lacks ML-KEM support does not use
+# OpenSSL, so the dependency is optional and only linked into tangd
+# (and test-pqc) when has_pqc is true.
+libcrypto = dependency('libcrypto', required: has_pqc)
 
 message(compiler.version())
 message(compiler.get_id())

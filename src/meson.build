@@ -1,12 +1,17 @@
 pqc_source = has_pqc ? 'pqc.c' : 'pqc_noop.c'
 
+tangd_deps = [jose, http_parser]
+if has_pqc
+  tangd_deps += libcrypto
+endif
+
 tangd = executable('tangd',
   'http.c',
   'keys.c',
   'tangd.c',
   'socket.c',
   pqc_source,
-  dependencies: [jose, libcrypto, http_parser],
+  dependencies: tangd_deps,
   install: true,
   install_dir: libexecdir
 )

@@ -28,7 +28,7 @@
 #include <jose/jws.h>
 
 #include "keys.h"
-#include "pqc.h"
+#include "kem_alg.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096

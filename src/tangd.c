@@ -390,13 +390,18 @@ main(int argc, char *argv[])
         while (*endpoint_ptr == '/') {
             endpoint_ptr++;
         }
-        snprintf(adv_thp_endpoint, MAX_URL, "^/%s/+adv/+([0-9A-Za-z_-]+)$", endpoint_ptr);
-        snprintf(adv_endpoint, MAX_URL, "^/%s/+adv/*$", endpoint_ptr);
-        snprintf(adv_kem_thp_endpoint, MAX_URL, "^/%s/+adv-kem/+([0-9A-Za-z_-]+)$", endpoint_ptr);
-        snprintf(adv_kem_endpoint, MAX_URL, "^/%s/+adv-kem/*([?][^[:space:]]*)?$", endpoint_ptr);
-        snprintf(rec_endpoint, MAX_URL, "^/%s/+rec/+([0-9A-Za-z_-]+)$", endpoint_ptr);
-        snprintf(rec_kem_endpoint, MAX_URL, "^/%s/+rec-kem/+([0-9A-Za-z_-]+)$", endpoint_ptr);
-        snprintf(ver_endpoint, MAX_URL, "^/%s/+version/*$", endpoint_ptr);
+        /* A truncated regex would silently break routing, so refuse to
+         * start when the endpoint prefix does not fit the buffers. */
+        if (snprintf(adv_thp_endpoint, MAX_URL, "^/%s/+adv/+([0-9A-Za-z_-]+)$", endpoint_ptr) >= MAX_URL ||
+            snprintf(adv_endpoint, MAX_URL, "^/%s/+adv/*$", endpoint_ptr) >= MAX_URL ||
+            snprintf(adv_kem_thp_endpoint, MAX_URL, "^/%s/+adv-kem/+([0-9A-Za-z_-]+)$", endpoint_ptr) >= MAX_URL ||
+            snprintf(adv_kem_endpoint, MAX_URL, "^/%s/+adv-kem/*([?][^[:space:]]*)?$", endpoint_ptr) >= MAX_URL ||
+            snprintf(rec_endpoint, MAX_URL, "^/%s/+rec/+([0-9A-Za-z_-]+)$", endpoint_ptr) >= MAX_URL ||
+            snprintf(rec_kem_endpoint, MAX_URL, "^/%s/+rec-kem/+([0-9A-Za-z_-]+)$", endpoint_ptr) >= MAX_URL ||
+            snprintf(ver_endpoint, MAX_URL, "^/%s/+version/*$", endpoint_ptr) >= MAX_URL) {
+            fprintf(stderr, "Endpoint prefix '%s' is too long\n", endpoint_ptr);
+            return EXIT_FAILURE;
+        }
         s_dispatch[DISPATCH_ADV_THP].re = adv_thp_endpoint;
         s_dispatch[DISPATCH_ADV].re = adv_endpoint;
         s_dispatch[DISPATCH_ADV_KEM_THP].re = adv_kem_thp_endpoint;

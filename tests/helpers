@@ -137,3 +137,18 @@ expected_fail () {
     echo "Test was expected to fail" >&2
     exit 1
 }
+
+# True when the installed jose supports the given algorithm. Uses the
+# algorithm listing instead of generating probe keys: cheaper and does
+# not consume entropy on every call.
+jose_supports_alg () {
+    jose alg 2>/dev/null | grep -qx "${1}"
+}
+
+# Hybrid KEM protocol constants, single-sourced from src/pqc.h so the
+# shell tests cannot drift from the implementation.
+PQC_H="$(dirname -- "$0")/../src/pqc.h"
+KEM_VERSION="$(sed -n 's/^#define[[:space:]]*KEM_VERSION[[:space:]]*"\([^"]*\)".*/\1/p' "${PQC_H}")"
+ECMR_ALG="$(sed -n 's/^#define[[:space:]]*ECMR_ALG[[:space:]]*"\([^"]*\)".*/\1/p' "${PQC_H}")"
+DIR_REQUEST="$(sed -n 's/^#define[[:space:]]*DIR_REQUEST[[:space:]]*"\([^"]*\)".*/\1/p' "${PQC_H}")"
+DIR_RESPONSE="$(sed -n 's/^#define[[:space:]]*DIR_RESPONSE[[:space:]]*"\([^"]*\)".*/\1/p' "${PQC_H}")"

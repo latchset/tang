@@ -19,23 +19,16 @@
 
 #pragma once
 
-#include <string.h>
-
 #include "http.h"
 #include "keys.h"
+#include "kem_alg.h"
 
-#define KEM_ALG_512   "ML-KEM-512"
-#define KEM_ALG_768   "ML-KEM-768"
-#define KEM_ALG_1024  "ML-KEM-1024"
-
-static inline int
-is_valid_kem_alg(const char *alg)
-{
-    return alg
-        && (strcmp(alg, KEM_ALG_512) == 0
-            || strcmp(alg, KEM_ALG_768) == 0
-            || strcmp(alg, KEM_ALG_1024) == 0);
-}
+/* Hybrid KEM protocol constants, shared by the implementation
+ * (src/pqc.c) and the tests (which include pqc.c). */
+#define KEM_VERSION    "hybrid-v1"
+#define ECMR_ALG       "ECMR"
+#define DIR_REQUEST    "clevis-to-tang"
+#define DIR_RESPONSE   "tang-to-clevis"
 
 int pqc_is_available(void);
 

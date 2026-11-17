@@ -39,6 +39,14 @@ str_cleanup(char **str)
         free(*str);
 }
 
+/* Wipes the base64url-encoded "k" secret of a JWK in place and removes
+ * the member from the object.
+ *
+ * NOTE: this mutates a shared json_t: any other holder of the object
+ * loses access to "k". The string is owned exclusively by the json_t
+ * (jansson exposes it as const only to discourage modification), so
+ * cleansing it in place is safe; the NUL terminator is part of the
+ * allocation and is cleansed too. */
 static void
 wipe_jwk_secret(json_t *jwk)
 {
@@ -46,7 +54,7 @@ wipe_jwk_secret(json_t *jwk)
     if (k) {
         const char *str = json_string_value(k);
         if (str)
-            OPENSSL_cleanse((void *)str, json_string_length(k));
+            OPENSSL_cleanse((void *)str, json_string_length(k) + 1);
         json_object_del(jwk, "k");
     }
 }
@@ -123,11 +131,6 @@ wipe_and_release(json_t **jwk)
     }
 }
 
-#define KEM_VERSION    "hybrid-v1"
-#define ECMR_ALG       "ECMR"
-#define DIR_REQUEST    "clevis-to-tang"
-#define DIR_RESPONSE   "tang-to-clevis"
-
 /* Maximum decoded size accepted for a request protected header. The
  * legitimate header is a few hundred bytes, so anything larger is
  * rejected before allocating, to prevent stack/heap exhaustion through
@@ -137,12 +140,12 @@ wipe_and_release(json_t **jwk)
 static int
 is_valid_suite(const char *suite)
 {
-    if (!suite || strncmp(suite, ECMR_ALG, strlen(ECMR_ALG)) != 0)
+    if (!suite || strncmp(suite, ECMR_ALG, sizeof(ECMR_ALG) - 1) != 0)
         return 0;
-    if (suite[strlen(ECMR_ALG)] != '+')
+    if (suite[sizeof(ECMR_ALG) - 1] != '+')
         return 0;
 
-    return is_valid_kem_alg(suite + strlen(ECMR_ALG) + 1);
+    return is_valid_kem_alg(suite + sizeof(ECMR_ALG));
 }
 
 static int
@@ -151,6 +154,46 @@ header_field_matches(const json_t *header, const char *field,
 {
     const char *val = json_string_value(json_object_get(header, field));
     return val && strcmp(val, expected) == 0;
+}
+
+/* Extension parameters this implementation understands, i.e. the only
+ * entries accepted in a request crit list. "kid" is a standard JOSE
+ * header (RFC 7515 section 4.1.4) and therefore never listed in crit;
+ * the response crit carries exactly these four entries. */
+static const char *const known_crit[] = {
+    "kem_ver", "suite", "kem_kid", "msg_dir", NULL
+};
+
+/* RFC 7515 section 4.1.11: critical parameters that are not understood
+ * MUST cause the input to be rejected. crit itself is optional, but
+ * when present it must be an array of known extension names. */
+static int
+crit_entries_known(const json_t *header)
+{
+    const json_t *crit = json_object_get(header, "crit");
+    if (!crit)
+        return 1;
+
+    if (!json_is_array(crit))
+        return 0;
+
+    size_t idx;
+    json_t *entry;
+    json_array_foreach((json_t *)crit, idx, entry) {
+        const char *name = json_string_value(entry);
+        if (!name)
+            return 0;
+        int known = 0;
+        for (size_t i = 0; known_crit[i]; i++) {
+            if (strcmp(name, known_crit[i]) == 0) {
+                known = 1;
+                break;
+            }
+        }
+        if (!known)
+            return 0;
+    }
+    return 1;
 }
 
 static int
@@ -194,6 +237,9 @@ validate_request_protected(const json_t *blob_jwe,
     if (!header_field_matches(header, "msg_dir", DIR_REQUEST)
         || !header_field_matches(header, "kem_kid", path_kem_kid)
         || !header_field_matches(header, "kem_ver", KEM_VERSION))
+        return 0;
+
+    if (!crit_entries_known(header))
         return 0;
 
     /* The declared suite must match the suite derived from the algorithm
@@ -253,6 +299,18 @@ rec_kem_secure(json_t *tang_kem_priv, struct tang_keys_info *tki,
                     "clevis_transport_ct", &clevis_transport_ct) < 0)
         return HTTP_STATUS_BAD_REQUEST;
 
+    json_auto_t *blob_jwe = jwe_from_compact(clevis_encrypted_blob);
+    if (!blob_jwe)
+        return HTTP_STATUS_BAD_REQUEST;
+
+    /* Validate the protected header before any expensive crypto: it is
+     * base64-encoded plaintext, so garbage is rejected cheaply here,
+     * before the transport KEM decapsulation and AES-GCM decrypt. */
+    __attribute__((cleanup(str_cleanup))) char *ecmr_kid = NULL;
+    if (!validate_request_protected(blob_jwe, tki, path_kem_kid,
+                                    suite, &ecmr_kid))
+        return HTTP_STATUS_BAD_REQUEST;
+
     json_auto_t *fwd_ct_json = json_string(clevis_transport_ct);
     if (!fwd_ct_json)
         return HTTP_STATUS_BAD_REQUEST;
@@ -261,12 +319,6 @@ rec_kem_secure(json_t *tang_kem_priv, struct tang_keys_info *tki,
         jose_jwk_kem_dec(NULL, tang_kem_priv, fwd_ct_json);
     if (!clevis_transport_key)
         return HTTP_STATUS_BAD_REQUEST;
-
-    json_auto_t *blob_jwe = jwe_from_compact(clevis_encrypted_blob);
-    if (!blob_jwe) {
-        wipe_and_release(&clevis_transport_key);
-        return HTTP_STATUS_BAD_REQUEST;
-    }
 
     size_t plaintext_len = 0;
     void *plaintext = jose_jwe_dec(NULL, blob_jwe, NULL,
@@ -278,11 +330,6 @@ rec_kem_secure(json_t *tang_kem_priv, struct tang_keys_info *tki,
     json_auto_t *payload = json_loadb(plaintext, plaintext_len, 0, NULL);
     OPENSSL_clear_free(plaintext, plaintext_len);
     if (!payload)
-        return HTTP_STATUS_BAD_REQUEST;
-
-    __attribute__((cleanup(str_cleanup))) char *ecmr_kid = NULL;
-    if (!validate_request_protected(blob_jwe, tki, path_kem_kid,
-                                    suite, &ecmr_kid))
         return HTTP_STATUS_BAD_REQUEST;
 
     const char *clevis_kem_ct = NULL;
@@ -375,11 +422,11 @@ rec_kem_secure(json_t *tang_kem_priv, struct tang_keys_info *tki,
     }
 
     resp_jwe = json_pack(
-        "{s:{s:s, s:s, s:[sssss], s:s, s:s, s:s, s:s, s:s}}",
+        "{s:{s:s, s:s, s:[ssss], s:s, s:s, s:s, s:s, s:s}}",
         "protected",
         "alg", "dir",
         "enc", "A256GCM",
-        "crit", "kem_ver", "suite", "kid", "kem_kid",
+        "crit", "kem_ver", "suite", "kem_kid",
                 "msg_dir",
         "kem_ver", KEM_VERSION,
         "suite", suite,
@@ -420,7 +467,7 @@ cleanup:
         wipe_jwk_secret(tang_transport_key);
     wipe_and_release(&enc_key);
     if (enc_key_json)
-        OPENSSL_clear_free(enc_key_json, strlen(enc_key_json));
+        OPENSSL_clear_free(enc_key_json, strlen(enc_key_json) + 1);
     free(tang_encrypted_key);
     json_decref(ret_encap);
     json_decref(resp_jwe);
@@ -568,6 +615,33 @@ find_jws_kem_by_thp(struct tang_keys_info *keys_info, const char *thumbprint)
     return json_incref(signed_keys);
 }
 
+/* Extracts the thumbprint captured in matches[1] and loads the key
+ * store from jwkdir, so the KEM endpoints share a single status
+ * mapping instead of diverging copies: 400 when the path carries no
+ * thumbprint, 500 when the key store cannot be read. Returns the
+ * thumbprint (owned by the caller) and stores the owning key set info
+ * in *out_tki, or NULL with *out_status set. */
+static char *
+load_thp_keys(const char *path, regmatch_t matches[], const char *jwkdir,
+              struct tang_keys_info **out_tki, int *out_status)
+{
+    *out_tki = NULL;
+    *out_status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+    if (matches[1].rm_so >= matches[1].rm_eo) {
+        *out_status = HTTP_STATUS_BAD_REQUEST;
+        return NULL;
+    }
+
+    struct tang_keys_info *tki = read_keys(jwkdir);
+    if (!tki || tki->m_keys_count == 0)
+        return NULL;
+    *out_tki = tki;
+
+    size_t size = matches[1].rm_eo - matches[1].rm_so;
+    return strndup(&path[matches[1].rm_so], size);
+}
+
 int
 adv_kem_thp(http_method_t method, const char *path, const char *body,
             regmatch_t matches[], void *misc)
@@ -578,18 +652,12 @@ adv_kem_thp(http_method_t method, const char *path, const char *body,
         struct tang_keys_info *keys_info = NULL;
     json_auto_t *signed_keys = NULL;
     const char *jwkdir = misc;
+    int status;
 
-    keys_info = read_keys(jwkdir);
-    if (!keys_info || keys_info->m_keys_count == 0)
-        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
-
-    if (matches[1].rm_so >= matches[1].rm_eo)
-        return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
-
-    size_t size = matches[1].rm_eo - matches[1].rm_so;
-    thumbprint = strndup(&path[matches[1].rm_so], size);
+    thumbprint = load_thp_keys(path, matches, jwkdir, &keys_info,
+                               &status);
     if (!thumbprint)
-        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+        return http_reply(status, NULL);
 
     signed_keys = find_jws_kem_by_thp(keys_info, thumbprint);
     if (!signed_keys)
@@ -613,7 +681,6 @@ rec_kem(http_method_t method, const char *path, const char *body,
     __attribute__((cleanup(str_cleanup))) char *thp = NULL;
     __attribute__((cleanup(cleanup_tang_keys_info)))
         struct tang_keys_info *tki = NULL;
-    size_t size = matches[1].rm_eo - matches[1].rm_so;
     const char *jwkdir = misc;
     json_auto_t *tang_kem_priv = NULL;
     json_auto_t *req = NULL;
@@ -624,13 +691,9 @@ rec_kem(http_method_t method, const char *path, const char *body,
     if (!req)
         return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 
-    tki = read_keys(jwkdir);
-    if (!tki || tki->m_keys_count == 0)
-        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
-
-    thp = strndup(&path[matches[1].rm_so], size);
+    thp = load_thp_keys(path, matches, jwkdir, &tki, &status);
     if (!thp)
-        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+        return http_reply(status, NULL);
 
     tang_kem_priv = find_jwk(tki, thp);
     if (!tang_kem_priv)

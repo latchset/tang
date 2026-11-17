@@ -758,6 +758,43 @@ test_validate_request_protected(void)
     assert_header_rejected(h, tki, kem_kid, suite);
     free(h);
 
+    /* RFC 7515 section 4.1.11: unknown critical parameters must be
+     * rejected. */
+    {
+        json_auto_t *header = json_loads(good, 0, NULL);
+        ASSERT(header);
+        ASSERT(json_object_set_new(header, "crit",
+            json_pack("[ss]", "kem_ver", "evil")) == 0);
+        __attribute__((cleanup(str_cleanup))) char *bad =
+            json_dumps(header, JSON_COMPACT);
+        ASSERT(bad);
+        assert_header_rejected(bad, tki, kem_kid, suite);
+    }
+
+    /* crit must be an array of strings when present. */
+    {
+        json_auto_t *header = json_loads(good, 0, NULL);
+        ASSERT(header);
+        ASSERT(json_object_set_new(header, "crit", json_integer(42)) == 0);
+        __attribute__((cleanup(str_cleanup))) char *bad =
+            json_dumps(header, JSON_COMPACT);
+        ASSERT(bad);
+        assert_header_rejected(bad, tki, kem_kid, suite);
+    }
+
+    /* crit listing exactly the known extension parameters is fine. */
+    {
+        json_auto_t *header = json_loads(good, 0, NULL);
+        ASSERT(header);
+        ASSERT(json_object_set_new(header, "crit",
+            json_pack("[ssss]", "kem_ver", "suite", "kem_kid",
+                      "msg_dir")) == 0);
+        __attribute__((cleanup(str_cleanup))) char *ok =
+            json_dumps(header, JSON_COMPACT);
+        ASSERT(ok);
+        assert_header_accepted(ok, tki, kem_kid, suite, ecmr_kid);
+    }
+
     remove_tempdir(tmpdir);
 }
 
@@ -1315,11 +1352,13 @@ test_rec_kem_secure_success(void)
     /* req_digest must not be reintroduced in the response header. */
     ASSERT(json_object_get(resp_hdr, "req_digest") == NULL);
 
-    /* crit must list exactly the extra (non alg/enc) header members. */
+    /* crit must list exactly the extension parameters; kid is a
+     * standard JOSE header (RFC 7515 section 4.1.4) and is never
+     * crit'd. */
     json_t *crit = json_object_get(resp_hdr, "crit");
     ASSERT(crit && json_is_array(crit));
-    ASSERT(json_array_size(crit) == 5);
-    const char *expected_crit[] = {"kem_ver", "suite", "kid", "kem_kid",
+    ASSERT(json_array_size(crit) == 4);
+    const char *expected_crit[] = {"kem_ver", "suite", "kem_kid",
                                    "msg_dir"};
     for (size_t i = 0; i < ARRAY_COUNT(expected_crit); i++) {
         const char *member = json_string_value(json_array_get(crit, i));

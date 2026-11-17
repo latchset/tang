@@ -33,7 +33,7 @@ jobs:
           - os: ubuntu:devel
             stable: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Show OS information
         run: cat /etc/os-release 2>/dev/null || \

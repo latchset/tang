@@ -412,16 +412,16 @@ build_enriched_header(const char *ecmr_kid, const char *kem_kid,
         "msg_dir", DIR_REQUEST);
 }
 
-/* Thumbprint of the ECMR exchange key in the fixture key store. */
+/* Thumbprint of the first key in the fixture key store using @alg. */
 static char *
-find_ecmr_kid(struct tang_keys_info *tki)
+find_key_thp_by_alg(struct tang_keys_info *tki, const char *alg)
 {
     size_t idx;
     json_t *jwk;
     json_array_foreach(tki->m_keys, idx, jwk) {
-        const char *alg = json_string_value(
+        const char *jwk_alg = json_string_value(
             json_object_get(jwk, "alg"));
-        if (alg && strcmp(alg, ECMR_ALG) == 0)
+        if (jwk_alg && strcmp(jwk_alg, alg) == 0)
             return jwk_thumbprint(jwk, "S256");
     }
     return NULL;
@@ -507,6 +507,258 @@ build_rec_kem_request(json_t *tang_priv, const char *ecmr_kid,
     if (!req)
         return NULL;
     return json_dumps(req, JSON_COMPACT);
+}
+
+/* Builds the JSON text of a request protected header; a NULL field is
+ * omitted. Returns a string owned by the caller. */
+static char *
+build_header_json(const char *msg_dir, const char *kem_ver,
+                  const char *suite, const char *kid, const char *kem_kid)
+{
+    json_auto_t *header = json_object();
+    if (!header)
+        return NULL;
+    if (json_object_set_new(header, "alg", json_string("dir")) != 0
+        || json_object_set_new(header, "enc", json_string("A256GCM")) != 0)
+        return NULL;
+    if (msg_dir && json_object_set_new(header, "msg_dir",
+                                       json_string(msg_dir)) != 0)
+        return NULL;
+    if (kem_ver && json_object_set_new(header, "kem_ver",
+                                       json_string(kem_ver)) != 0)
+        return NULL;
+    if (suite && json_object_set_new(header, "suite",
+                                     json_string(suite)) != 0)
+        return NULL;
+    if (kid && json_object_set_new(header, "kid",
+                                   json_string(kid)) != 0)
+        return NULL;
+    if (kem_kid && json_object_set_new(header, "kem_kid",
+                                       json_string(kem_kid)) != 0)
+        return NULL;
+    return json_dumps(header, JSON_COMPACT);
+}
+
+/* Wraps a protected header JSON text into a blob JWE. */
+static json_t *
+blob_jwe_from_header_json(const char *header_json)
+{
+    json_t *b64 = jose_b64_enc(header_json, strlen(header_json));
+    if (!b64)
+        return NULL;
+    json_t *blob = json_pack("{s:o}", "protected", b64);
+    if (!blob) {
+        json_decref(b64);
+        return NULL;
+    }
+    return blob;
+}
+
+static void
+assert_header_rejected(const char *header_json,
+                       struct tang_keys_info *tki, const char *kem_kid,
+                       const char *expected_suite)
+{
+    json_auto_t *blob = blob_jwe_from_header_json(header_json);
+    ASSERT(blob);
+    char *ecmr_kid = NULL;
+    ASSERT(validate_request_protected(blob, tki, kem_kid,
+                                      expected_suite, &ecmr_kid) == 0);
+    ASSERT(ecmr_kid == NULL);
+}
+
+static void
+assert_header_accepted(const char *header_json,
+                       struct tang_keys_info *tki, const char *kem_kid,
+                       const char *expected_suite, const char *expected_kid)
+{
+    json_auto_t *blob = blob_jwe_from_header_json(header_json);
+    ASSERT(blob);
+    __attribute__((cleanup(str_cleanup))) char *ecmr_kid = NULL;
+    ASSERT(validate_request_protected(blob, tki, kem_kid,
+                                      expected_suite, &ecmr_kid) == 1);
+    ASSERT(ecmr_kid);
+    ASSERT(strcmp(ecmr_kid, expected_kid) == 0);
+}
+
+/* Direct negative (and happy path) coverage of the request protected
+ * header validation. */
+static void
+test_validate_request_protected(void)
+{
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *tki = read_keys(tmpdir);
+    ASSERT(tki);
+    __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
+        find_key_thp_by_alg(tki, ECMR_ALG);
+    ASSERT(ecmr_kid);
+    __attribute__((cleanup(cleanup_str))) char *sign_kid =
+        find_key_thp_by_alg(tki, "ES512");
+    ASSERT(sign_kid);
+
+    const char *kem_kid = "test-kem-kid";
+    const char *suite = "ECMR+ML-KEM-768";
+    char *h = NULL;
+
+    /* Happy path. */
+    __attribute__((cleanup(str_cleanup))) char *good =
+        build_header_json(DIR_REQUEST, KEM_VERSION, suite, ecmr_kid,
+                          kem_kid);
+    ASSERT(good);
+    assert_header_accepted(good, tki, kem_kid, suite, ecmr_kid);
+
+    /* Missing protected member. */
+    {
+        json_auto_t *blob = json_object();
+        char *ecmr_kid_out = NULL;
+        ASSERT(validate_request_protected(blob, tki, kem_kid, suite,
+                                          &ecmr_kid_out) == 0);
+        ASSERT(ecmr_kid_out == NULL);
+    }
+
+    /* Protected member is not a string. */
+    {
+        json_auto_t *blob = json_pack("{s:i}", "protected", 42);
+        ASSERT(blob);
+        char *ecmr_kid_out = NULL;
+        ASSERT(validate_request_protected(blob, tki, kem_kid, suite,
+                                          &ecmr_kid_out) == 0);
+        ASSERT(ecmr_kid_out == NULL);
+    }
+
+    /* Protected member is not base64. */
+    {
+        json_auto_t *blob = json_pack("{s:s}", "protected",
+                                      "!!!not-base64!!!");
+        ASSERT(blob);
+        char *ecmr_kid_out = NULL;
+        ASSERT(validate_request_protected(blob, tki, kem_kid, suite,
+                                          &ecmr_kid_out) == 0);
+        ASSERT(ecmr_kid_out == NULL);
+    }
+
+    /* Protected member is valid base64 but not JSON. */
+    {
+        const char *not_json = "not json";
+        json_auto_t *blob = blob_jwe_from_header_json(not_json);
+        ASSERT(blob);
+        char *ecmr_kid_out = NULL;
+        ASSERT(validate_request_protected(blob, tki, kem_kid, suite,
+                                          &ecmr_kid_out) == 0);
+        ASSERT(ecmr_kid_out == NULL);
+    }
+
+    /* Wrong msg_dir. */
+    h = build_header_json(DIR_RESPONSE, KEM_VERSION, suite, ecmr_kid,
+                          kem_kid);
+    ASSERT(h);
+    assert_header_rejected(h, tki, kem_kid, suite);
+    free(h);
+
+    /* Missing msg_dir. */
+    h = build_header_json(NULL, KEM_VERSION, suite, ecmr_kid, kem_kid);
+    ASSERT(h);
+    assert_header_rejected(h, tki, kem_kid, suite);
+    free(h);
+
+    /* Wrong kem_ver. */
+    h = build_header_json(DIR_REQUEST, "hybrid-v2", suite, ecmr_kid,
+                          kem_kid);
+    ASSERT(h);
+    assert_header_rejected(h, tki, kem_kid, suite);
+    free(h);
+
+    /* Missing kem_ver. */
+    h = build_header_json(DIR_REQUEST, NULL, suite, ecmr_kid, kem_kid);
+    ASSERT(h);
+    assert_header_rejected(h, tki, kem_kid, suite);
+    free(h);
+
+    /* kem_kid not matching the path. */
+    h = build_header_json(DIR_REQUEST, KEM_VERSION, suite, ecmr_kid,
+                          "other-kem-kid");
+    ASSERT(h);
+    assert_header_rejected(h, tki, kem_kid, suite);
+    free(h);
+
+    /* Missing kem_kid. */
+    h = build_header_json(DIR_REQUEST, KEM_VERSION, suite, ecmr_kid, NULL);
+    ASSERT(h);
+    assert_header_rejected(h, tki, kem_kid, suite);
+    free(h);
+
+    /* Malformed suites: missing '+', wrong classical part, unknown
+     * variant, empty variant, empty string, and missing field. */
+    const char *bad_suites[] = {
+        "ECMRML-KEM-768", "Foo+ML-KEM-768", "ECMR+ML-KEM", "ECMR+", "",
+        NULL
+    };
+    for (int i = 0; bad_suites[i]; i++) {
+        h = build_header_json(DIR_REQUEST, KEM_VERSION, bad_suites[i],
+                              ecmr_kid, kem_kid);
+        ASSERT(h);
+        assert_header_rejected(h, tki, kem_kid, suite);
+        free(h);
+    }
+    h = build_header_json(DIR_REQUEST, KEM_VERSION, NULL, ecmr_kid,
+                          kem_kid);
+    ASSERT(h);
+    assert_header_rejected(h, tki, kem_kid, suite);
+    free(h);
+
+    /* Well-formed suite declaring a different ML-KEM variant than the
+     * key selected through the path (downgrade/upgrade attempt). */
+    h = build_header_json(DIR_REQUEST, KEM_VERSION, "ECMR+ML-KEM-1024",
+                          ecmr_kid, kem_kid);
+    ASSERT(h);
+    assert_header_rejected(h, tki, kem_kid, suite);
+    free(h);
+
+    /* Suite is not a string. */
+    {
+        json_auto_t *header = json_loads(good, 0, NULL);
+        ASSERT(header);
+        ASSERT(json_object_set_new(header, "suite", json_integer(42)) == 0);
+        __attribute__((cleanup(str_cleanup))) char *bad =
+            json_dumps(header, JSON_COMPACT);
+        ASSERT(bad);
+        assert_header_rejected(bad, tki, kem_kid, suite);
+    }
+
+    /* Missing kid. */
+    h = build_header_json(DIR_REQUEST, KEM_VERSION, suite, NULL, kem_kid);
+    ASSERT(h);
+    assert_header_rejected(h, tki, kem_kid, suite);
+    free(h);
+
+    /* Kid is not a string. */
+    {
+        json_auto_t *header = json_loads(good, 0, NULL);
+        ASSERT(header);
+        ASSERT(json_object_set_new(header, "kid", json_integer(42)) == 0);
+        __attribute__((cleanup(str_cleanup))) char *bad =
+            json_dumps(header, JSON_COMPACT);
+        ASSERT(bad);
+        assert_header_rejected(bad, tki, kem_kid, suite);
+    }
+
+    /* Kid of a key tang does not hold. */
+    h = build_header_json(DIR_REQUEST, KEM_VERSION, suite,
+                          "unknown-ecmr-kid", kem_kid);
+    ASSERT(h);
+    assert_header_rejected(h, tki, kem_kid, suite);
+    free(h);
+
+    /* Kid of a held key that is not an ECMR exchange key. */
+    h = build_header_json(DIR_REQUEST, KEM_VERSION, suite, sign_kid,
+                          kem_kid);
+    ASSERT(h);
+    assert_header_rejected(h, tki, kem_kid, suite);
+    free(h);
+
+    remove_tempdir(tmpdir);
 }
 
 static void
@@ -631,7 +883,7 @@ test_rec_kem_secure_bad_inner_payload(void)
         struct tang_keys_info *tki = read_keys(tmpdir);
     ASSERT(tki);
     __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
-        find_ecmr_kid(tki);
+        find_key_thp_by_alg(tki, ECMR_ALG);
     ASSERT(ecmr_kid);
 
     json_auto_t *pub = json_deep_copy(priv);
@@ -683,7 +935,7 @@ test_rec_kem_secure_wrong_digest(void)
         struct tang_keys_info *tki = read_keys(tmpdir);
     ASSERT(tki);
     __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
-        find_ecmr_kid(tki);
+        find_key_thp_by_alg(tki, ECMR_ALG);
     ASSERT(ecmr_kid);
 
     json_auto_t *pub = json_deep_copy(priv);
@@ -756,7 +1008,7 @@ test_rec_kem_secure_suite_mismatch(void)
         struct tang_keys_info *tki = read_keys(tmpdir);
     ASSERT(tki);
     __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
-        find_ecmr_kid(tki);
+        find_key_thp_by_alg(tki, ECMR_ALG);
     ASSERT(ecmr_kid);
 
     __attribute__((cleanup(str_cleanup))) char *req =
@@ -831,7 +1083,7 @@ test_rec_kem_secure_clevis_alg_mismatch(void)
         struct tang_keys_info *tki = read_keys(tmpdir);
     ASSERT(tki);
     __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
-        find_ecmr_kid(tki);
+        find_key_thp_by_alg(tki, ECMR_ALG);
     ASSERT(ecmr_kid);
 
     __attribute__((cleanup(str_cleanup))) char *req =
@@ -874,7 +1126,7 @@ test_rec_kem_secure_oversized_protected_header(void)
         struct tang_keys_info *tki = read_keys(tmpdir);
     ASSERT(tki);
     __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
-        find_ecmr_kid(tki);
+        find_key_thp_by_alg(tki, ECMR_ALG);
     ASSERT(ecmr_kid);
 
     json_auto_t *pub = json_deep_copy(priv);
@@ -968,7 +1220,7 @@ test_rec_kem_secure_success(void)
         struct tang_keys_info *tki = read_keys(tmpdir);
     ASSERT(tki);
     __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
-        find_ecmr_kid(tki);
+        find_key_thp_by_alg(tki, ECMR_ALG);
     ASSERT(ecmr_kid);
 
     const char *kem_kid = "test-kem-kid";
@@ -1060,6 +1312,24 @@ test_rec_kem_secure_success(void)
     ASSERT(strcmp(json_string_value(
         json_object_get(resp_hdr, "msg_dir")), DIR_RESPONSE) == 0);
 
+    /* req_digest must not be reintroduced in the response header. */
+    ASSERT(json_object_get(resp_hdr, "req_digest") == NULL);
+
+    /* crit must list exactly the extra (non alg/enc) header members. */
+    json_t *crit = json_object_get(resp_hdr, "crit");
+    ASSERT(crit && json_is_array(crit));
+    ASSERT(json_array_size(crit) == 5);
+    const char *expected_crit[] = {"kem_ver", "suite", "kid", "kem_kid",
+                                   "msg_dir"};
+    for (size_t i = 0; i < ARRAY_COUNT(expected_crit); i++) {
+        const char *member = json_string_value(json_array_get(crit, i));
+        ASSERT(member);
+        ASSERT(strcmp(member, expected_crit[i]) == 0);
+    }
+
+    /* No extra members beyond alg, enc, crit and the crit'd ones. */
+    ASSERT(json_object_size(resp_hdr) == 8);
+
     remove_tempdir(tmpdir);
 }
 
@@ -1094,6 +1364,8 @@ run_tests(void)
     test_find_jws_kem_by_thp_null();
     test_find_jws_kem_by_thp_lookup();
     test_find_jws_kem_by_thp_rejects_non_kem();
+
+    test_validate_request_protected();
 
     test_rec_kem_secure_bad_json();
     test_rec_kem_secure_bad_transport_ct();

@@ -180,6 +180,11 @@ EOF
         printf '%s' "$resp_hdr" | jose fmt -j- -Og kem_kid -Sq "$kem_kid" -E
         printf '%s' "$resp_hdr" | jose fmt -j- -Og msg_dir -Sq "tang-to-clevis" -E
         printf '%s' "$resp_hdr" | jose fmt -j- -Og kid -Sq "$exc_kid" -E
+        # req_digest must not be present in the response header
+        ! printf '%s' "$resp_hdr" | jose fmt -j- -Og req_digest 2>/dev/null
+        # crit must list exactly the extra (non alg/enc) header members
+        resp_crit=$(printf '%s' "$resp_hdr" | jose fmt -j- -Og crit -o-)
+        [ "$resp_crit" = '["kem_ver","suite","kid","kem_kid","msg_dir"]' ]
 
         # Step 10: Verify recovered enc_key matches the original
         enc_key_k=$(printf '%s' "$enc_key" | jose fmt -j- -Og k -u-)

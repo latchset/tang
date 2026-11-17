@@ -124,17 +124,19 @@ wipe_and_release(json_t **jwk)
 }
 
 #define KEM_VERSION    "hybrid-v1"
-#define SUITE_PREFIX   "ECMR+"
+#define ECMR_ALG       "ECMR"
 #define DIR_REQUEST    "clevis-to-tang"
 #define DIR_RESPONSE   "tang-to-clevis"
 
 static int
 is_valid_suite(const char *suite)
 {
-    if (!suite || strncmp(suite, SUITE_PREFIX, strlen(SUITE_PREFIX)) != 0)
+    if (!suite || strncmp(suite, ECMR_ALG, strlen(ECMR_ALG)) != 0)
+        return 0;
+    if (suite[strlen(ECMR_ALG)] != '+')
         return 0;
 
-    return is_valid_kem_alg(suite + strlen(SUITE_PREFIX));
+    return is_valid_kem_alg(suite + strlen(ECMR_ALG) + 1);
 }
 
 static int
@@ -146,8 +148,11 @@ header_field_matches(const json_t *header, const char *field,
 }
 
 static int
-validate_request_protected(const json_t *blob_jwe, const char *path_kem_kid,
-                           char **out_ecmr_kid, char **out_suite)
+validate_request_protected(const json_t *blob_jwe,
+                           struct tang_keys_info *tki,
+                           const char *path_kem_kid,
+                           const char *expected_suite,
+                           char **out_ecmr_kid)
 {
     const char *protected_b64 = json_string_value(
         json_object_get(blob_jwe, "protected"));
@@ -174,36 +179,57 @@ validate_request_protected(const json_t *blob_jwe, const char *path_kem_kid,
         || !header_field_matches(header, "kem_ver", KEM_VERSION))
         return 0;
 
+    /* The declared suite must match the suite derived from the algorithm
+     * of the KEM key selected through the request path, so that a client
+     * cannot make tang assert a false (e.g., stronger) parameter set. */
     const char *suite = json_string_value(
         json_object_get(header, "suite"));
-    if (!is_valid_suite(suite))
+    if (!is_valid_suite(suite) || strcmp(suite, expected_suite) != 0)
         return 0;
 
+    /* The classical (ECMR) key identifier must belong to a key actually
+     * held by this server: tang must never echo identifiers of keys it
+     * does not hold. */
     const char *kid = json_string_value(
         json_object_get(header, "kid"));
     if (!kid)
         return 0;
 
-    *out_ecmr_kid = strdup(kid);
-    if (!*out_ecmr_kid)
+    json_auto_t *ecmr_key = find_jwk(tki, kid);
+    if (!ecmr_key)
         return 0;
 
-    *out_suite = strdup(suite);
-    if (!*out_suite) {
-        free(*out_ecmr_kid);
-        *out_ecmr_kid = NULL;
+    const char *ecmr_alg = json_string_value(
+        json_object_get(ecmr_key, "alg"));
+    if (!ecmr_alg || strcmp(ecmr_alg, ECMR_ALG) != 0)
         return 0;
-    }
-    return 1;
+
+    if (!jose_jwk_prm(NULL, ecmr_key, false, "deriveKey"))
+        return 0;
+
+    *out_ecmr_kid = strdup(kid);
+    return *out_ecmr_kid != NULL;
 }
 
 static int
-rec_kem_secure(json_t *tang_kem_priv, const char *path_kem_kid,
-               const json_t *req, char **out)
+rec_kem_secure(json_t *tang_kem_priv, struct tang_keys_info *tki,
+               const char *path_kem_kid, const json_t *req, char **out)
 {
     const char *clevis_encrypted_blob = NULL;
     const char *clevis_transport_ct = NULL;
     int status = HTTP_STATUS_BAD_REQUEST;
+
+    /* The suite is derived from the algorithm of the KEM key selected
+     * through the request path, never from client-declared data, so that
+     * tang cannot be made to assert a parameter set stronger than the
+     * key actually used (anti-downgrade). */
+    const char *tang_kem_alg = json_string_value(
+        json_object_get(tang_kem_priv, "alg"));
+    if (!is_valid_kem_alg(tang_kem_alg))
+        return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+    char suite[strlen(ECMR_ALG) + 1 + strlen(tang_kem_alg) + 1];
+    snprintf(suite, sizeof(suite), "%s+%s", ECMR_ALG, tang_kem_alg);
 
     if (json_unpack((json_t *)req, "{s:s, s:s}",
                     "clevis_encrypted_blob", &clevis_encrypted_blob,
@@ -238,9 +264,8 @@ rec_kem_secure(json_t *tang_kem_priv, const char *path_kem_kid,
         return HTTP_STATUS_BAD_REQUEST;
 
     __attribute__((cleanup(str_cleanup))) char *ecmr_kid = NULL;
-    __attribute__((cleanup(str_cleanup))) char *suite = NULL;
-    if (!validate_request_protected(blob_jwe, path_kem_kid,
-                                    &ecmr_kid, &suite))
+    if (!validate_request_protected(blob_jwe, tki, path_kem_kid,
+                                    suite, &ecmr_kid))
         return HTTP_STATUS_BAD_REQUEST;
 
     const char *clevis_kem_ct = NULL;
@@ -260,6 +285,11 @@ rec_kem_secure(json_t *tang_kem_priv, const char *path_kem_kid,
     const char *pub_alg = json_string_value(
         json_object_get(clevis_kem_pub, "alg"));
     if (!is_valid_kem_alg(pub_alg))
+        return HTTP_STATUS_BAD_REQUEST;
+
+    /* The client KEM key must use the same parameter set as the tang KEM
+     * key selected through the request path. */
+    if (strcmp(pub_alg, tang_kem_alg) != 0)
         return HTTP_STATUS_BAD_REQUEST;
 
     if (!jose_jwk_prm(NULL, clevis_kem_pub, false, "deriveKey"))
@@ -598,7 +628,7 @@ rec_kem(http_method_t method, const char *path, const char *body,
     if (!jose_jwk_prm(NULL, tang_kem_priv, true, "deriveKey"))
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
-    status = rec_kem_secure(tang_kem_priv, thp, req, &enc);
+    status = rec_kem_secure(tang_kem_priv, tki, thp, req, &enc);
     if (status != HTTP_STATUS_OK)
         return http_reply(status, NULL);
 

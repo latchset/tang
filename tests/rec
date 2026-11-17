@@ -237,4 +237,62 @@ EOF
         -d "$bad_req" \
         "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
     [ "$code" = "400" ]
+
+    # Suite not matching the algorithm of the KEM key must be rejected
+    # (anti-downgrade): declare a different ML-KEM variant in the suite.
+    other_alg="ML-KEM-1024"
+    if [ "$other_alg" = "$kem_alg" ]; then
+        other_alg="ML-KEM-768"
+    fi
+    if jose jwk gen -i "{\"alg\":\"$other_alg\"}" \
+            -o "$TMP/other_alg_priv.jwk" 2>/dev/null; then
+        jose jwk pub -i "$TMP/other_alg_priv.jwk" -o "$TMP/other_alg_pub.jwk"
+        other_alg_pub=$(cat "$TMP/other_alg_pub.jwk")
+
+        bad_suite_hdr=$(printf '{"protected":{"alg":"dir","enc":"A256GCM","crit":["kem_ver","suite","kem_kid","msg_dir"],"kem_ver":"hybrid-v1","suite":"ECMR+%s","kid":"%s","kem_kid":"%s","msg_dir":"clevis-to-tang"}}' \
+            "$other_alg" "$exc_kid" "$kem_kid")
+        bad_suite_blob=$(jose jwe enc \
+            -i "$bad_suite_hdr" \
+            -I "$TMP/inner_payload.json" \
+            -k "$TMP/clevis_transport_key.jwk" -c)
+        bad_suite_req=$(printf '{"clevis_encrypted_blob":"%s","clevis_transport_ct":"%s"}' \
+            "$bad_suite_blob" "$clevis_transport_ct")
+        code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -d "$bad_suite_req" \
+            "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+        [ "$code" = "400" ]
+
+        # A clevis KEM key using a different ML-KEM variant than the tang
+        # KEM key must also be rejected.
+        printf '{"clevis_kem_ct":"%s","clevis_kem_pub":%s,"ek_digest":"%s"}' \
+            "$clevis_kem_ct" "$other_alg_pub" "$ek_digest" \
+            > "$TMP/alg_mismatch_payload.json"
+        alg_mismatch_blob=$(jose jwe enc \
+            -i '{"protected":{"alg":"dir","enc":"A256GCM"}}' \
+            -I "$TMP/alg_mismatch_payload.json" \
+            -k "$TMP/clevis_transport_key.jwk" -c)
+        alg_mismatch_req=$(printf '{"clevis_encrypted_blob":"%s","clevis_transport_ct":"%s"}' \
+            "$alg_mismatch_blob" "$clevis_transport_ct")
+        code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -d "$alg_mismatch_req" \
+            "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+        [ "$code" = "400" ]
+    fi
+
+    # An ECMR key identifier not held by the server must be rejected
+    bad_kid_hdr=$(printf '{"protected":{"alg":"dir","enc":"A256GCM","crit":["kem_ver","suite","kem_kid","msg_dir"],"kem_ver":"hybrid-v1","suite":"ECMR+%s","kid":"%s","kem_kid":"%s","msg_dir":"clevis-to-tang"}}' \
+        "$kem_alg" "unknown-ecmr-kid" "$kem_kid")
+    bad_kid_blob=$(jose jwe enc \
+        -i "$bad_kid_hdr" \
+        -I "$TMP/inner_payload.json" \
+        -k "$TMP/clevis_transport_key.jwk" -c)
+    bad_kid_req=$(printf '{"clevis_encrypted_blob":"%s","clevis_transport_ct":"%s"}' \
+        "$bad_kid_blob" "$clevis_transport_ct")
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Content-Type: application/json" \
+        -d "$bad_kid_req" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+    [ "$code" = "400" ]
 }

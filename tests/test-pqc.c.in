@@ -853,6 +853,72 @@ test_rec_kem_secure_clevis_alg_mismatch(void)
     remove_tempdir(tmpdir);
 }
 
+/* An oversized protected header must be rejected before any large
+ * allocation: the header is attacker-controlled input on an
+ * unauthenticated endpoint. */
+static void
+test_rec_kem_secure_oversized_protected_header(void)
+{
+    json_auto_t *priv = NULL;
+
+    if (!jose_jwk_gen(NULL,
+            (priv = json_pack("{s:s}", "alg", "ML-KEM-768")))) {
+        fprintf(stderr,
+                "No ML-KEM support, skipping rec_kem_secure tests\n");
+        return;
+    }
+
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *tki = read_keys(tmpdir);
+    ASSERT(tki);
+    __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
+        find_ecmr_kid(tki);
+    ASSERT(ecmr_kid);
+
+    json_auto_t *pub = json_deep_copy(priv);
+    jose_jwk_pub(NULL, pub);
+
+    json_auto_t *fwd_enc = jose_jwk_kem_enc(NULL, pub);
+    ASSERT(fwd_enc);
+    const char *fwd_ct = json_string_value(json_object_get(fwd_enc, "ct"));
+    json_t *fwd_ss = json_object_get(fwd_enc, "ss");
+    ASSERT(fwd_ct && fwd_ss);
+
+    json_auto_t *jwe_hdr = build_enriched_header(ecmr_kid, "test-kem-kid",
+                                                 "ML-KEM-768");
+    ASSERT(jwe_hdr);
+    json_t *protected = json_object_get(jwe_hdr, "protected");
+    ASSERT(protected);
+
+    /* Pad the protected header past the accepted maximum. */
+    char *pad = malloc(MAX_PROTECTED_HEADER_LEN + 1);
+    ASSERT(pad);
+    memset(pad, 'A', MAX_PROTECTED_HEADER_LEN);
+    pad[MAX_PROTECTED_HEADER_LEN] = '\0';
+    int set = json_object_set_new(protected, "pad", json_string(pad));
+    free(pad);
+    ASSERT(set == 0);
+
+    const char *payload = "{}";
+    ASSERT(jose_jwe_enc(NULL, jwe_hdr, NULL, fwd_ss,
+                        payload, strlen(payload)));
+
+    __attribute__((cleanup(str_cleanup))) char *blob = jwe_to_compact(jwe_hdr);
+    ASSERT(blob);
+
+    char *out = NULL;
+    json_auto_t *req = json_pack("{s:s, s:s}",
+        "clevis_encrypted_blob", blob,
+        "clevis_transport_ct", fwd_ct);
+    ASSERT(rec_kem_secure(priv, tki, "test-kem-kid", req, &out)
+           == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(out == NULL);
+
+    remove_tempdir(tmpdir);
+}
+
 static void
 test_rec_kem_secure_success(void)
 {
@@ -1037,6 +1103,7 @@ run_tests(void)
     test_rec_kem_secure_suite_mismatch();
     test_rec_kem_secure_unknown_ecmr_kid();
     test_rec_kem_secure_clevis_alg_mismatch();
+    test_rec_kem_secure_oversized_protected_header();
     test_rec_kem_secure_success();
 
     test_pqc_is_available();

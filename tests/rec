@@ -295,4 +295,20 @@ EOF
         -d "$bad_kid_req" \
         "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
     [ "$code" = "400" ]
+
+    # An oversized protected header must be rejected
+    big_pad=$(head -c 8192 /dev/zero | tr '\0' 'A')
+    big_hdr=$(printf '{"protected":{"alg":"dir","enc":"A256GCM","crit":["kem_ver","suite","kem_kid","msg_dir"],"kem_ver":"hybrid-v1","suite":"ECMR+%s","kid":"%s","kem_kid":"%s","msg_dir":"clevis-to-tang","pad":"%s"}}' \
+        "$kem_alg" "$exc_kid" "$kem_kid" "$big_pad")
+    big_blob=$(jose jwe enc \
+        -i "$big_hdr" \
+        -I "$TMP/inner_payload.json" \
+        -k "$TMP/clevis_transport_key.jwk" -c)
+    big_req=$(printf '{"clevis_encrypted_blob":"%s","clevis_transport_ct":"%s"}' \
+        "$big_blob" "$clevis_transport_ct")
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Content-Type: application/json" \
+        -d "$big_req" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+    [ "$code" = "400" ]
 }

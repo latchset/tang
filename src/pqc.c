@@ -128,6 +128,12 @@ wipe_and_release(json_t **jwk)
 #define DIR_REQUEST    "clevis-to-tang"
 #define DIR_RESPONSE   "tang-to-clevis"
 
+/* Maximum decoded size accepted for a request protected header. The
+ * legitimate header is a few hundred bytes, so anything larger is
+ * rejected before allocating, to prevent stack/heap exhaustion through
+ * oversized unauthenticated input. */
+#define MAX_PROTECTED_HEADER_LEN 4096
+
 static int
 is_valid_suite(const char *suite)
 {
@@ -164,13 +170,24 @@ validate_request_protected(const json_t *blob_jwe,
     if (dec_len == SIZE_MAX)
         return 0;
 
-    uint8_t dec_buf[dec_len + 1];
-    if (jose_b64_dec_buf(protected_b64, strlen(protected_b64),
-                         dec_buf, dec_len) != dec_len)
+    /* The protected header is attacker-controlled input on an
+     * unauthenticated endpoint: cap its size and keep it off the stack
+     * (no VLAs) so it cannot be used to exhaust stack memory. */
+    if (dec_len > MAX_PROTECTED_HEADER_LEN)
         return 0;
-    dec_buf[dec_len] = '\0';
 
-    json_auto_t *header = json_loads((char *)dec_buf, 0, NULL);
+    uint8_t *dec_buf = malloc(dec_len + 1);
+    if (!dec_buf)
+        return 0;
+
+    json_auto_t *header = NULL;
+    if (jose_b64_dec_buf(protected_b64, strlen(protected_b64),
+                         dec_buf, dec_len) == dec_len) {
+        dec_buf[dec_len] = '\0';
+        header = json_loads((char *)dec_buf, 0, NULL);
+    }
+    free(dec_buf);
+
     if (!header)
         return 0;
 

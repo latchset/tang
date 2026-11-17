@@ -37,15 +37,11 @@ set_perms() {
 
 [ $# -eq 3 ] && sig=$2 && exc=$3
 
+# Shared helpers (e.g. algorithm support detection) live next to this
+# script, both in the build tree and when installed.
+. "$(dirname -- "$0")/tangd-utils.sh"
+
 THP_DEFAULT_HASH=S256     # SHA-256.
-
-# Algorithms supported by the installed jose. Used to tell an unsupported
-# algorithm (a benign skip) from a real generation failure (fatal).
-SUPPORTED_ALGS="$(jose alg 2>/dev/null || true)"
-
-alg_supported() {
-    printf '%s\n' "${SUPPORTED_ALGS}" | grep -qx "${1}"
-}
 
 # Set default umask for file creation.
 umask 0337

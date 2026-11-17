@@ -11,6 +11,14 @@ tangd = executable('tangd',
   install_dir: libexecdir
 )
 
+tangd_utils = configure_file(
+  input: 'tangd-utils.sh',
+  output: 'tangd-utils.sh',
+  copy: true,
+  install: true,
+  install_dir: libexecdir
+)
+
 tangd_keygen = configure_file(
   input: 'tangd-keygen.in',
   output: 'tangd-keygen',

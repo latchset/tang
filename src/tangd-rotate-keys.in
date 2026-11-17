@@ -55,14 +55,9 @@ set_perms() {
     fi
 }
 
-# Algorithms supported by the installed jose. Used to tell an unsupported
-# algorithm (a benign skip) from a real generation failure (fatal: rotation
-# must never silently degrade the key set).
-SUPPORTED_ALGS="$(jose alg 2>/dev/null || true)"
-
-alg_supported() {
-    printf '%s\n' "${SUPPORTED_ALGS}" | grep -qx "${1}"
-}
+# Shared helpers (e.g. algorithm support detection) live next to this
+# script, both in the build tree and when installed.
+. "$(dirname -- "$0")/tangd-utils.sh"
 
 JWKDIR=
 VERBOSE=

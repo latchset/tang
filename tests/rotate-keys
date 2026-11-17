@@ -158,4 +158,35 @@ for f in "${TMP}/db"/*.jwk "${TMP}/db"/.*.jwk; do
 done
 fetch /adv | ver "$(alg_keys "${TMP}/db" ES512)"
 
+# No staging directories are left behind after a successful rotation.
+[ -z "$(find "${TMP}/db" -maxdepth 1 -name '.tang-rotate.*')" ]
+
+# A generation failure aborts the rotation loudly: the visible and hidden
+# key sets are left untouched and the daemon keeps serving advertisements
+# (no half-rotated state). Inject the failure with a fake jose that fails
+# ECMR key generation.
+visible_before="$(find "${TMP}/db" -maxdepth 1 -name '*.jwk' ! -name '.*' | sort)"
+hidden_before="$(find "${TMP}/db" -maxdepth 1 -name '.*.jwk' | sort)"
+current_sig_jwk="$(alg_keys "${TMP}/db" ES512)"
+REAL_JOSE="$(command -v jose)"
+mkdir -p "${TMP}/fake-bin"
+cat > "${TMP}/fake-bin/jose" <<EOF
+#!/bin/sh
+case "\$*" in
+*ECMR*) exit 1 ;;
+*) exec "${REAL_JOSE}" "\$@" ;;
+esac
+EOF
+chmod +x "${TMP}/fake-bin/jose"
+if PATH="${TMP}/fake-bin:${PATH}" tangd-rotate-keys -d "${TMP}/db" -v; then
+    echo "Expected rotation to fail on ECMR generation error" >&2
+    exit 1
+fi
+[ "$(find "${TMP}/db" -maxdepth 1 -name '*.jwk' ! -name '.*' | sort)" = \
+  "${visible_before}" ]
+[ "$(find "${TMP}/db" -maxdepth 1 -name '.*.jwk' | sort)" = \
+  "${hidden_before}" ]
+[ -z "$(find "${TMP}/db" -maxdepth 1 -name '.tang-rotate.*')" ]
+fetch /adv | ver "${current_sig_jwk}"
+
 echo "tangd-rotate-keys hybrid key rotation test passed" >&2

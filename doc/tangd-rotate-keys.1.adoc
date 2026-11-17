@@ -27,7 +27,8 @@ key. Algorithms not supported by the installed *jose* are skipped.
 Tang will immediately pick up all changes. No restart is required.
 
 At this point, new client bindings will pick up the new keys and old clients can continue to
-utilize the old keys, including the rotated (hidden) ML-KEM keys. Once you are sure that all
+utilize the old keys, including the rotated (hidden) ML-KEM keys. Hidden keys are never pruned
+automatically: they accumulate with every rotation. Once you are sure that all
 the old clients have been migrated to use the new keys, you can remove the old keys. Be aware
 that removing the old keys while clients are still using them can result in data loss. You
 have been warned.

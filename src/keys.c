@@ -297,13 +297,21 @@ prepare_payload_and_sign(struct tang_keys_info* tki)
         } else if (jwk_valid_for_deriving_keys(jwk)) {
             const char* kty = json_string_value(
                 json_object_get(jwk, "kty"));
-            if (kty && strcmp(kty, "AKP") == 0) {
-                json_array_append(tki->m_kem_payload, jwk);
+            const char* alg = json_string_value(
+                json_object_get(jwk, "alg"));
+            /* RFC 9864: "AKP" also covers post-quantum signature
+             * algorithms (e.g. ML-DSA); only supported ML-KEM exchange
+             * keys belong in the KEM advertisement. */
+            if (kty && strcmp(kty, "AKP") == 0 && is_valid_kem_alg(alg)) {
+                if (json_array_append(tki->m_kem_payload, jwk) < 0)
+                    continue;
             } else {
-                json_array_append(tki->m_payload, jwk);
+                if (json_array_append(tki->m_payload, jwk) < 0)
+                    continue;
             }
         }
     }
+    tki->m_has_pqc = json_array_size(tki->m_kem_payload) > 0;
     if (json_array_size(tki->m_sign) == 0 || json_array_size(tki->m_payload) == 0) {
         return 0;
     }
@@ -420,11 +428,6 @@ load_keys(const char* jwkdir)
                 tki->m_rotated_keys_count++;
             } else {
                 tki->m_keys_count++;
-                const char* kty = json_string_value(
-                    json_object_get(json, "kty"));
-                if (kty && strcmp(kty, "AKP") == 0) {
-                    tki->m_has_pqc = 1;
-                }
             }
 
             if (json_array_append(arr, json) == -1) {

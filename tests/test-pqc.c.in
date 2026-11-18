@@ -391,6 +391,42 @@ test_find_jws_kem_by_thp_rejects_non_kem(void)
     remove_tempdir(tmpdir);
 }
 
+/* An AKP key whose alg is not a supported ML-KEM variant must not be
+ * advertised nor mark the key set as PQC-capable: RFC 9864 "AKP" also
+ * covers post-quantum signature algorithms (e.g. ML-DSA). */
+static void
+test_find_jws_kem_by_thp_rejects_unsupported_alg(void)
+{
+    json_auto_t *key = json_pack("{s:s}", "alg", "ML-KEM-768");
+    if (!key || !jose_jwk_gen(NULL, key)) {
+        fprintf(stderr, "No ML-KEM support, skipping unsupported alg test\n");
+        return;
+    }
+
+    /* Keep the valid key structure but relabel it as a signature
+     * algorithm, as an ML-DSA key would look. */
+    ASSERT(json_object_set_new(key, "alg", json_string("ML-DSA-65")) == 0);
+
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_str))) char *thp = jwk_thumbprint(key,
+                                                                     "S256");
+    ASSERT(thp);
+    char path[PATH_MAX];
+    ASSERT(snprintf(path, sizeof(path), "%s/%s.jwk", tmpdir, thp)
+           < (int)sizeof(path));
+    ASSERT(json_dump_file(key, path, 0) == 0);
+
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *tki = read_keys(tmpdir);
+    ASSERT(tki);
+
+    ASSERT(find_jws_kem_by_thp(tki, thp) == NULL);
+    ASSERT(tki->m_has_pqc == 0);
+
+    remove_tempdir(tmpdir);
+}
+
 static json_t *
 build_enriched_header(const char *ecmr_kid, const char *kem_kid,
                       const char *kem_alg)
@@ -1508,6 +1544,7 @@ run_tests(void)
     test_find_jws_kem_by_thp_null();
     test_find_jws_kem_by_thp_lookup();
     test_find_jws_kem_by_thp_rejects_non_kem();
+    test_find_jws_kem_by_thp_rejects_unsupported_alg();
 
     test_validate_request_protected();
 

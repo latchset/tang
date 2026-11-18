@@ -583,8 +583,10 @@ find_jws_kem(struct tang_keys_info *tki, const char *alg)
     json_array_foreach(tki->m_kem_payload, idx, jwk) {
         const char *key_alg = json_string_value(
             json_object_get(jwk, "alg"));
-        if (key_alg && strcmp(key_alg, alg) == 0)
-            json_array_append(payload, jwk);
+        if (key_alg && strcmp(key_alg, alg) == 0) {
+            if (json_array_append(payload, jwk) < 0)
+                return NULL;
+        }
     }
     if (json_array_size(payload) == 0)
         return NULL;
@@ -648,10 +650,22 @@ find_jws_kem_by_thp(struct tang_keys_info *keys_info, const char *thumbprint)
     if (!key_type || strcmp(key_type, "AKP") != 0)
         return NULL;
 
+    /* RFC 9864: "AKP" also covers post-quantum signature algorithms
+     * (e.g. ML-DSA); only supported ML-KEM exchange keys usable for
+     * derivation are advertised, so clients cannot bind to a key that
+     * /rec-kem would later reject. */
+    const char *key_alg = json_string_value(json_object_get(key, "alg"));
+    if (!is_valid_kem_alg(key_alg))
+        return NULL;
+
+    if (!jose_jwk_prm(NULL, key, false, "deriveKey"))
+        return NULL;
+
     json_auto_t *payload = json_array();
     if (!payload)
         return NULL;
-    json_array_append(payload, key);
+    if (json_array_append(payload, key) < 0)
+        return NULL;
 
     json_auto_t *signed_keys = jwk_sign(payload, keys_info->m_sign);
     if (!signed_keys)
@@ -747,6 +761,15 @@ rec_kem(http_method_t method, const char *path, const char *body,
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
     if (strcmp(kty, "AKP") != 0)
+        return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
+
+    /* RFC 9864: AKP keys are not necessarily supported ML-KEM exchange
+     * keys; rec_kem_secure() cannot derive a suite from an unsupported
+     * algorithm, so refuse the key here instead of failing later with
+     * an internal error. */
+    const char *kalg = json_string_value(
+        json_object_get(tang_kem_priv, "alg"));
+    if (!is_valid_kem_alg(kalg))
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
     if (!jose_jwk_prm(NULL, tang_kem_priv, true, "deriveKey"))

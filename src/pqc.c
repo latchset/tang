@@ -234,6 +234,19 @@ validate_request_protected(const json_t *blob_jwe,
     if (!header)
         return 0;
 
+    /* Pin the JWE algorithms (RFC 8725) before anything else: only
+     * direct encryption with an empty encrypted_key is accepted, and
+     * compression is rejected entirely. Without this, an
+     * unauthenticated client could pick other jose-supported
+     * algorithms against the raw shared secret, or use RFC 7516
+     * "zip": "DEF" to inflate a decompression bomb inside
+     * jose_jwe_dec(). */
+    if (!header_field_matches(header, "alg", "dir")
+        || !header_field_matches(header, "enc", "A256GCM")
+        || !header_field_matches(blob_jwe, "encrypted_key", "")
+        || json_object_get(header, "zip") != NULL)
+        return 0;
+
     if (!header_field_matches(header, "msg_dir", DIR_REQUEST)
         || !header_field_matches(header, "kem_kid", path_kem_kid)
         || !header_field_matches(header, "kem_ver", KEM_VERSION))

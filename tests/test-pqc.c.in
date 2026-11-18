@@ -539,14 +539,17 @@ build_header_json(const char *msg_dir, const char *kem_ver,
     return json_dumps(header, JSON_COMPACT);
 }
 
-/* Wraps a protected header JSON text into a blob JWE. */
+/* Wraps a protected header JSON text into a blob JWE, mirroring what
+ * jwe_from_compact() produces for a compact dir JWE (empty
+ * encrypted_key segment). */
 static json_t *
 blob_jwe_from_header_json(const char *header_json)
 {
     json_t *b64 = jose_b64_enc(header_json, strlen(header_json));
     if (!b64)
         return NULL;
-    json_t *blob = json_pack("{s:o}", "protected", b64);
+    json_t *blob = json_pack("{s:o, s:s}", "protected", b64,
+                             "encrypted_key", "");
     if (!blob) {
         json_decref(b64);
         return NULL;
@@ -793,6 +796,50 @@ test_validate_request_protected(void)
             json_dumps(header, JSON_COMPACT);
         ASSERT(ok);
         assert_header_accepted(ok, tki, kem_kid, suite, ecmr_kid);
+    }
+
+    /* Algorithm pinning (RFC 8725): only dir + A256GCM with an empty
+     * encrypted_key and no compression is accepted. */
+    const char *pin_cases[][3] = {
+        {"alg",  "A128KW",   "wrong alg"},
+        {"alg",  NULL,       "missing alg"},
+        {"enc",  "A128GCM",  "wrong enc"},
+        {"enc",  NULL,       "missing enc"},
+        {"zip",  "DEF",      "compression"},
+        {NULL,   NULL,       NULL}
+    };
+    for (int i = 0; pin_cases[i][2]; i++) {
+        json_auto_t *header = json_loads(good, 0, NULL);
+        ASSERT(header);
+        if (pin_cases[i][1]) {
+            ASSERT(json_object_set_new(header, pin_cases[i][0],
+                json_string(pin_cases[i][1])) == 0);
+        } else {
+            json_object_del(header, pin_cases[i][0]);
+        }
+        __attribute__((cleanup(str_cleanup))) char *bad =
+            json_dumps(header, JSON_COMPACT);
+        ASSERT(bad);
+        assert_header_rejected(bad, tki, kem_kid, suite);
+    }
+
+    /* A non-empty encrypted_key signals key wrapping instead of
+     * direct encryption and must be rejected. */
+    {
+        json_auto_t *header = json_loads(good, 0, NULL);
+        ASSERT(header);
+        __attribute__((cleanup(str_cleanup))) char *hdr =
+            json_dumps(header, JSON_COMPACT);
+        ASSERT(hdr);
+        json_t *b64 = jose_b64_enc(hdr, strlen(hdr));
+        ASSERT(b64);
+        json_auto_t *blob = json_pack("{s:o, s:s}", "protected", b64,
+                                      "encrypted_key", "QUJD");
+        ASSERT(blob);
+        char *ecmr_kid_out = NULL;
+        ASSERT(validate_request_protected(blob, tki, kem_kid, suite,
+                                          &ecmr_kid_out) == 0);
+        ASSERT(ecmr_kid_out == NULL);
     }
 
     remove_tempdir(tmpdir);

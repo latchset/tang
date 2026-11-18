@@ -142,7 +142,7 @@ expected_fail () {
 # algorithm listing instead of generating probe keys: cheaper and does
 # not consume entropy on every call.
 jose_supports_alg () {
-    jose alg 2>/dev/null | grep -qx "${1}"
+    jose alg 2>/dev/null | grep -Fqx -- "${1}"
 }
 
 # Hybrid KEM protocol constants, single-sourced from src/pqc.h so the

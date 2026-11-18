@@ -201,4 +201,45 @@ for f in "${TMP}/reldir"/*.jwk; do
 done
 [ -z "$(find "${TMP}/reldir" -maxdepth 1 -name '.tang-rotate.*')" ]
 
+# jose registers algorithms even when the runtime crypto policy (e.g.
+# FIPS) blocks generating keys for them. A variant that was NOT
+# advertised before the rotation is optional in that case: the
+# rotation completes with a warning and the variant is simply absent.
+if jose_supports_alg ML-KEM-512; then
+    mkdir -p "${TMP}/fake-bin-512"
+    cat > "${TMP}/fake-bin-512/jose" <<EOF
+#!/bin/sh
+case "\$*" in
+*ML-KEM-512*) exit 1 ;;
+*) exec "${REAL_JOSE}" "\$@" ;;
+esac
+EOF
+    chmod +x "${TMP}/fake-bin-512/jose"
+
+    mkdir -p "${TMP}/db-opt"
+    tangd-keygen "${TMP}/db-opt" sig exc
+    # Drop the ML-KEM-512 key so the variant is not previously active.
+    rm -f "$(alg_keys "${TMP}/db-opt" ML-KEM-512)"
+    PATH="${TMP}/fake-bin-512:${PATH}" tangd-rotate-keys -d "${TMP}/db-opt" -v
+    [ "$(alg_keys "${TMP}/db-opt" ML-KEM-512 | wc -l)" -eq 0 ]
+    if jose_supports_alg ML-KEM-768; then
+        [ "$(alg_keys "${TMP}/db-opt" ML-KEM-768 | wc -l)" -eq 1 ]
+    fi
+    [ -z "$(find "${TMP}/db-opt" -maxdepth 1 -name '.tang-rotate.*')" ]
+
+    # A variant that WAS advertised before the rotation must be
+    # recreated: a runtime generation failure is fatal, not a warning.
+    visible_opt="$(find "${TMP}/db" -maxdepth 1 -name '*.jwk' ! -name '.*' | sort)"
+    hidden_opt="$(find "${TMP}/db" -maxdepth 1 -name '.*.jwk' | sort)"
+    if PATH="${TMP}/fake-bin-512:${PATH}" tangd-rotate-keys -d "${TMP}/db" -v; then
+        echo "Expected rotation to fail for a previously active variant" >&2
+        exit 1
+    fi
+    [ "$(find "${TMP}/db" -maxdepth 1 -name '*.jwk' ! -name '.*' | sort)" = \
+      "${visible_opt}" ]
+    [ "$(find "${TMP}/db" -maxdepth 1 -name '.*.jwk' | sort)" = \
+      "${hidden_opt}" ]
+    [ -z "$(find "${TMP}/db" -maxdepth 1 -name '.tang-rotate.*')" ]
+fi
+
 echo "tangd-rotate-keys hybrid key rotation test passed" >&2

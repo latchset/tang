@@ -69,8 +69,12 @@ for alg in ML-KEM-512 ML-KEM-768 ML-KEM-1024; do
         continue
     fi
     if ! pqc=$(jose jwk gen -i "{\"alg\":\"$alg\"}"); then
-        echo "Error generating $alg key" >&2
-        exit 1
+        # jose registers algorithms even when the runtime crypto
+        # policy (e.g. FIPS) blocks generating keys for them, so a
+        # registered-but-failing variant is optional: warn and skip,
+        # like create_new_keys() in keys.c.
+        echo "Skipping $alg key generation (key generation failed at runtime; crypto policy?)" >&2
+        continue
     fi
     pqc_thp=$(echo "$pqc" | jose jwk thp -i- -a "${THP_DEFAULT_HASH}")
     echo "$pqc" > "$1/$pqc_thp.jwk"

@@ -26,5 +26,5 @@
 SUPPORTED_ALGS="$(jose alg 2>/dev/null || true)"
 
 alg_supported() {
-    printf '%s\n' "${SUPPORTED_ALGS}" | grep -qx "${1}"
+    printf '%s\n' "${SUPPORTED_ALGS}" | grep -Fqx -- "${1}"
 }

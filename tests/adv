@@ -24,14 +24,17 @@ trap 'on_exit' EXIT
 export TMP=`mktemp -d`
 mkdir -p $TMP/db
 
-jose_supports_mlkem () {
-    jose alg 2>/dev/null | grep -q "ML-KEM"
-}
-
 adv_kem_test () {
     prefix="${1}"
 
-    if ! jose_supports_mlkem; then
+    # Supported ML-KEM variants, from the jose algorithm listing.
+    supported_algs=""
+    for alg in ML-KEM-512 ML-KEM-768 ML-KEM-1024; do
+        if jose_supports_alg "${alg}"; then
+            supported_algs="$supported_algs $alg"
+        fi
+    done
+    if [ -z "${supported_algs}" ]; then
         echo "jose does not support ML-KEM, skipping /adv-kem tests" >&2
         return 0
     fi
@@ -52,14 +55,6 @@ adv_kem_test () {
             fi
         done
     [ $? -eq 0 ]
-
-    # Count how many supported ML-KEM variants we have
-    supported_algs=""
-    for alg in ML-KEM-512 ML-KEM-768 ML-KEM-1024; do
-        if jose jwk gen -i "{\"alg\":\"$alg\"}" >/dev/null 2>&1; then
-            supported_algs="$supported_algs $alg"
-        fi
-    done
 
     # Test ?alg= filtering for each supported variant
     for alg in $supported_algs; do
@@ -160,6 +155,17 @@ adv_second_phase () {
     ver_resp=$(fetch "${ENDPOINT}"/version)
     printf '%s' "$ver_resp" | jose fmt -j- -Og tang_version -u- >/dev/null
     printf '%s' "$ver_resp" | jose fmt -j- -Og features -Og tang_pub >/dev/null
+    # ... and hybrid recovery exactly when the build and the key store
+    # support ML-KEM exchange keys.
+    hybrid=$(printf '%s' "$ver_resp" \
+        | jose fmt -j- -Og features -Og hybrid_recovery -o-)
+    if jose_supports_alg ML-KEM-512 \
+        || jose_supports_alg ML-KEM-768 \
+        || jose_supports_alg ML-KEM-1024; then
+        [ "$hybrid" = "true" ]
+    else
+        [ "$hybrid" = "false" ]
+    fi
 
     # Fetching by any thumbprint should work
     fetch "${ENDPOINT}"/adv/`jose jwk thp -i $TMP/db/sig.jwk` | ver $TMP/db/sig.jwk

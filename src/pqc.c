@@ -608,10 +608,8 @@ adv_kem(http_method_t method, const char *path, const char *body,
     json_auto_t *jws = NULL;
     const char *jwkdir = misc;
 
-    tki = read_keys(jwkdir);
-    if (!tki || tki->m_keys_count == 0)
-        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
-
+    /* Validate the query before touching the key directory: a
+     * malformed request must not read or (re)generate keys. */
     if (matches[1].rm_so < matches[1].rm_eo) {
         size_t qlen = matches[1].rm_eo - matches[1].rm_so;
         alg = parse_query_alg(&path[matches[1].rm_so], qlen);
@@ -621,6 +619,10 @@ adv_kem(http_method_t method, const char *path, const char *body,
 
     if (!alg)
         return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
+
+    tki = read_keys(jwkdir);
+    if (!tki || tki->m_keys_count == 0)
+        return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
     jws = find_jws_kem(tki, alg);
     if (!jws)

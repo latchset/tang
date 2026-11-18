@@ -1200,8 +1200,9 @@ test_rec_kem_secure_suite_mismatch(void)
     }
 
     char *out = NULL;
-    ASSERT(rec_kem_secure(priv, tki, "test-kem-kid",
-                          json_loads(req, 0, NULL), &out)
+    json_auto_t *req_json = json_loads(req, 0, NULL);
+    ASSERT(req_json);
+    ASSERT(rec_kem_secure(priv, tki, "test-kem-kid", req_json, &out)
            == HTTP_STATUS_BAD_REQUEST);
     ASSERT(out == NULL);
 
@@ -1233,8 +1234,9 @@ test_rec_kem_secure_unknown_ecmr_kid(void)
     ASSERT(req);
 
     char *out = NULL;
-    ASSERT(rec_kem_secure(priv, tki, "test-kem-kid",
-                          json_loads(req, 0, NULL), &out)
+    json_auto_t *req_json = json_loads(req, 0, NULL);
+    ASSERT(req_json);
+    ASSERT(rec_kem_secure(priv, tki, "test-kem-kid", req_json, &out)
            == HTTP_STATUS_BAD_REQUEST);
     ASSERT(out == NULL);
 
@@ -1275,8 +1277,9 @@ test_rec_kem_secure_clevis_alg_mismatch(void)
     }
 
     char *out = NULL;
-    ASSERT(rec_kem_secure(priv, tki, "test-kem-kid",
-                          json_loads(req, 0, NULL), &out)
+    json_auto_t *req_json = json_loads(req, 0, NULL);
+    ASSERT(req_json);
+    ASSERT(rec_kem_secure(priv, tki, "test-kem-kid", req_json, &out)
            == HTTP_STATUS_BAD_REQUEST);
     ASSERT(out == NULL);
 

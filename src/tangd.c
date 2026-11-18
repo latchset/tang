@@ -410,6 +410,15 @@ main(int argc, char *argv[])
         s_dispatch[DISPATCH_REC_KEM].re = rec_kem_endpoint;
         s_dispatch[DISPATCH_VER].re = ver_endpoint;
     }
+    if (!pqc_is_available()) {
+        /* The KEM routes are registered unconditionally so the stub
+         * handlers hide the endpoints with 404. Allow every method on
+         * them in that case: answering 405 Method Not Allowed to a
+         * wrong-method request would leak the endpoints' existence. */
+        s_dispatch[DISPATCH_ADV_KEM_THP].methods = ~0ULL;
+        s_dispatch[DISPATCH_ADV_KEM].methods = ~0ULL;
+        s_dispatch[DISPATCH_REC_KEM].methods = ~0ULL;
+    }
     if (listen == 0) { /* process one-shot query from stdin */
         return process_request(jwkdir, STDIN_FILENO);
     } else { /* listen and process all incoming connections */

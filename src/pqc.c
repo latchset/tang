@@ -411,7 +411,14 @@ rec_kem_secure(json_t *tang_kem_priv, struct tang_keys_info *tki,
 
     thp_buf[elen] = '\0';
 
-    if (strcmp(thp_buf, ek_digest) != 0)
+    /* ek_digest is the proof of knowledge of enc_key, the only thing
+     * preventing tang from acting as a decapsulation oracle for an
+     * intercepted clevis_kem_ct: compare it in constant time, so the
+     * digest cannot be recovered byte-by-byte through a timing side
+     * channel. The length check runs first both to reject mismatches
+     * cheaply and to keep CRYPTO_memcmp within the string. */
+    if (strlen(ek_digest) != elen
+        || CRYPTO_memcmp(thp_buf, ek_digest, elen) != 0)
         goto cleanup;
 
     ret_encap = jose_jwk_kem_enc(NULL, clevis_kem_pub);
@@ -476,6 +483,8 @@ rec_kem_secure(json_t *tang_kem_priv, struct tang_keys_info *tki,
     status = *out ? HTTP_STATUS_OK : HTTP_STATUS_INTERNAL_SERVER_ERROR;
 
 cleanup:
+    OPENSSL_cleanse(hash_buf, sizeof(hash_buf));
+    OPENSSL_cleanse(thp_buf, sizeof(thp_buf));
     if (tang_transport_key)
         wipe_jwk_secret(tang_transport_key);
     wipe_and_release(&enc_key);

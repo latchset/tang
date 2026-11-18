@@ -1069,6 +1069,42 @@ test_rec_kem_secure_wrong_digest(void)
            == HTTP_STATUS_BAD_REQUEST);
     ASSERT(out == NULL);
 
+    /* A digest of the right length but wrong content must also be
+     * rejected: it exercises the constant-time comparison path. */
+    size_t dlen = jose_jwk_thp_buf(NULL, NULL, "S256", NULL, 0);
+    ASSERT(dlen != SIZE_MAX);
+    size_t elen = jose_b64_enc_buf(NULL, dlen, NULL, 0);
+    ASSERT(elen != SIZE_MAX);
+    char bad_digest[elen + 1];
+    memset(bad_digest, 'A', elen);
+    bad_digest[elen] = '\0';
+
+    json_auto_t *inner2 = json_pack("{s:s, s:O, s:s}",
+        "clevis_kem_ct", clevis_kem_ct,
+        "clevis_kem_pub", clevis_kem_pub,
+        "ek_digest", bad_digest);
+
+    __attribute__((cleanup(str_cleanup))) char *inner2_str =
+        json_dumps(inner2, JSON_COMPACT);
+    ASSERT(inner2_str);
+
+    json_auto_t *jwe_hdr2 = build_enriched_header(ecmr_kid, kem_kid,
+                                                     "ML-KEM-768");
+    ASSERT(jwe_hdr2);
+    ASSERT(jose_jwe_enc(NULL, jwe_hdr2, NULL, fwd_ss,
+                        inner2_str, strlen(inner2_str)));
+
+    __attribute__((cleanup(str_cleanup))) char *blob2 =
+        jwe_to_compact(jwe_hdr2);
+    ASSERT(blob2);
+
+    json_auto_t *req2 = json_pack("{s:s, s:s}",
+        "clevis_encrypted_blob", blob2,
+        "clevis_transport_ct", fwd_ct);
+    ASSERT(rec_kem_secure(priv, tki, kem_kid, req2, &out)
+           == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(out == NULL);
+
     remove_tempdir(tmpdir);
 }
 

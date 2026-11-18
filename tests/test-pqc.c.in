@@ -100,11 +100,10 @@ test_jwe_from_compact_invalid(void)
     ASSERT(jwe_from_compact("one.dot") == NULL);
     ASSERT(jwe_from_compact("a.b.c") == NULL);
 
-    /* 5+ dots: first 4 are used, remainder becomes part of the tag. */
-    json_auto_t *extra = jwe_from_compact("a.b.c.d.e.f");
-    ASSERT(extra);
-    ASSERT(strcmp(json_string_value(json_object_get(extra, "tag")),
-                 "e.f") == 0);
+    /* More than four separators is not a compact JWE: the extra
+     * segments must not be folded into the tag. */
+    ASSERT(jwe_from_compact("a.b.c.d.e.f") == NULL);
+    ASSERT(jwe_from_compact("a.b.c.d.e.") == NULL);
 }
 
 static void
@@ -779,6 +778,29 @@ test_validate_request_protected(void)
         json_auto_t *header = json_loads(good, 0, NULL);
         ASSERT(header);
         ASSERT(json_object_set_new(header, "crit", json_integer(42)) == 0);
+        __attribute__((cleanup(str_cleanup))) char *bad =
+            json_dumps(header, JSON_COMPACT);
+        ASSERT(bad);
+        assert_header_rejected(bad, tki, kem_kid, suite);
+    }
+
+    /* RFC 7515 section 4.1.11: an empty crit list is invalid. */
+    {
+        json_auto_t *header = json_loads(good, 0, NULL);
+        ASSERT(header);
+        ASSERT(json_object_set_new(header, "crit", json_array()) == 0);
+        __attribute__((cleanup(str_cleanup))) char *bad =
+            json_dumps(header, JSON_COMPACT);
+        ASSERT(bad);
+        assert_header_rejected(bad, tki, kem_kid, suite);
+    }
+
+    /* RFC 7515 section 4.1.11: duplicate crit entries are invalid. */
+    {
+        json_auto_t *header = json_loads(good, 0, NULL);
+        ASSERT(header);
+        ASSERT(json_object_set_new(header, "crit",
+            json_pack("[ss]", "kem_ver", "kem_ver")) == 0);
         __attribute__((cleanup(str_cleanup))) char *bad =
             json_dumps(header, JSON_COMPACT);
         ASSERT(bad);

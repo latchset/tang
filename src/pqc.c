@@ -65,9 +65,17 @@ jwe_from_compact(const char *compact)
     const char *dots[4];
     int n = 0;
 
-    for (const char *c = compact; *c && n < 4; c++) {
-        if (*c == '.')
-            dots[n++] = c;
+    /* Count every separator: a compact JWE has exactly four dots, and
+     * inputs with more must be rejected outright instead of having the
+     * extra segments folded into the tag, which would only be rejected
+     * later by jose_jwe_dec() after an unnecessary private-key
+     * decapsulation. */
+    for (const char *c = compact; *c; c++) {
+        if (*c != '.')
+            continue;
+        if (n < 4)
+            dots[n] = c;
+        n++;
     }
     if (n != 4)
         return NULL;
@@ -82,15 +90,16 @@ jwe_from_compact(const char *compact)
     if (!jwe)
         return NULL;
 
-    json_object_set_new(jwe, "protected",
-        json_stringn(p0, dots[0] - p0));
-    json_object_set_new(jwe, "encrypted_key",
-        json_stringn(p1, dots[1] - p1));
-    json_object_set_new(jwe, "iv",
-        json_stringn(p2, dots[2] - p2));
-    json_object_set_new(jwe, "ciphertext",
-        json_stringn(p3, dots[3] - p3));
-    json_object_set_new(jwe, "tag", json_string(p4));
+    if (json_object_set_new(jwe, "protected",
+        json_stringn(p0, dots[0] - p0)) != 0
+        || json_object_set_new(jwe, "encrypted_key",
+        json_stringn(p1, dots[1] - p1)) != 0
+        || json_object_set_new(jwe, "iv",
+        json_stringn(p2, dots[2] - p2)) != 0
+        || json_object_set_new(jwe, "ciphertext",
+        json_stringn(p3, dots[3] - p3)) != 0
+        || json_object_set_new(jwe, "tag", json_string(p4)) != 0)
+        return NULL;
 
     return json_incref(jwe);
 }
@@ -166,7 +175,8 @@ static const char *const known_crit[] = {
 
 /* RFC 7515 section 4.1.11: critical parameters that are not understood
  * MUST cause the input to be rejected. crit itself is optional, but
- * when present it must be an array of known extension names. */
+ * when present it must be a non-empty array of distinct, known
+ * extension names. */
 static int
 crit_entries_known(const json_t *header)
 {
@@ -177,12 +187,24 @@ crit_entries_known(const json_t *header)
     if (!json_is_array(crit))
         return 0;
 
+    if (json_array_size(crit) == 0)
+        return 0;
+
     size_t idx;
     json_t *entry;
     json_array_foreach((json_t *)crit, idx, entry) {
         const char *name = json_string_value(entry);
         if (!name)
             return 0;
+
+        /* RFC 7515 section 4.1.11: duplicate entries are invalid. */
+        for (size_t prev = 0; prev < idx; prev++) {
+            const char *other = json_string_value(
+                json_array_get(crit, prev));
+            if (other && strcmp(name, other) == 0)
+                return 0;
+        }
+
         int known = 0;
         for (size_t i = 0; known_crit[i]; i++) {
             if (strcmp(name, known_crit[i]) == 0) {

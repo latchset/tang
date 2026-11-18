@@ -185,4 +185,20 @@ fi
 [ -z "$(find "${TMP}/db" -maxdepth 1 -name '.tang-rotate.*')" ]
 fetch /adv | ver "${current_sig_jwk}"
 
+# A relative -d path must work: the staging directory is anchored to
+# the absolute keys directory, not to the (changing) current directory.
+mkdir -p "${TMP}/reldir"
+(cd "${TMP}" && tangd-rotate-keys -d reldir -v)
+[ -n "$(alg_keys "${TMP}/reldir" ES512)" ]
+[ -n "$(alg_keys "${TMP}/reldir" ECMR)" ]
+for alg in ${KEM_ALGS}; do
+    if jose_supports_alg "${alg}"; then
+        [ "$(alg_keys "${TMP}/reldir" "${alg}" | wc -l)" -eq 1 ]
+    fi
+done
+for f in "${TMP}/reldir"/*.jwk; do
+    valid_key_perm "${f}"
+done
+[ -z "$(find "${TMP}/reldir" -maxdepth 1 -name '.tang-rotate.*')" ]
+
 echo "tangd-rotate-keys hybrid key rotation test passed" >&2

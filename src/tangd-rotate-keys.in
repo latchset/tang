@@ -78,9 +78,16 @@ cd "${JWKDIR}" || error "Unable to change to keys directory '${JWKDIR}'"
     # directory: the final moves are same-filesystem renames, and any
     # failure below leaves the current, still-advertised keys untouched,
     # so tangd keeps serving /adv throughout.
-    STAGE="${JWKDIR}/.tang-rotate.$$"
+    #
+    # The staging directory must be anchored to the absolute location of
+    # the keys directory: JWKDIR may be relative, and the working
+    # directory changes again (cd -) before the EXIT trap fires, so a
+    # relative path would both duplicate the directory at creation and
+    # point somewhere else at cleanup. mktemp also avoids the
+    # predictable PID-based name.
+    STAGE="$(mktemp -d "$(pwd)/.tang-rotate.XXXXXX")" \
+        || error "Unable to create staging directory"
     trap 'rm -rf -- "${STAGE}"' EXIT
-    mkdir "${STAGE}" || error "Unable to create staging directory '${STAGE}'"
     chmod 0700 "${STAGE}"
 
     # Remember which keys are currently advertised: only these will be

@@ -30,8 +30,15 @@ mkdir -p "${TMP}/db"
 KEM_ALGS="ML-KEM-512 ML-KEM-768 ML-KEM-1024"
 
 count_alg_keys () {
-    find "${1}" -maxdepth 1 -name '*.jwk' ! -name '.*' \
-        -exec grep -l "\"alg\":\"${2}\"" {} + 2>/dev/null | wc -l
+    _n=0
+    for _f in "${1}"/*.jwk; do
+        [ -f "${_f}" ] || continue
+        # Whitespace-insensitive: the JWK may be pretty-printed.
+        if jose fmt -j "${_f}" -Og alg -Sq "${2}" -E >/dev/null 2>&1; then
+            _n=$((_n + 1))
+        fi
+    done
+    printf '%s\n' "${_n}"
 }
 
 check_hybrid_keys () {
@@ -71,6 +78,18 @@ check_hybrid_keys "${TMP}/db"
 for f in "${TMP}/db"/*.jwk; do
     valid_key_perm "${f}"
 done
+
+# A pretty-printed JWK ("alg": "..." with spaces) must still be
+# recognized as an existing key of that algorithm: tangd loads and
+# advertises it, so tangd-keygen must not create a duplicate.
+for f in "${TMP}/db"/*.jwk; do
+    alg=$(jose fmt -j "${f}" -Og alg -u- 2>/dev/null) || continue
+    case "${alg}" in
+    ML-KEM-*) sed -i 's/:/: /g' "${f}" ;;
+    esac
+done
+tangd-keygen "${TMP}/db"
+check_hybrid_keys "${TMP}/db"
 
 # The generated ML-KEM keys must be valid JWKs usable for key derivation.
 for f in "${TMP}/db"/*.jwk; do

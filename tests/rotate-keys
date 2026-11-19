@@ -28,8 +28,13 @@ mkdir -p "${TMP}/db"
 KEM_ALGS="ML-KEM-512 ML-KEM-768 ML-KEM-1024"
 
 alg_keys () {
-    find "${1}" -maxdepth 1 -name '*.jwk' ! -name '.*' \
-        -exec grep -l "\"alg\":\"${2}\"" {} + 2>/dev/null
+    # Whitespace-insensitive: the JWK may be pretty-printed.
+    for _f in "${1}"/*.jwk; do
+        [ -f "${_f}" ] || continue
+        if jose fmt -j "${_f}" -Og alg -Sq "${2}" -E >/dev/null 2>&1; then
+            printf '%s\n' "${_f}"
+        fi
+    done
 }
 
 # Initial key set, including the hybrid ML-KEM exchange keys.
@@ -44,6 +49,13 @@ done
 
 old_sig_thp=$(jose jwk thp -i "${TMP}/db/sig.jwk")
 old_exc_thp=$(jose jwk thp -i "${TMP}/db/exc.jwk")
+
+# Pretty-print one ML-KEM key ("alg": "..." with spaces): tangd loads
+# and advertises it normally, so the rotation logic must still detect
+# its algorithm and treat the variant as previously advertised.
+if jose_supports_alg ML-KEM-768; then
+    sed -i 's/:/: /g' "$(alg_keys "${TMP}/db" ML-KEM-768)"
+fi
 
 # Thumbprints of the ML-KEM keys before rotation.
 old_kem_thps=""
@@ -209,10 +221,17 @@ if jose_supports_alg ML-KEM-512; then
     mkdir -p "${TMP}/fake-bin-512"
     cat > "${TMP}/fake-bin-512/jose" <<EOF
 #!/bin/sh
-case "\$*" in
-*ML-KEM-512*) exit 1 ;;
-*) exec "${REAL_JOSE}" "\$@" ;;
+# Simulate a runtime crypto policy blocking ML-KEM-512 key generation
+# only: parsing existing keys (jose fmt) keeps working, as the
+# algorithm detection in the scripts relies on it.
+case "\$1 \$2" in
+"jwk gen"*)
+    case "\$*" in
+    *ML-KEM-512*) exit 1 ;;
+    esac
+    ;;
 esac
+exec "${REAL_JOSE}" "\$@"
 EOF
     chmod +x "${TMP}/fake-bin-512/jose"
 

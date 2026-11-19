@@ -28,3 +28,10 @@ SUPPORTED_ALGS="$(jose alg 2>/dev/null || true)"
 alg_supported() {
     printf '%s\n' "${SUPPORTED_ALGS}" | grep -Fqx -- "${1}"
 }
+
+# True when the given JWK file declares the given "alg" member. JWKs on
+# disk may be pretty-printed ("alg": "ES512"), so parse the JSON instead
+# of matching the compact serialization with grep.
+jwk_has_alg() {
+    jose fmt -j "${1}" -Og alg -Sq "${2}" -E >/dev/null 2>&1
+}

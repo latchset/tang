@@ -60,7 +60,13 @@ if meson.is_cross_build()
     compiler = meson.get_compiler('c', native : false)
 endif
 
-has_pqc = compiler.links('''
+# The has_pqc probe must EXECUTE the check, not just link it: jose
+# exports jose_jwk_gen and the KEM API unconditionally (lib/jwk.c) and
+# registers the ML-KEM hooks only when built with them (mlkem.c), so a
+# jose built with -Dmlkem=disabled links fine while the check inside
+# would fail. compiler.run() executes the probe; compiler.links() is
+# only a best-effort fallback for cross builds without an exe wrapper.
+pqc_probe = '''
 #include <jose/jose.h>
 int main(void) {
     json_auto_t *j = json_pack("{s:s}", "alg", "ML-KEM-768");
@@ -69,7 +75,14 @@ int main(void) {
     json_auto_t *enc = jose_jwk_kem_enc(NULL, j);
     return enc ? 0 : 1;
 }
-''', dependencies: jose, name: 'ML-KEM KEM API support in jose')
+'''
+if meson.can_run_host_binaries()
+    has_pqc = compiler.run(pqc_probe, dependencies: jose,
+                           name: 'ML-KEM KEM API support in jose').returncode() == 0
+else
+    has_pqc = compiler.links(pqc_probe, dependencies: jose,
+                             name: 'ML-KEM KEM API support in jose (link-only)')
+endif
 
 # libcrypto is only needed by the PQC (hybrid ML-KEM) code path: the
 # noop implementation used when jose lacks ML-KEM support does not use

@@ -29,7 +29,31 @@
 int
 pqc_is_available(void)
 {
-    return 1;
+    /* The build-time probe runs (or at least links) this same check,
+     * but jose may export the KEM API unconditionally and register no
+     * ML-KEM hook (e.g. built with -Dmlkem=disabled), and the runtime
+     * crypto policy can change after the build. Verify once, at
+     * runtime, that an ML-KEM key can actually be generated. */
+    static int available = -1;
+
+    if (available != -1)
+        return available;
+
+    json_auto_t *jwk = json_pack("{s:s}", "alg", "ML-KEM-768");
+    if (jwk && jose_jwk_gen(NULL, jwk)) {
+        /* The generated key holds private material: wipe it before
+         * the JWK is released. */
+        json_t *priv = json_object_get(jwk, "priv");
+        if (priv) {
+            const char *str = json_string_value(priv);
+            if (str)
+                OPENSSL_cleanse((void *)str, json_string_length(priv) + 1);
+        }
+        available = 1;
+    } else {
+        available = 0;
+    }
+    return available;
 }
 
 static void
@@ -631,6 +655,12 @@ adv_kem(http_method_t method, const char *path, const char *body,
     json_auto_t *jws = NULL;
     const char *jwkdir = misc;
 
+    /* Behave like the no-PQC build when ML-KEM is unavailable at
+     * runtime: hide the endpoint behind a uniform 404 instead of
+     * surfacing handler-specific errors. */
+    if (!pqc_is_available())
+        return http_reply(HTTP_STATUS_NOT_FOUND, NULL);
+
     /* Validate the query before touching the key directory: a
      * malformed request must not read or (re)generate keys. */
     if (matches[1].rm_so < matches[1].rm_eo) {
@@ -745,6 +775,12 @@ adv_kem_thp(http_method_t method, const char *path, const char *body,
     const char *jwkdir = misc;
     int status;
 
+    /* Behave like the no-PQC build when ML-KEM is unavailable at
+     * runtime: hide the endpoint behind a uniform 404 instead of
+     * surfacing handler-specific errors. */
+    if (!pqc_is_available())
+        return http_reply(HTTP_STATUS_NOT_FOUND, NULL);
+
     thumbprint = load_thp_keys(path, matches, jwkdir, &keys_info,
                                &status);
     if (!thumbprint)
@@ -777,6 +813,12 @@ rec_kem(http_method_t method, const char *path, const char *body,
     json_auto_t *req = NULL;
     const char *kty = NULL;
     int status;
+
+    /* Behave like the no-PQC build when ML-KEM is unavailable at
+     * runtime: hide the endpoint behind a uniform 404 instead of
+     * surfacing handler-specific errors. */
+    if (!pqc_is_available())
+        return http_reply(HTTP_STATUS_NOT_FOUND, NULL);
 
     /* Reject duplicate members (RFC 8725 §3.12) in the request body. */
     req = json_loadb(body, strlen(body), JSON_REJECT_DUPLICATES, NULL);

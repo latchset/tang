@@ -84,7 +84,16 @@ URL. If no endpoint is provided, and assuming port 9090 is used, Tang server
 will listen on next URLs:
 
     http://localhost:9090/adv (GET)
-    http://localhost:9090/rec (POST)
+    http://localhost:9090/adv/:thumbprint (GET)
+    http://localhost:9090/rec/:thumbprint (POST)
+    http://localhost:9090/version (GET)
+
+Additionally, when the installed *jose* supports ML-KEM, the hybrid
+post-quantum endpoints are available:
+
+    http://localhost:9090/adv-kem?alg=ML-KEM-768 (GET)
+    http://localhost:9090/adv-kem/:thumbprint (GET)
+    http://localhost:9090/rec-kem/:thumbprint (POST)
 
 If endpoint is provided, and assuming endpoint is /this/is/an/endpoint/, and
 assuming also port 9090 is used, Tang server will listen on next URLs:
@@ -111,11 +120,20 @@ new signature and exchange keys with the following commands:
     # jose jwk gen -i '{"alg":"ES512"}' -o $DB/new_sig.jwk
     # jose jwk gen -i '{"alg":"ECMR"}' -o $DB/new_exc.jwk
 
+When the installed *jose* supports ML-KEM, also generate one hybrid
+exchange key per supported variant, pairing with the classical ECMR
+key:
+
+    # jose jwk gen -i '{"alg":"ML-KEM-512"}' -o $DB/new_kem512.jwk
+    # jose jwk gen -i '{"alg":"ML-KEM-768"}' -o $DB/new_kem768.jwk
+    # jose jwk gen -i '{"alg":"ML-KEM-1024"}' -o $DB/new_kem1024.jwk
+
 Next, rename the old keys to have a leading *.* in order to hide them from
 advertisement:
 
     # mv $DB/old_sig.jwk $DB/.old_sig.jwk
     # mv $DB/old_exc.jwk $DB/.old_exc.jwk
+    # mv $DB/old_kem768.jwk $DB/.old_kem768.jwk
 
 Tang will immediately pick up all changes. No restart is required.
 

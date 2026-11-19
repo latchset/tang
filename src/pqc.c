@@ -813,7 +813,10 @@ rec_kem(http_method_t method, const char *path, const char *body,
         return http_reply(status, NULL);
 
     return http_reply(HTTP_STATUS_OK,
-                      "Content-Type: application/jwk+json\r\n"
+                      /* The response is a custom JSON envelope
+                       * ({"tang_encrypted_key", "tang_transport_ct"}),
+                       * not an RFC 7517 JWK. */
+                      "Content-Type: application/json\r\n"
                       "Content-Length: %zu\r\n"
                       "\r\n%s", strlen(enc), enc);
 }

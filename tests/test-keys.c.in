@@ -30,10 +30,10 @@ copy_fixture(void)
         return NULL;
     char cmd[PATH_MAX * 2];
     snprintf(cmd, sizeof(cmd),
-             "cp -a %s/*.jwk %s/ 2>/dev/null;"
-             " cp -a %s/.*.jwk %s/ 2>/dev/null;"
-             " cp -a %s/empty.jwk %s/ 2>/dev/null;"
-             " cp -a %s/invalid.jwk %s/ 2>/dev/null",
+             "cp -a '%s'/*.jwk '%s'/ 2>/dev/null;"
+             " cp -a '%s'/.*.jwk '%s'/ 2>/dev/null;"
+             " cp -a '%s'/empty.jwk '%s'/ 2>/dev/null;"
+             " cp -a '%s'/invalid.jwk '%s'/ 2>/dev/null",
              jwkdir, tmpdir, jwkdir, tmpdir,
              jwkdir, tmpdir, jwkdir, tmpdir);
     if (system(cmd) == -1)
@@ -356,8 +356,7 @@ test_read_keys_with_kem(void)
 {
     const char* kem_algs[] = {"ML-KEM-512", "ML-KEM-768", "ML-KEM-1024", NULL};
     int kem_count = 0;
-
-    umask(0022);
+    mode_t old_umask = umask(0022);
     __attribute__((cleanup(cleanup_str))) char* newdir = create_tempdir();
     ASSERT(newdir);
 
@@ -395,6 +394,7 @@ test_read_keys_with_kem(void)
     if (kem_count == 0) {
         fprintf(stderr, "Skipping KEM tests (no ML-KEM variant supported)\n");
         remove_tempdir(newdir);
+        umask(old_umask);
         return;
     }
 
@@ -424,6 +424,7 @@ test_read_keys_with_kem(void)
     }
 
     remove_tempdir(newdir);
+    umask(old_umask);
 }
 
 static void

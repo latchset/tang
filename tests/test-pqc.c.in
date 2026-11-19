@@ -47,8 +47,8 @@ copy_fixture(void)
         return NULL;
     char cmd[PATH_MAX * 2];
     snprintf(cmd, sizeof(cmd),
-             "cp -a %s/*.jwk %s/ 2>/dev/null;"
-             " cp -a %s/.*.jwk %s/ 2>/dev/null",
+             "cp -a '%s'/*.jwk '%s'/ 2>/dev/null;"
+             " cp -a '%s'/.*.jwk '%s'/ 2>/dev/null",
              jwkdir, tmpdir, jwkdir, tmpdir);
     if (system(cmd) == -1)
         fprintf(stderr, "Warning: failed to copy fixture files\n");

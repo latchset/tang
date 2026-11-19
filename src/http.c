@@ -21,6 +21,7 @@
 #undef http_reply
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -99,7 +100,12 @@ on_message_complete(http_parser_t *parser)
         if (regexec(&re, state->req.path, d->nmatches, match, 0) == 0) {
             pathmatch = true;
 
-            if (((1 << parser->method) & d->methods) != 0) {
+            /* d->methods is a 64-bit mask while parser->method is an
+             * enum that can exceed 31 (llhttp defines methods up to
+             * 46), so shift an explicitly 64-bit value and guard the
+             * shift against out-of-range methods. */
+            if (parser->method < 64 &&
+                ((UINT64_C(1) << parser->method) & d->methods) != 0) {
                 methmatch = true;
 
                 r = d->func(parser->method, state->req.path,

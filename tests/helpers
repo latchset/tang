@@ -138,10 +138,31 @@ expected_fail () {
     exit 1
 }
 
-# True when the installed jose supports the given algorithm. Uses the
-# algorithm listing instead of generating probe keys: cheaper and does
-# not consume entropy on every call.
+# ML-KEM variants need a runtime probe: jose registers algorithms even
+# when the runtime crypto policy (e.g. FIPS) blocks generating keys for
+# them, and tangd-keygen/tangd-rotate-keys skip such variants. Probe each
+# variant once when this file is sourced and cache the runtime-usable
+# list so jose_supports_alg reflects runtime policy without repeated key
+# generation.
+JOSE_RUNTIME_KEM_ALGS=""
+for _alg in ML-KEM-512 ML-KEM-768 ML-KEM-1024; do
+    jose alg 2>/dev/null | grep -Fqx -- "${_alg}" || continue
+    if jose jwk gen -i "{\"alg\":\"${_alg}\"}" -o /dev/null >/dev/null 2>&1; then
+        JOSE_RUNTIME_KEM_ALGS="${JOSE_RUNTIME_KEM_ALGS} ${_alg}"
+    fi
+done
+unset _alg
+
+# True when the installed jose supports the given algorithm at runtime.
+# ML-KEM variants are checked against the cached runtime-usable list
+# (see above); other algorithms use the cheap listing check.
 jose_supports_alg () {
+    case " ${JOSE_RUNTIME_KEM_ALGS} " in
+        *" ${1} "*) return 0 ;;
+    esac
+    case "${1}" in
+        ML-KEM-*) return 1 ;;
+    esac
     jose alg 2>/dev/null | grep -Fqx -- "${1}"
 }
 

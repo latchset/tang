@@ -492,6 +492,95 @@ test_prepare_payload_and_sign_null(void)
     ASSERT(prepare_payload_and_sign(NULL) == 0);
 }
 
+/* Regression test: AKP keys must never fall through to the classical
+ * payload or the signing set, whatever their alg or key_ops are.
+ * RFC 9864 puts ML-DSA in the same kty as ML-KEM, so an operator
+ * dropping an AKP signature key (or any AKP key jose cannot classify)
+ * into JWKDIR must not break advertisement. */
+static void
+test_read_keys_with_rogue_akp(void)
+{
+    mode_t old_umask = umask(0022);
+    __attribute__((cleanup(cleanup_str))) char* newdir = create_tempdir();
+    ASSERT(newdir);
+
+    json_auto_t* sig = jwk_generate("ES512");
+    ASSERT(sig);
+    char sig_path[PATH_MAX];
+    snprintf(sig_path, PATH_MAX, "%s/sig.jwk", newdir);
+    ASSERT(json_dump_file(sig, sig_path, 0) == 0);
+
+    json_auto_t* exc = jwk_generate("ECMR");
+    ASSERT(exc);
+    char exc_path[PATH_MAX];
+    snprintf(exc_path, PATH_MAX, "%s/exc.jwk", newdir);
+    ASSERT(json_dump_file(exc, exc_path, 0) == 0);
+
+    /* AKP key with a non-KEM algorithm (ML-DSA) claiming deriveKey. */
+    json_auto_t* rogue =
+        json_pack("{s:s,s:s,s:[s]}", "kty", "AKP", "alg", "ML-DSA-65",
+                  "key_ops", "deriveKey");
+    ASSERT(rogue);
+    char rogue_path[PATH_MAX];
+    snprintf(rogue_path, PATH_MAX, "%s/rogue_akp.jwk", newdir);
+    ASSERT(json_dump_file(rogue, rogue_path, 0) == 0);
+
+    /* AKP ML-KEM key with no use/key_ops at all: jose treats an
+     * unrestricted key as permitted for every operation, so without
+     * the kty check it would land in the signing set. */
+    int have_unrestricted = 0;
+    json_auto_t* unrestricted = jwk_generate("ML-KEM-768");
+    if (unrestricted) {
+        json_object_del(unrestricted, "key_ops");
+        json_object_del(unrestricted, "use");
+        char unrestricted_path[PATH_MAX];
+        snprintf(unrestricted_path, PATH_MAX, "%s/unrestricted_akp.jwk",
+                 newdir);
+        ASSERT(json_dump_file(unrestricted, unrestricted_path, 0) == 0);
+        have_unrestricted = 1;
+    }
+
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki =
+        read_keys(newdir);
+    ASSERT(tki);
+    ASSERT(tki->m_keys_count == (size_t)(2 + 1 + have_unrestricted));
+
+    size_t idx;
+    json_t* jwk;
+    json_array_foreach(tki->m_payload, idx, jwk) {
+        const char* kty = json_string_value(json_object_get(jwk, "kty"));
+        ASSERT_WITH_MSG(kty && strcmp(kty, "AKP") != 0,
+                        "AKP key leaked into the classical payload");
+    }
+    json_array_foreach(tki->m_sign, idx, jwk) {
+        const char* kty = json_string_value(json_object_get(jwk, "kty"));
+        ASSERT_WITH_MSG(kty && strcmp(kty, "AKP") != 0,
+                        "AKP key leaked into the signing set");
+    }
+    json_array_foreach(tki->m_kem_payload, idx, jwk) {
+        const char* alg = json_string_value(json_object_get(jwk, "alg"));
+        ASSERT_WITH_MSG(alg && strncmp(alg, "ML-KEM-", 7) == 0,
+                        "non-KEM AKP key leaked into the KEM payload");
+    }
+    if (have_unrestricted) {
+        /* The unrestricted key has a supported ML-KEM algorithm, so it
+         * is a usable hybrid exchange key: it is advertised in
+         * /adv-kem, never in /adv. */
+        ASSERT(json_array_size(tki->m_kem_payload) == 1);
+        ASSERT(tki->m_has_pqc == 1);
+    } else {
+        ASSERT(json_array_size(tki->m_kem_payload) == 0);
+        ASSERT(tki->m_has_pqc == 0);
+    }
+
+    /* The rogue keys must not break advertisement signing. */
+    json_auto_t* jws = jwk_sign(tki->m_payload, tki->m_sign);
+    ASSERT_WITH_MSG(jws, "rogue AKP keys broke advertisement signing");
+
+    remove_tempdir(newdir);
+    umask(old_umask);
+}
+
 static void
 test_find_by_thp_null(void)
 {
@@ -524,6 +613,7 @@ run_tests(void)
     test_jwk_thumbprint_edge_cases();
     test_prepare_payload_and_sign_null();
     test_find_by_thp_null();
+    test_read_keys_with_rogue_akp();
 }
 
 int main(int argc, char** argv)

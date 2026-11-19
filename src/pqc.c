@@ -643,6 +643,13 @@ adv_kem(http_method_t method, const char *path, const char *body,
     if (!alg)
         return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 
+    /* An algorithm that is not a supported ML-KEM variant can never
+     * match any key in m_kem_payload, so reject it before
+     * read_keys(): an unsupported algorithm must not read or
+     * (re)generate keys on disk. */
+    if (!is_valid_kem_alg(alg))
+        return http_reply(HTTP_STATUS_NOT_FOUND, NULL);
+
     tki = read_keys(jwkdir);
     if (!tki || tki->m_keys_count == 0)
         return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);

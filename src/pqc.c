@@ -307,7 +307,16 @@ validate_request_protected(const json_t *blob_jwe,
     if (!ecmr_alg || strcmp(ecmr_alg, ECMR_ALG) != 0)
         return 0;
 
-    if (!jose_jwk_prm(NULL, ecmr_key, false, "deriveKey"))
+    /* Match the key validation rec() applies to its server-side JWK:
+     * "kty": "EC" and private key material (req = true), so /rec-kem
+     * cannot bind to a public-only or malformed key that /rec would
+     * reject. */
+    const char *ecmr_kty = json_string_value(
+        json_object_get(ecmr_key, "kty"));
+    if (!ecmr_kty || strcmp(ecmr_kty, "EC") != 0)
+        return 0;
+
+    if (!jose_jwk_prm(NULL, ecmr_key, true, "deriveKey"))
         return 0;
 
     *out_ecmr_kid = strdup(kid);

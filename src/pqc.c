@@ -683,14 +683,15 @@ find_jws_kem_by_thp(struct tang_keys_info *keys_info, const char *thumbprint)
         return NULL;
 
     /* RFC 9864: "AKP" also covers post-quantum signature algorithms
-     * (e.g. ML-DSA); only supported ML-KEM exchange keys usable for
-     * derivation are advertised, so clients cannot bind to a key that
+     * (e.g. ML-DSA); only supported ML-KEM exchange keys are
+     * advertised, and only with the same deriveKey predicate /rec-kem
+     * enforces (req = true), so clients cannot bind to a key that
      * /rec-kem would later reject. */
     const char *key_alg = json_string_value(json_object_get(key, "alg"));
     if (!is_valid_kem_alg(key_alg))
         return NULL;
 
-    if (!jose_jwk_prm(NULL, key, false, "deriveKey"))
+    if (!jose_jwk_prm(NULL, key, true, "deriveKey"))
         return NULL;
 
     json_auto_t *payload = json_array();

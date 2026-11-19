@@ -214,6 +214,20 @@ jwk_valid_for_deriving_keys(const json_t* jwk)
     return jwk_valid_for(jwk, "deriveKey");
 }
 
+/* /rec-kem recovers with jose_jwk_prm(..., req = true), so a KEM key
+ * must pass that same predicate to be advertised. An unrestricted JWK
+ * (no use/key_ops) is permitted for every operation when req = false
+ * but refused when req = true: advertising it would let clients bind
+ * to a key whose recovery can only ever fail with 403. */
+static int
+jwk_valid_for_kem_exchange(const json_t* jwk)
+{
+    if (!jwk) {
+        return 0;
+    }
+    return jose_jwk_prm(NULL, jwk, true, "deriveKey");
+}
+
 static void
 cleanup_str(char** str)
 {
@@ -299,7 +313,7 @@ prepare_payload_and_sign(struct tang_keys_info* tki)
          * otherwise, never falling through to the classical payload
          * or the signing set. */
         if (kty && strcmp(kty, "AKP") == 0) {
-            if (jwk_valid_for_deriving_keys(jwk) && is_valid_kem_alg(alg)) {
+            if (jwk_valid_for_kem_exchange(jwk) && is_valid_kem_alg(alg)) {
                 if (json_array_append(tki->m_kem_payload, jwk) < 0)
                     return 0;
             }

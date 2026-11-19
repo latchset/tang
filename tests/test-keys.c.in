@@ -526,8 +526,10 @@ test_read_keys_with_rogue_akp(void)
     ASSERT(json_dump_file(rogue, rogue_path, 0) == 0);
 
     /* AKP ML-KEM key with no use/key_ops at all: jose treats an
-     * unrestricted key as permitted for every operation, so without
-     * the kty check it would land in the signing set. */
+     * unrestricted key as permitted for every operation when
+     * req = false, but /rec-kem recovers with req = true and refuses
+     * it. Such a key must not be advertised anywhere, so clients
+     * cannot bind to a key whose recovery would always fail. */
     int have_unrestricted = 0;
     json_auto_t* unrestricted = jwk_generate("ML-KEM-768");
     if (unrestricted) {
@@ -562,16 +564,11 @@ test_read_keys_with_rogue_akp(void)
         ASSERT_WITH_MSG(alg && strncmp(alg, "ML-KEM-", 7) == 0,
                         "non-KEM AKP key leaked into the KEM payload");
     }
-    if (have_unrestricted) {
-        /* The unrestricted key has a supported ML-KEM algorithm, so it
-         * is a usable hybrid exchange key: it is advertised in
-         * /adv-kem, never in /adv. */
-        ASSERT(json_array_size(tki->m_kem_payload) == 1);
-        ASSERT(tki->m_has_pqc == 1);
-    } else {
-        ASSERT(json_array_size(tki->m_kem_payload) == 0);
-        ASSERT(tki->m_has_pqc == 0);
-    }
+    /* No AKP key may be advertised: the ML-DSA one has no supported
+     * KEM algorithm and the unrestricted one fails the req = true
+     * deriveKey predicate that /rec-kem enforces. */
+    ASSERT(json_array_size(tki->m_kem_payload) == 0);
+    ASSERT(tki->m_has_pqc == 0);
 
     /* The rogue keys must not break advertisement signing. */
     json_auto_t* jws = jwk_sign(tki->m_payload, tki->m_sign);

@@ -88,6 +88,7 @@ test('test-pqc-noop', test_pqc_noop, env: env, timeout: 360)
 test('keygen', find_program('keygen'), env: env, timeout: 360)
 test('rotate-keys', find_program('rotate-keys'), env: env, timeout: 360)
 test('noop', find_program('noop'), env: env, timeout: 360)
+test('errors', find_program('errors'), env: env, timeout: 360)
 
 if has_pqc
   test('test-pqc', test_pqc, env: env, timeout: 360)

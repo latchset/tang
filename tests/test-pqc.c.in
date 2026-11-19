@@ -1022,6 +1022,17 @@ test_validate_request_protected_ecmr_key_types(void)
         dump_jwk_to_dir(unrestricted, tmpdir);
     ASSERT(unrestricted_thp);
 
+    /* Non-EC key claiming the ECMR algorithm. */
+    json_auto_t *not_ec = json_pack("{s:s, s:s}", "kty", "RSA",
+                                    "alg", "RS256");
+    ASSERT(not_ec && jose_jwk_gen(NULL, not_ec));
+    ASSERT(json_object_set_new(not_ec, "alg", json_string("ECMR")) == 0);
+    ASSERT(json_object_set_new(not_ec, "key_ops",
+                               json_pack("[s]", "deriveKey")) == 0);
+    __attribute__((cleanup(str_cleanup))) char *not_ec_thp =
+        dump_jwk_to_dir(not_ec, tmpdir);
+    ASSERT(not_ec_thp);
+
     __attribute__((cleanup(cleanup_tang_keys_info)))
         struct tang_keys_info *tki = read_keys(tmpdir);
     ASSERT(tki);
@@ -1029,7 +1040,7 @@ test_validate_request_protected_ecmr_key_types(void)
     const char *kem_kid = "test-kem-kid";
     const char *suite = "ECMR+ML-KEM-768";
     const char *bad_kids[] = {pub_thp, no_derive_thp, unrestricted_thp,
-                              NULL};
+                              not_ec_thp, NULL};
     for (int i = 0; bad_kids[i]; i++) {
         __attribute__((cleanup(str_cleanup))) char *h =
             build_header_json(DIR_REQUEST, KEM_VERSION, suite, bad_kids[i],
@@ -1217,6 +1228,132 @@ test_rec_kem_secure_duplicate_payload_member(void)
     remove_tempdir(tmpdir);
 }
 
+/* The clevis KEM fields inside the encrypted inner payload are
+ * validated one by one: a non-AKP client key, an unsupported AKP
+ * algorithm, a key without deriveKey permission and an undecapsulable
+ * clevis_kem_ct are all rejected, as is a valid transport ciphertext
+ * that yields the wrong shared secret (the AEAD tag check fails). */
+static void
+test_rec_kem_secure_bad_inner_fields(void)
+{
+    json_auto_t *priv = NULL;
+
+    if (!jose_jwk_gen(NULL,
+            (priv = json_pack("{s:s}", "alg", "ML-KEM-768")))) {
+        fprintf(stderr,
+                "No ML-KEM support, skipping rec_kem_secure tests\n");
+        return;
+    }
+
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *tki = read_keys(tmpdir);
+    ASSERT(tki);
+    __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
+        find_key_thp_by_alg(tki, ECMR_ALG);
+    ASSERT(ecmr_kid);
+
+    json_auto_t *pub = json_deep_copy(priv);
+    ASSERT(pub && jose_jwk_pub(NULL, pub));
+
+    json_auto_t *fwd_enc = jose_jwk_kem_enc(NULL, pub);
+    ASSERT(fwd_enc);
+    const char *fwd_ct = json_string_value(json_object_get(fwd_enc, "ct"));
+    json_t *fwd_ss = json_object_get(fwd_enc, "ss");
+    ASSERT(fwd_ct && fwd_ss);
+
+    const char *kem_kid = "test-kem-kid";
+
+    /* Wraps an arbitrary inner payload into a well-formed request. */
+    #define BAD_INNER_REQ(inner_json, ct) do {                              \
+        json_auto_t *hdr_ = build_enriched_header(ecmr_kid, kem_kid,        \
+                                                  "ML-KEM-768");            \
+        ASSERT(hdr_);                                                       \
+        ASSERT(jose_jwe_enc(NULL, hdr_, NULL, fwd_ss,                       \
+                            inner_json, strlen(inner_json)));               \
+        __attribute__((cleanup(str_cleanup))) char *blob_ =                 \
+            jwe_to_compact(hdr_);                                           \
+        ASSERT(blob_);                                                      \
+        json_auto_t *req_ = json_pack("{s:s, s:s}",                         \
+            "clevis_encrypted_blob", blob_,                                 \
+            "clevis_transport_ct", ct);                                     \
+        ASSERT(req_);                                                       \
+        char *out_ = NULL;                                                  \
+        ASSERT(rec_kem_secure(priv, tki, kem_kid, req_, &out_)              \
+               == HTTP_STATUS_BAD_REQUEST);                                 \
+        ASSERT(out_ == NULL);                                               \
+    } while (0)
+
+    /* Client KEM key with a non-AKP kty. */
+    BAD_INNER_REQ("{\"clevis_kem_ct\":\"x\",\"ek_digest\":\"y\","
+                  "\"clevis_kem_pub\":{\"kty\":\"EC\",\"crv\":\"P-521\","
+                  "\"alg\":\"ML-KEM-768\",\"key_ops\":[\"deriveKey\"]}}",
+                  fwd_ct);
+
+    /* Client KEM key with an unsupported AKP algorithm. */
+    BAD_INNER_REQ("{\"clevis_kem_ct\":\"x\",\"ek_digest\":\"y\","
+                  "\"clevis_kem_pub\":{\"kty\":\"AKP\","
+                  "\"alg\":\"ML-DSA-65\",\"key_ops\":[\"deriveKey\"]}}",
+                  fwd_ct);
+
+    /* Client KEM key without deriveKey permission. */
+    {
+        json_auto_t *no_derive = json_deep_copy(priv);
+        ASSERT(no_derive);
+        ASSERT(json_object_set_new(no_derive, "key_ops",
+                                   json_pack("[s]", "sign")) == 0);
+        __attribute__((cleanup(str_cleanup))) char *no_derive_json =
+            json_dumps(no_derive, JSON_COMPACT);
+        ASSERT(no_derive_json);
+        char inner[PATH_MAX];
+        snprintf(inner, sizeof(inner),
+                 "{\"clevis_kem_ct\":\"x\",\"ek_digest\":\"y\","
+                 "\"clevis_kem_pub\":%s}", no_derive_json);
+        BAD_INNER_REQ(inner, fwd_ct);
+    }
+
+    /* Undecapsulable clevis_kem_ct. */
+    {
+        json_auto_t *kem_pub = json_deep_copy(priv);
+        ASSERT(kem_pub && jose_jwk_pub(NULL, kem_pub));
+        __attribute__((cleanup(str_cleanup))) char *kem_pub_json =
+            json_dumps(kem_pub, JSON_COMPACT);
+        ASSERT(kem_pub_json);
+        char inner[PATH_MAX];
+        snprintf(inner, sizeof(inner),
+                 "{\"clevis_kem_ct\":\"QUJDRA\",\"ek_digest\":\"y\","
+                 "\"clevis_kem_pub\":%s}", kem_pub_json);
+        BAD_INNER_REQ(inner, fwd_ct);
+    }
+
+    /* A valid transport ciphertext for a different encapsulation: the
+     * decapsulation succeeds but yields the wrong shared secret, so
+     * the inner AEAD tag check fails. */
+    {
+        json_auto_t *other_enc = jose_jwk_kem_enc(NULL, pub);
+        ASSERT(other_enc);
+        const char *other_ct = json_string_value(
+            json_object_get(other_enc, "ct"));
+        ASSERT(other_ct);
+
+        __attribute__((cleanup(str_cleanup))) char *req =
+            build_rec_kem_request(priv, ecmr_kid, kem_kid,
+                                  "ML-KEM-768", "ML-KEM-768");
+        ASSERT(req);
+        json_auto_t *req_json = json_loads(req, 0, NULL);
+        ASSERT(req_json);
+        ASSERT(json_object_set_new(req_json, "clevis_transport_ct",
+                                   json_string(other_ct)) == 0);
+        char *out = NULL;
+        ASSERT(rec_kem_secure(priv, tki, kem_kid, req_json, &out)
+               == HTTP_STATUS_BAD_REQUEST);
+        ASSERT(out == NULL);
+    }
+
+    remove_tempdir(tmpdir);
+}
+
 /* Duplicate members in the request body must be rejected by the body
  * parse (RFC 8725 §3.12): both clevis_transport_ct values are
  * identical, so without the duplicate rejection the request would
@@ -1240,6 +1377,114 @@ test_rec_kem_duplicate_body_members(void)
         "\"clevis_transport_ct\":\"b\"}";
     ASSERT(rec_kem(HTTP_POST, path, body, matches, tmpdir)
            == HTTP_STATUS_BAD_REQUEST);
+
+    remove_tempdir(tmpdir);
+}
+
+/* Handler-level status mapping for requests that never reach the
+ * crypto: unsupported algorithms, empty matches, unreadable key
+ * directories and keys that are stored but not usable. */
+static void
+test_kem_handler_statuses(void)
+{
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+
+    /* An advertised KEM key. */
+    json_auto_t *kem = json_pack("{s:s}", "alg", "ML-KEM-768");
+    ASSERT(kem && jose_jwk_gen(NULL, kem));
+    __attribute__((cleanup(str_cleanup))) char *kem_thp =
+        dump_jwk_to_dir(kem, tmpdir);
+    ASSERT(kem_thp);
+
+    /* An unrestricted AKP key (no use/key_ops): stored, but not
+     * advertised and not usable for recovery. */
+    json_auto_t *unrestricted = json_deep_copy(kem);
+    ASSERT(unrestricted);
+    json_object_del(unrestricted, "key_ops");
+    __attribute__((cleanup(str_cleanup))) char *unrestricted_thp =
+        dump_jwk_to_dir(unrestricted, tmpdir);
+    ASSERT(unrestricted_thp);
+
+    /* An AKP key with a non-KEM algorithm (RFC 9864: AKP also covers
+     * signature algorithms): a real ML-KEM key relabeled. */
+    json_auto_t *rogue = json_deep_copy(kem);
+    ASSERT(rogue);
+    ASSERT(json_object_set_new(rogue, "alg", json_string("ML-DSA-65")) == 0);
+    __attribute__((cleanup(str_cleanup))) char *rogue_thp =
+        dump_jwk_to_dir(rogue, tmpdir);
+    ASSERT(rogue_thp);
+
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *tki = read_keys(tmpdir);
+    ASSERT(tki);
+    __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
+        find_key_thp_by_alg(tki, ECMR_ALG);
+    ASSERT(ecmr_kid);
+
+    /* adv_kem: an algorithm that is not a supported ML-KEM variant is
+     * rejected before the key store is touched. */
+    regmatch_t qm[2] = {};
+    const char *qpath = "/adv-kem?alg=UNSUPPORTED";
+    qm[1].rm_so = strlen("/adv-kem");
+    qm[1].rm_eo = strlen(qpath);
+    ASSERT(adv_kem(HTTP_GET, qpath, NULL, qm, tmpdir)
+           == HTTP_STATUS_NOT_FOUND);
+
+    /* adv_kem: a supported variant with no key in the store. */
+    const char *q512 = "/adv-kem?alg=ML-KEM-512";
+    qm[1].rm_eo = strlen(q512);
+    ASSERT(adv_kem(HTTP_GET, q512, NULL, qm, tmpdir)
+           == HTTP_STATUS_NOT_FOUND);
+
+    /* adv_kem: unreadable key directory. */
+    ASSERT(adv_kem(HTTP_GET, q512, NULL, qm, "no-such-jwkdir")
+           == HTTP_STATUS_INTERNAL_SERVER_ERROR);
+
+    /* adv_kem_thp: empty thumbprint match. */
+    regmatch_t empty[2] = {};
+    ASSERT(adv_kem_thp(HTTP_GET, "/adv-kem/", NULL, empty, tmpdir)
+           == HTTP_STATUS_BAD_REQUEST);
+
+    /* adv_kem_thp: unreadable key directory. */
+    regmatch_t tm[2] = {};
+    const char *tpath = "/adv-kem/some-thumbprint";
+    tm[1].rm_so = strlen("/adv-kem/");
+    tm[1].rm_eo = strlen(tpath);
+    ASSERT(adv_kem_thp(HTTP_GET, tpath, NULL, tm, "no-such-jwkdir")
+           == HTTP_STATUS_INTERNAL_SERVER_ERROR);
+
+    /* adv_kem_thp: a stored-but-unadvertised key must be hidden. */
+    char upath[PATH_MAX];
+    snprintf(upath, sizeof(upath), "/adv-kem/%s", unrestricted_thp);
+    regmatch_t um[2] = {};
+    um[1].rm_so = strlen("/adv-kem/");
+    um[1].rm_eo = strlen(upath);
+    ASSERT(adv_kem_thp(HTTP_GET, upath, NULL, um, tmpdir)
+           == HTTP_STATUS_NOT_FOUND);
+
+    /* rec_kem: empty thumbprint match. */
+    ASSERT(rec_kem(HTTP_POST, "/rec-kem/", "{}", empty, tmpdir)
+           == HTTP_STATUS_BAD_REQUEST);
+
+    /* rec_kem: unreadable key directory. */
+    ASSERT(rec_kem(HTTP_POST, tpath, "{}", tm, "no-such-jwkdir")
+           == HTTP_STATUS_INTERNAL_SERVER_ERROR);
+
+    /* rec_kem: a classical (non-AKP) key thumbprint. */
+    char rpath[PATH_MAX];
+    snprintf(rpath, sizeof(rpath), "/rec-kem/%s", ecmr_kid);
+    regmatch_t rm[2] = {};
+    rm[1].rm_so = strlen("/rec-kem/");
+    rm[1].rm_eo = strlen(rpath);
+    ASSERT(rec_kem(HTTP_POST, rpath, "{}", rm, tmpdir)
+           == HTTP_STATUS_FORBIDDEN);
+
+    /* rec_kem: an AKP key whose algorithm is not a supported KEM. */
+    snprintf(rpath, sizeof(rpath), "/rec-kem/%s", rogue_thp);
+    rm[1].rm_eo = strlen(rpath);
+    ASSERT(rec_kem(HTTP_POST, rpath, "{}", rm, tmpdir)
+           == HTTP_STATUS_FORBIDDEN);
 
     remove_tempdir(tmpdir);
 }
@@ -1868,6 +2113,7 @@ run_tests(void)
     test_rec_kem_secure_bad_blob();
     test_rec_kem_secure_bad_inner_payload();
     test_rec_kem_secure_duplicate_payload_member();
+    test_rec_kem_secure_bad_inner_fields();
     test_rec_kem_secure_wrong_digest();
     test_rec_kem_secure_suite_mismatch();
     test_rec_kem_secure_unknown_ecmr_kid();
@@ -1875,6 +2121,7 @@ run_tests(void)
     test_rec_kem_secure_oversized_protected_header();
     test_rec_kem_secure_success();
     test_rec_kem_duplicate_body_members();
+    test_kem_handler_statuses();
 
     test_pqc_is_available();
 }

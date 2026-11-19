@@ -1,0 +1,115 @@
+#!/bin/sh -ex
+# vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:
+#
+# Copyright (c) 2026 Red Hat, Inc.
+# Author: Sergio Arroutbi <sarroutbi@redhat.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+. helpers
+
+trap 'on_exit' EXIT
+export TMP=`mktemp -d`
+mkdir -p $TMP/db
+
+error_startup () {
+    # Generate the server keys
+    tangd-keygen $TMP/db sig exc
+
+    # Thumbprint of the exchange key, used by the recovery requests
+    exc_kid=`jose jwk thp -i $TMP/db/exc.jwk`
+
+    # Client key pair for recovery requests
+    jose jwk gen -i '{"alg":"ECMR","key_ops":["deriveKey"]}' -o $TMP/clt.jwk
+    jose jwk pub -i $TMP/clt.jwk -o $TMP/clt.pub.jwk
+}
+
+# tangd must refuse to run against an unusable key directory
+error_invalid_jwkdir () {
+    if tangd < /dev/null > /dev/null 2>&1; then
+        die "tangd must fail when no key directory is given"
+    fi
+
+    if tangd $TMP/no-such-dir < /dev/null > /dev/null 2>&1; then
+        die "tangd must fail when the key directory does not exist"
+    fi
+
+    touch $TMP/not-a-dir
+    if tangd $TMP/not-a-dir < /dev/null > /dev/null 2>&1; then
+        die "tangd must fail when the key directory is a regular file"
+    fi
+
+    # An endpoint prefix that does not fit the routing buffers must be
+    # refused instead of silently truncating the routes
+    long_endpoint=$(head -c 300 /dev/zero | tr '\0' 'E')
+    if tangd -e "$long_endpoint" $TMP/db < /dev/null > /dev/null 2>&1; then
+        die "tangd must fail when the endpoint prefix is too long"
+    fi
+}
+
+# Malformed HTTP requests must be dropped without a reply
+error_malformed_request () {
+    if out=$(printf 'BOGUS\r\n\r\n' | tangd $TMP/db 2>/dev/null); then
+        [ -z "${out}" ] || die "malformed request must not produce a reply"
+    else
+        die "tangd must exit cleanly on a malformed request"
+    fi
+}
+
+# Requests exceeding the parser buffers must be rejected
+error_http_limits () {
+    # A request line longer than the path buffer must be rejected with 414
+    long_path="/adv/$(head -c 5000 /dev/zero | tr '\0' 'A')"
+    code=$(curl -s -o /dev/null -w "%{http_code}" \
+        "http://127.0.0.1:${PORT}${long_path}")
+    [ "${code}" = "414" ]
+
+    # A request body larger than the body buffer must be rejected with 413
+    head -c 70000 /dev/zero | tr '\0' 'A' > $TMP/oversized.body
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Expect:" \
+        --data-binary @$TMP/oversized.body \
+        "http://127.0.0.1:${PORT}/rec/${exc_kid}")
+    [ "${code}" = "413" ]
+}
+
+# A key store without signing keys can neither advertise nor recover:
+# both endpoints must fail with 500 instead of an unsigned payload
+error_no_signing_keys () {
+    rm -f $TMP/db/sig.jwk
+
+    code=$(curl -s -o /dev/null -w "%{http_code}" \
+        "http://127.0.0.1:${PORT}/adv")
+    [ "${code}" = "500" ]
+
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Content-Type: application/jwk+json" \
+        --data-binary @$TMP/clt.pub.jwk \
+        "http://127.0.0.1:${PORT}/rec/${exc_kid}")
+    [ "${code}" = "500" ]
+}
+
+error_startup
+
+error_invalid_jwkdir
+error_malformed_request
+
+export PORT=$(random_port)
+start_standalone_server "${PORT}"
+export PID=$!
+wait_for_port ${PORT}
+
+error_http_limits
+error_no_signing_keys

@@ -116,6 +116,27 @@ test_create_new_keys(void)
     remove_tempdir(newdir);
 }
 
+/* When the generated key cannot be saved, create_new_keys() must fail
+ * instead of leaving a partially created key store, and it must restore
+ * the original umask on the way out. */
+static void
+test_create_new_keys_save_failure(void)
+{
+    __attribute__((cleanup(cleanup_str))) char* tmpdir = create_tempdir();
+    ASSERT(tmpdir);
+
+    /* The target directory does not exist, so saving the key fails. */
+    char missing_dir[PATH_MAX];
+    snprintf(missing_dir, PATH_MAX, "%s/missing", tmpdir);
+
+    mode_t old_umask = umask(0022);
+    ASSERT_WITH_MSG(create_new_keys(missing_dir) == 0,
+                    "create_new_keys must fail when the key cannot be saved");
+    ASSERT_WITH_MSG(umask(old_umask) == old_umask,
+                    "create_new_keys must restore the umask on failure");
+
+    remove_tempdir(tmpdir);
+}
 
 static void
 test_is_hash(void)
@@ -141,6 +162,29 @@ test_is_hash(void)
         ASSERT_WITH_MSG(ret == test_data[i].expected, "i = %d, alg = %s", i, test_data[i].data);
     };
 
+}
+
+static void
+test_is_valid_kem_alg(void)
+{
+    const struct test_result_int test_data[] = {
+        {NULL, 0},
+        {"", 0},
+        {"ECMR", 0},
+        {"ES512", 0},
+        {"ML-DSA-65", 0},
+        {"ML-KEM-", 0},
+        {"ML-KEM-512x", 0},
+        {"ml-kem-768", 0},
+        {KEM_ALG_512, 1},
+        {KEM_ALG_768, 1},
+        {KEM_ALG_1024, 1}
+    };
+
+    for (int i = 0, len = ARRAY_COUNT(test_data); i < len; i++) {
+        int ret = is_valid_kem_alg(test_data[i].data);
+        ASSERT_WITH_MSG(ret == test_data[i].expected, "i = %d, alg = %s", i, test_data[i].data);
+    }
 }
 
 static void
@@ -191,6 +235,10 @@ test_find_jws(void)
 
     __attribute__((cleanup(cleanup_str))) char* tmpdir = copy_fixture();
     ASSERT(tmpdir);
+
+    /* Passing NULL tki must fail cleanly. */
+    ASSERT(find_jws(NULL, "foo") == NULL);
+
     __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(tmpdir);
     for (int i = 0, len = ARRAY_COUNT(test_data); i < len; i++) {
         json_auto_t* jws = find_jws(tki, test_data[i].thp);
@@ -306,6 +354,15 @@ test_read_keys(void)
 {
     __attribute__((cleanup(cleanup_str))) char* tmpdir = copy_fixture();
     ASSERT(tmpdir);
+
+    /* Files without the .jwk extension must be ignored by the key store. */
+    char ignored_path[PATH_MAX];
+    snprintf(ignored_path, PATH_MAX, "%s/README", tmpdir);
+    FILE* ignored = fopen(ignored_path, "w");
+    ASSERT_WITH_MSG(ignored, "path = %s", ignored_path);
+    ASSERT(fputs("not a key\n", ignored) >= 0);
+    ASSERT(fclose(ignored) == 0);
+
     __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki = read_keys(tmpdir);
     ASSERT(tki);
 
@@ -349,6 +406,26 @@ test_jwk_sign_null_inputs(void)
     json_auto_t* obj = json_object();
     ASSERT(jwk_sign(obj, arr) == NULL);
     ASSERT(jwk_sign(arr, obj) == NULL);
+}
+
+/* jwk_sign() must fail cleanly when none of the provided keys can sign. */
+static void
+test_jwk_sign_no_signing_key(void)
+{
+    json_auto_t* payload = json_array();
+    ASSERT(payload);
+    json_auto_t* sig = jwk_generate("ES512");
+    ASSERT(sig);
+    ASSERT(json_array_append(payload, sig) == 0);
+
+    json_auto_t* sig_keys = json_array();
+    ASSERT(sig_keys);
+    json_auto_t* exc = jwk_generate("ECMR");
+    ASSERT(exc);
+    ASSERT(json_array_append(sig_keys, exc) == 0);
+
+    ASSERT_WITH_MSG(jwk_sign(payload, sig_keys) == NULL,
+                    "jwk_sign must fail when no key can sign");
 }
 
 static void
@@ -578,6 +655,83 @@ test_read_keys_with_rogue_akp(void)
     umask(old_umask);
 }
 
+/* Counterpart of the rogue-key test: a hand-crafted AKP key with a
+ * supported ML-KEM algorithm and the right key_ops must be advertised
+ * in the KEM payload. Hand-crafting the JWK keeps the acceptance path
+ * of prepare_payload_and_sign() covered even when jose itself cannot
+ * generate ML-KEM keys (builds without PQC support). */
+static void
+test_read_keys_with_advertised_akp(void)
+{
+    mode_t old_umask = umask(0022);
+    __attribute__((cleanup(cleanup_str))) char* newdir = create_tempdir();
+    ASSERT(newdir);
+
+    json_auto_t* sig = jwk_generate("ES512");
+    ASSERT(sig);
+    char sig_path[PATH_MAX];
+    snprintf(sig_path, PATH_MAX, "%s/sig.jwk", newdir);
+    ASSERT(json_dump_file(sig, sig_path, 0) == 0);
+
+    json_auto_t* exc = jwk_generate("ECMR");
+    ASSERT(exc);
+    char exc_path[PATH_MAX];
+    snprintf(exc_path, PATH_MAX, "%s/exc.jwk", newdir);
+    ASSERT(json_dump_file(exc, exc_path, 0) == 0);
+
+    json_auto_t* kem = json_pack("{s:s,s:s,s:[s]}",
+                                 "kty", "AKP",
+                                 "alg", KEM_ALG_768,
+                                 "key_ops", "deriveKey");
+    ASSERT(kem);
+    char kem_path[PATH_MAX];
+    snprintf(kem_path, PATH_MAX, "%s/kem.jwk", newdir);
+    ASSERT(json_dump_file(kem, kem_path, 0) == 0);
+
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki =
+        read_keys(newdir);
+    ASSERT(tki);
+    ASSERT(tki->m_keys_count == 3);
+    ASSERT(tki->m_has_pqc == 1);
+    ASSERT(json_array_size(tki->m_kem_payload) == 1);
+    ASSERT(json_array_size(tki->m_payload) == 2);
+    ASSERT(json_array_size(tki->m_sign) == 1);
+
+    json_t* advertised = json_array_get(tki->m_kem_payload, 0);
+    ASSERT(advertised);
+    const char* alg = json_string_value(json_object_get(advertised, "alg"));
+    ASSERT_WITH_MSG(alg && strcmp(alg, KEM_ALG_768) == 0,
+                    "advertised alg = %s", alg);
+
+    remove_tempdir(newdir);
+    umask(old_umask);
+}
+
+/* A key store without signing keys cannot produce a signed
+ * advertisement: read_keys() must fail instead of advertising an
+ * unsigned payload. */
+static void
+test_read_keys_no_signing_keys(void)
+{
+    mode_t old_umask = umask(0022);
+    __attribute__((cleanup(cleanup_str))) char* newdir = create_tempdir();
+    ASSERT(newdir);
+
+    json_auto_t* exc = jwk_generate("ECMR");
+    ASSERT(exc);
+    char exc_path[PATH_MAX];
+    snprintf(exc_path, PATH_MAX, "%s/exc.jwk", newdir);
+    ASSERT(json_dump_file(exc, exc_path, 0) == 0);
+
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki =
+        read_keys(newdir);
+    ASSERT_WITH_MSG(tki == NULL,
+                    "read_keys must fail when no signing keys exist");
+
+    remove_tempdir(newdir);
+    umask(old_umask);
+}
+
 static void
 test_find_by_thp_null(void)
 {
@@ -605,12 +759,17 @@ run_tests(void)
     test_create_new_keys();
     test_cleanup_null();
     test_jwk_sign_null_inputs();
+    test_jwk_sign_no_signing_key();
     test_read_keys_with_kem();
     test_create_new_keys_kem_variants();
     test_jwk_thumbprint_edge_cases();
     test_prepare_payload_and_sign_null();
     test_find_by_thp_null();
     test_read_keys_with_rogue_akp();
+    test_read_keys_with_advertised_akp();
+    test_read_keys_no_signing_keys();
+    test_is_valid_kem_alg();
+    test_create_new_keys_save_failure();
 }
 
 int main(int argc, char** argv)

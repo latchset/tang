@@ -62,6 +62,7 @@ rec_second_phase () {
     [ "$(jose jwk thp -i $TMP/tang_pub.jwk)" = "$exc_kid" ]
 
     rec_kem_test ""
+    rec_error_cases ""
 }
 
 rec_second_phase_endpoint () {
@@ -88,6 +89,54 @@ rec_second_phase_endpoint () {
     [ "$(jose jwk thp -i $TMP/tang_pub.jwk)" = "$exc_kid" ]
 
     rec_kem_test "${ENDPOINT}/"
+    rec_error_cases "${ENDPOINT}/"
+}
+
+rec_error_cases () {
+    # A body that is not JSON must be rejected with 400
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d "not-json" \
+        "http://127.0.0.1:$PORT/${1}rec/${exc_kid}")
+    [ "$code" = "400" ]
+
+    # A JWK that is not allowed to derive keys must be rejected with 403
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d '{"kty":"EC","key_ops":["sign"]}' \
+        "http://127.0.0.1:$PORT/${1}rec/${exc_kid}")
+    [ "$code" = "403" ]
+
+    # A JWK without a kty must be rejected with 400
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d '{"alg":"ECMR","key_ops":["deriveKey"]}' \
+        "http://127.0.0.1:$PORT/${1}rec/${exc_kid}")
+    [ "$code" = "400" ]
+
+    # A non-EC JWK must be rejected with 400
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d '{"kty":"oct","key_ops":["deriveKey"]}' \
+        "http://127.0.0.1:$PORT/${1}rec/${exc_kid}")
+    [ "$code" = "400" ]
+
+    # An EC JWK with a non-ECMR algorithm must be rejected with 400
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d '{"kty":"EC","alg":"ECDH-ES","key_ops":["deriveKey"]}' \
+        "http://127.0.0.1:$PORT/${1}rec/${exc_kid}")
+    [ "$code" = "400" ]
+
+    # An unknown thumbprint must be rejected with 404
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Content-Type: application/jwk+json" \
+        --data-binary @$TMP/exc.pub.jwk \
+        "http://127.0.0.1:$PORT/${1}rec/nonexistent")
+    [ "$code" = "404" ]
+
+    # The thumbprint of a signing key must be rejected with 403
+    sig_kid=`jose jwk thp -i $TMP/db/sig.jwk`
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Content-Type: application/jwk+json" \
+        --data-binary @$TMP/exc.pub.jwk \
+        "http://127.0.0.1:$PORT/${1}rec/${sig_kid}")
+    [ "$code" = "403" ]
 }
 
 rec_kem_test () {

@@ -287,6 +287,25 @@ prepare_payload_and_sign(struct tang_keys_info* tki)
     size_t idx;
     json_t* jwk;
     json_array_foreach(tki->m_keys, idx, jwk) {
+        const char* kty = json_string_value(
+            json_object_get(jwk, "kty"));
+        const char* alg = json_string_value(
+            json_object_get(jwk, "alg"));
+
+        /* RFC 9864: "AKP" covers post-quantum signature algorithms
+         * (e.g. ML-DSA) as well as ML-KEM, so an AKP key is only ever
+         * a hybrid exchange key here: it is advertised when its
+         * algorithm is a supported ML-KEM variant and ignored
+         * otherwise, never falling through to the classical payload
+         * or the signing set. */
+        if (kty && strcmp(kty, "AKP") == 0) {
+            if (jwk_valid_for_deriving_keys(jwk) && is_valid_kem_alg(alg)) {
+                if (json_array_append(tki->m_kem_payload, jwk) < 0)
+                    return 0;
+            }
+            continue;
+        }
+
         if (jwk_valid_for_signing_and_verifying(jwk)) {
             if (json_array_append(tki->m_sign, jwk) == -1) {
                 continue;
@@ -295,19 +314,8 @@ prepare_payload_and_sign(struct tang_keys_info* tki)
                 continue;
             }
         } else if (jwk_valid_for_deriving_keys(jwk)) {
-            const char* kty = json_string_value(
-                json_object_get(jwk, "kty"));
-            const char* alg = json_string_value(
-                json_object_get(jwk, "alg"));
-            /* RFC 9864: "AKP" also covers post-quantum signature
-             * algorithms (e.g. ML-DSA); only supported ML-KEM exchange
-             * keys belong in the KEM advertisement. */
-            if (kty && strcmp(kty, "AKP") == 0 && is_valid_kem_alg(alg)) {
-                if (json_array_append(tki->m_kem_payload, jwk) < 0)
-                    continue;
-            } else {
-                if (json_array_append(tki->m_payload, jwk) < 0)
-                    continue;
+            if (json_array_append(tki->m_payload, jwk) == -1) {
+                continue;
             }
         }
     }

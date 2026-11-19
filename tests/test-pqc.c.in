@@ -423,6 +423,10 @@ test_find_jws_kem_by_thp_rejects_unsupported_alg(void)
 
     ASSERT(find_jws_kem_by_thp(tki, thp) == NULL);
     ASSERT(tki->m_has_pqc == 0);
+    /* The unsupported AKP key must not leak into the classical
+     * advertisement either: only the fixture's ES512 and ECMR keys
+     * belong there. */
+    ASSERT(json_array_size(tki->m_payload) == 2);
 
     remove_tempdir(tmpdir);
 }

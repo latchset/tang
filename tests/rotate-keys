@@ -239,6 +239,37 @@ done
 # advertised before the rotation is optional in that case: the
 # rotation completes with a warning and the variant is simply absent.
 if jose_supports_alg ML-KEM-512; then
+    # A package downgrade must also be fatal, not a silent skip: if
+    # jose no longer lists an algorithm whose key was advertised, the
+    # old key would be hidden with no replacement written and the
+    # variant would disappear from /adv-kem.
+    mkdir -p "${TMP}/fake-bin-downgrade"
+    cat > "${TMP}/fake-bin-downgrade/jose" <<EOF
+#!/bin/sh
+# Simulate a jose package downgrade: ML-KEM-512 disappears from the
+# algorithm listing, everything else (including jose fmt, used by the
+# advertised-algorithm detection) keeps working.
+if [ "\$1" = "alg" ]; then
+    "${REAL_JOSE}" "\$@" | grep -v '^ML-KEM-512\$'
+    exit \$?
+fi
+exec "${REAL_JOSE}" "\$@"
+EOF
+    chmod +x "${TMP}/fake-bin-downgrade/jose"
+
+    mkdir -p "${TMP}/db-downgrade"
+    tangd-keygen "${TMP}/db-downgrade" sig exc
+    downgrade_visible="$(find "${TMP}/db-downgrade" -maxdepth 1 \
+        -name '*.jwk' ! -name '.*' | sort)"
+    if PATH="${TMP}/fake-bin-downgrade:${PATH}" tangd-rotate-keys -d "${TMP}/db-downgrade" -v; then
+        echo "Expected rotation to fail for a downgraded jose" >&2
+        exit 1
+    fi
+    [ "$(find "${TMP}/db-downgrade" -maxdepth 1 -name '*.jwk' ! -name '.*' | sort)" = \
+      "${downgrade_visible}" ]
+    [ -z "$(find "${TMP}/db-downgrade" -maxdepth 1 -name '.*.jwk')" ]
+    [ -z "$(find "${TMP}/db-downgrade" -maxdepth 1 -name '.tang-rotate.*')" ]
+
     mkdir -p "${TMP}/fake-bin-512"
     cat > "${TMP}/fake-bin-512/jose" <<EOF
 #!/bin/sh

@@ -371,7 +371,11 @@ create_new_keys(const char* jwkdir)
             break;
         }
         path[sizeof(path) - 1] = '\0';
-        if (json_dump_file(jwk, path, 0) == -1) {
+        /* JSON_COMPACT matches the format the jose CLI writes, so the
+         * key files are byte-identical no matter which path created
+         * them (tangd auto-generation, tangd-keygen or an operator
+         * using jose jwk gen). */
+        if (json_dump_file(jwk, path, JSON_COMPACT) == -1) {
             fprintf(stderr, "Error saving JWK to file (%s)\n", path);
             result = 0;
             break;

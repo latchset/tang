@@ -213,6 +213,27 @@ for f in "${TMP}/reldir"/*.jwk; do
 done
 [ -z "$(find "${TMP}/reldir" -maxdepth 1 -name '.tang-rotate.*')" ]
 
+# Keys created by tangd itself (create_new_keys, on the first request
+# to an empty key store) must be detected as advertised by the
+# rotation, so a previously active ML-KEM variant is recreated instead
+# of being silently dropped. Seed a fresh keydir through that path
+# (tangd in one-shot stdin mode) instead of through tangd-keygen.
+mkdir -p "${TMP}/db-auto"
+printf 'GET /adv HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' \
+    | tangd "${TMP}/db-auto" >/dev/null 2>&1
+[ -n "$(alg_keys "${TMP}/db-auto" ES512)" ]
+[ -n "$(alg_keys "${TMP}/db-auto" ECMR)" ]
+for alg in ${KEM_ALGS}; do
+    jose_supports_alg "${alg}" || continue
+    [ "$(alg_keys "${TMP}/db-auto" "${alg}" | wc -l)" -eq 1 ]
+done
+tangd-rotate-keys -d "${TMP}/db-auto" -v
+for alg in ${KEM_ALGS}; do
+    jose_supports_alg "${alg}" || continue
+    [ "$(alg_keys "${TMP}/db-auto" "${alg}" | wc -l)" -eq 1 ]
+done
+[ -z "$(find "${TMP}/db-auto" -maxdepth 1 -name '.tang-rotate.*')" ]
+
 # jose registers algorithms even when the runtime crypto policy (e.g.
 # FIPS) blocks generating keys for them. A variant that was NOT
 # advertised before the rotation is optional in that case: the

@@ -55,6 +55,23 @@ copy_fixture(void)
     return tmpdir;
 }
 
+/* Writes @jwk into @dir as "<thumbprint>.jwk", mirroring the key
+ * store layout. Returns the thumbprint, owned by the caller. */
+static char *
+dump_jwk_to_dir(json_t *jwk, const char *dir)
+{
+    __attribute__((cleanup(str_cleanup))) char *thp =
+        jwk_thumbprint(jwk, "S256");
+    if (!thp)
+        return NULL;
+    char path[PATH_MAX];
+    if (snprintf(path, PATH_MAX, "%s/%s.jwk", dir, thp) >= PATH_MAX)
+        return NULL;
+    if (json_dump_file(jwk, path, JSON_COMPACT) != 0)
+        return NULL;
+    return strdup(thp);
+}
+
 static void
 test_jwe_from_compact_valid(void)
 {
@@ -278,6 +295,16 @@ test_find_jws_kem_filtering(void)
 {
     __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
     ASSERT(tmpdir);
+
+    /* The fixture key store ships no AKP key: add one so the KEM
+     * advertisement paths are exercised instead of skipped. */
+    json_auto_t *kem = json_pack("{s:s}", "alg", "ML-KEM-768");
+    if (kem && jose_jwk_gen(NULL, kem)) {
+        __attribute__((cleanup(str_cleanup))) char *kem_thp =
+            dump_jwk_to_dir(kem, tmpdir);
+        ASSERT(kem_thp);
+    }
+
     __attribute__((cleanup(cleanup_tang_keys_info)))
         struct tang_keys_info *tki = read_keys(tmpdir);
     ASSERT(tki);
@@ -340,6 +367,16 @@ test_find_jws_kem_by_thp_lookup(void)
 {
     __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
     ASSERT(tmpdir);
+
+    /* The fixture key store ships no AKP key: add one so the KEM
+     * advertisement paths are exercised instead of skipped. */
+    json_auto_t *kem = json_pack("{s:s}", "alg", "ML-KEM-768");
+    if (kem && jose_jwk_gen(NULL, kem)) {
+        __attribute__((cleanup(str_cleanup))) char *kem_thp =
+            dump_jwk_to_dir(kem, tmpdir);
+        ASSERT(kem_thp);
+    }
+
     __attribute__((cleanup(cleanup_tang_keys_info)))
         struct tang_keys_info *keys_info = read_keys(tmpdir);
     ASSERT(keys_info);
@@ -470,11 +507,14 @@ find_key_thp_by_alg(struct tang_keys_info *tki, const char *alg)
  * is the ML-KEM variant declared in the protected header and @clevis_alg
  * the variant of the client KEM keypair; either may differ from the
  * algorithm of @tang_priv to simulate mismatch/downgrade attempts.
+ * When @dup_member is non-NULL, the computed inner payload carries
+ * that member duplicated verbatim, to exercise the duplicate-member
+ * rejection of the payload parse.
  * Returns a string owned by the caller, or NULL on failure. */
 static char *
-build_rec_kem_request(json_t *tang_priv, const char *ecmr_kid,
-                      const char *kem_kid, const char *suite_alg,
-                      const char *clevis_alg)
+build_rec_kem_request_dup(json_t *tang_priv, const char *ecmr_kid,
+                          const char *kem_kid, const char *suite_alg,
+                          const char *clevis_alg, const char *dup_member)
 {
     json_auto_t *pub = json_deep_copy(tang_priv);
     if (!pub || !jose_jwk_pub(NULL, pub))
@@ -529,6 +569,25 @@ build_rec_kem_request(json_t *tang_priv, const char *ecmr_kid,
     if (!inner_str)
         return NULL;
 
+    if (dup_member) {
+        /* Append the member again with the same value: both copies
+         * are individually valid, so only the duplicate rejection of
+         * the payload parse can fail the request. */
+        const char *val = json_string_value(
+            json_object_get(inner, dup_member));
+        if (!val)
+            return NULL;
+        size_t n = strlen(inner_str);
+        size_t dup_len = n + strlen(dup_member) + strlen(val) + 8;
+        char *dup = malloc(dup_len);
+        if (!dup)
+            return NULL;
+        snprintf(dup, dup_len, "%.*s,\"%s\":\"%s\"}", (int)(n - 1),
+                 inner_str, dup_member, val);
+        free(inner_str);
+        inner_str = dup;
+    }
+
     json_auto_t *hdr = build_enriched_header(ecmr_kid, kem_kid, suite_alg);
     if (!hdr)
         return NULL;
@@ -546,6 +605,16 @@ build_rec_kem_request(json_t *tang_priv, const char *ecmr_kid,
     if (!req)
         return NULL;
     return json_dumps(req, JSON_COMPACT);
+}
+
+/* Same as build_rec_kem_request_dup without the payload duplicate. */
+static char *
+build_rec_kem_request(json_t *tang_priv, const char *ecmr_kid,
+                      const char *kem_kid, const char *suite_alg,
+                      const char *clevis_alg)
+{
+    return build_rec_kem_request_dup(tang_priv, ecmr_kid, kem_kid,
+                                     suite_alg, clevis_alg, NULL);
 }
 
 /* Builds the JSON text of a request protected header; a NULL field is
@@ -580,11 +649,12 @@ build_header_json(const char *msg_dir, const char *kem_ver,
 
 /* Wraps a protected header JSON text into a blob JWE, mirroring what
  * jwe_from_compact() produces for a compact dir JWE (empty
- * encrypted_key segment). */
+ * encrypted_key segment). @len allows headers with embedded NUL
+ * bytes. */
 static json_t *
-blob_jwe_from_header_json(const char *header_json)
+blob_jwe_from_header_buf(const char *buf, size_t len)
 {
-    json_t *b64 = jose_b64_enc(header_json, strlen(header_json));
+    json_t *b64 = jose_b64_enc(buf, len);
     if (!b64)
         return NULL;
     json_t *blob = json_pack("{s:o, s:s}", "protected", b64,
@@ -594,6 +664,13 @@ blob_jwe_from_header_json(const char *header_json)
         return NULL;
     }
     return blob;
+}
+
+/* blob_jwe_from_header_buf over a NUL-terminated JSON text. */
+static json_t *
+blob_jwe_from_header_json(const char *header_json)
+{
+    return blob_jwe_from_header_buf(header_json, strlen(header_json));
 }
 
 static void
@@ -907,6 +984,119 @@ test_validate_request_protected(void)
     remove_tempdir(tmpdir);
 }
 
+/* /rec-kem must not bind to an ECMR key that /rec would reject: a
+ * public-only key, a key whose key_ops exclude deriveKey, and an
+ * unrestricted key (no use/key_ops), which jose permits for deriveKey
+ * only when req = false. */
+static void
+test_validate_request_protected_ecmr_key_types(void)
+{
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+
+    json_auto_t *ecmr = json_pack("{s:s}", "alg", "ECMR");
+    ASSERT(ecmr && jose_jwk_gen(NULL, ecmr));
+
+    /* Public-only: no private key material. */
+    json_auto_t *pub_only = json_deep_copy(ecmr);
+    ASSERT(pub_only);
+    json_object_del(pub_only, "d");
+    __attribute__((cleanup(str_cleanup))) char *pub_thp =
+        dump_jwk_to_dir(pub_only, tmpdir);
+    ASSERT(pub_thp);
+
+    /* key_ops without deriveKey. */
+    json_auto_t *no_derive = json_deep_copy(ecmr);
+    ASSERT(no_derive);
+    ASSERT(json_object_set_new(no_derive, "key_ops",
+                               json_pack("[s]", "sign")) == 0);
+    __attribute__((cleanup(str_cleanup))) char *no_derive_thp =
+        dump_jwk_to_dir(no_derive, tmpdir);
+    ASSERT(no_derive_thp);
+
+    /* Unrestricted: no use and no key_ops at all. */
+    json_auto_t *unrestricted = json_deep_copy(ecmr);
+    ASSERT(unrestricted);
+    json_object_del(unrestricted, "key_ops");
+    __attribute__((cleanup(str_cleanup))) char *unrestricted_thp =
+        dump_jwk_to_dir(unrestricted, tmpdir);
+    ASSERT(unrestricted_thp);
+
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *tki = read_keys(tmpdir);
+    ASSERT(tki);
+
+    const char *kem_kid = "test-kem-kid";
+    const char *suite = "ECMR+ML-KEM-768";
+    const char *bad_kids[] = {pub_thp, no_derive_thp, unrestricted_thp,
+                              NULL};
+    for (int i = 0; bad_kids[i]; i++) {
+        __attribute__((cleanup(str_cleanup))) char *h =
+            build_header_json(DIR_REQUEST, KEM_VERSION, suite, bad_kids[i],
+                              kem_kid);
+        ASSERT(h);
+        assert_header_rejected(h, tki, kem_kid, suite);
+    }
+
+    remove_tempdir(tmpdir);
+}
+
+/* Duplicate members and trailing data after an embedded NUL must be
+ * rejected by the protected-header parse itself: both values of the
+ * duplicate are individually valid, so only JSON_REJECT_DUPLICATES
+ * catches it, and parsing the exact decoded length is what catches
+ * the NUL truncation. */
+static void
+test_validate_request_protected_duplicate_and_trailing_nul(void)
+{
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *tki = read_keys(tmpdir);
+    ASSERT(tki);
+    __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
+        find_key_thp_by_alg(tki, ECMR_ALG);
+    ASSERT(ecmr_kid);
+
+    const char *kem_kid = "test-kem-kid";
+    const char *suite = "ECMR+ML-KEM-768";
+
+    __attribute__((cleanup(str_cleanup))) char *good =
+        build_header_json(DIR_REQUEST, KEM_VERSION, suite, ecmr_kid,
+                          kem_kid);
+    ASSERT(good);
+    assert_header_accepted(good, tki, kem_kid, suite, ecmr_kid);
+
+    /* Duplicate msg_dir carrying the same valid value. */
+    {
+        size_t n = strlen(good);
+        char dup[n + strlen(DIR_REQUEST) + 32];
+        int w = snprintf(dup, sizeof(dup), "%.*s,\"msg_dir\":\"%s\"}",
+                         (int)(n - 1), good, DIR_REQUEST);
+        ASSERT(w > 0 && (size_t)w < sizeof(dup));
+        assert_header_rejected(dup, tki, kem_kid, suite);
+    }
+
+    /* Trailing NUL and garbage after an otherwise valid header. */
+    {
+        const char *trailing = "garbage";
+        size_t n = strlen(good);
+        char nul_buf[n + 1 + strlen(trailing)];
+        memcpy(nul_buf, good, n);
+        nul_buf[n] = '\0';
+        memcpy(nul_buf + n + 1, trailing, strlen(trailing));
+        json_auto_t *blob = blob_jwe_from_header_buf(nul_buf,
+                                                     sizeof(nul_buf));
+        ASSERT(blob);
+        char *ecmr_kid_out = NULL;
+        ASSERT(validate_request_protected(blob, tki, kem_kid, suite,
+                                          &ecmr_kid_out) == 0);
+        ASSERT(ecmr_kid_out == NULL);
+    }
+
+    remove_tempdir(tmpdir);
+}
+
 static void
 test_rec_kem_secure_bad_json(void)
 {
@@ -938,6 +1128,118 @@ test_rec_kem_secure_bad_json(void)
     ASSERT(rec_kem_secure(priv, tki, kem_kid, missing_field, &out)
            == HTTP_STATUS_BAD_REQUEST);
     ASSERT(out == NULL);
+
+    remove_tempdir(tmpdir);
+}
+
+/* A well-formed enriched header with a malformed transport
+ * ciphertext must be rejected by the decapsulation itself: the
+ * request passes protected-header validation, so the failure is
+ * attributable to the transport ct alone. */
+static void
+test_rec_kem_secure_malformed_transport_ct(void)
+{
+    json_auto_t *priv = NULL;
+
+    if (!jose_jwk_gen(NULL,
+            (priv = json_pack("{s:s}", "alg", "ML-KEM-768")))) {
+        fprintf(stderr,
+                "No ML-KEM support, skipping rec_kem_secure tests\n");
+        return;
+    }
+
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *tki = read_keys(tmpdir);
+    ASSERT(tki);
+    __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
+        find_key_thp_by_alg(tki, ECMR_ALG);
+    ASSERT(ecmr_kid);
+
+    __attribute__((cleanup(str_cleanup))) char *req =
+        build_rec_kem_request(priv, ecmr_kid, "test-kem-kid",
+                              "ML-KEM-768", "ML-KEM-768");
+    ASSERT(req);
+
+    json_auto_t *req_json = json_loads(req, 0, NULL);
+    ASSERT(req_json);
+    /* Corrupt only the transport ciphertext: valid base64, but not a
+     * ciphertext the KEM can decapsulate. */
+    ASSERT(json_object_set_new(req_json, "clevis_transport_ct",
+                               json_string("QUJDRA")) == 0);
+
+    char *out = NULL;
+    ASSERT(rec_kem_secure(priv, tki, "test-kem-kid", req_json, &out)
+           == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(out == NULL);
+
+    remove_tempdir(tmpdir);
+}
+
+/* A duplicate member inside the encrypted inner payload must be
+ * rejected: the duplicate ek_digest carries the same valid value, so
+ * without the duplicate rejection the recovery would succeed. */
+static void
+test_rec_kem_secure_duplicate_payload_member(void)
+{
+    json_auto_t *priv = NULL;
+
+    if (!jose_jwk_gen(NULL,
+            (priv = json_pack("{s:s}", "alg", "ML-KEM-768")))) {
+        fprintf(stderr,
+                "No ML-KEM support, skipping rec_kem_secure tests\n");
+        return;
+    }
+
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+    __attribute__((cleanup(cleanup_tang_keys_info)))
+        struct tang_keys_info *tki = read_keys(tmpdir);
+    ASSERT(tki);
+    __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
+        find_key_thp_by_alg(tki, ECMR_ALG);
+    ASSERT(ecmr_kid);
+
+    __attribute__((cleanup(str_cleanup))) char *req =
+        build_rec_kem_request_dup(priv, ecmr_kid, "test-kem-kid",
+                                  "ML-KEM-768", "ML-KEM-768",
+                                  "ek_digest");
+    ASSERT(req);
+
+    char *out = NULL;
+    json_auto_t *req_json = json_loads(req, 0, NULL);
+    ASSERT(req_json);
+    ASSERT(rec_kem_secure(priv, tki, "test-kem-kid", req_json, &out)
+           == HTTP_STATUS_BAD_REQUEST);
+    ASSERT(out == NULL);
+
+    remove_tempdir(tmpdir);
+}
+
+/* Duplicate members in the request body must be rejected by the body
+ * parse (RFC 8725 §3.12): both clevis_transport_ct values are
+ * identical, so without the duplicate rejection the request would
+ * parse and proceed to the thumbprint lookup (404), not fail with
+ * 400 at the parse. */
+static void
+test_rec_kem_duplicate_body_members(void)
+{
+    __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
+    ASSERT(tmpdir);
+
+    /* Path and matches shaped like the /rec-kem/<thp> route, with a
+     * thumbprint that is not in the store. */
+    const char *path = "/rec-kem/nonexistent-thp";
+    regmatch_t matches[2] = {};
+    matches[1].rm_so = strlen("/rec-kem/");
+    matches[1].rm_eo = strlen(path);
+
+    const char *body =
+        "{\"clevis_encrypted_blob\":\"a\",\"clevis_transport_ct\":\"b\","
+        "\"clevis_transport_ct\":\"b\"}";
+    ASSERT(rec_kem(HTTP_POST, path, body, matches, tmpdir)
+           == HTTP_STATUS_BAD_REQUEST);
 
     remove_tempdir(tmpdir);
 }
@@ -1557,17 +1859,22 @@ run_tests(void)
     test_find_jws_kem_by_thp_rejects_unsupported_alg();
 
     test_validate_request_protected();
+    test_validate_request_protected_ecmr_key_types();
+    test_validate_request_protected_duplicate_and_trailing_nul();
 
     test_rec_kem_secure_bad_json();
     test_rec_kem_secure_bad_transport_ct();
+    test_rec_kem_secure_malformed_transport_ct();
     test_rec_kem_secure_bad_blob();
     test_rec_kem_secure_bad_inner_payload();
+    test_rec_kem_secure_duplicate_payload_member();
     test_rec_kem_secure_wrong_digest();
     test_rec_kem_secure_suite_mismatch();
     test_rec_kem_secure_unknown_ecmr_kid();
     test_rec_kem_secure_clevis_alg_mismatch();
     test_rec_kem_secure_oversized_protected_header();
     test_rec_kem_secure_success();
+    test_rec_kem_duplicate_body_members();
 
     test_pqc_is_available();
 }

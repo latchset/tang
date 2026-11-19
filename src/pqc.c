@@ -464,7 +464,10 @@ rec_kem_secure(json_t *tang_kem_priv, struct tang_keys_info *tki,
     char *tang_encrypted_key = NULL;
     json_t *response = NULL;
 
-    if (!jose_jwk_thp_buf(NULL, enc_key, "S256", hash_buf, dlen)) {
+    /* jose_jwk_thp_buf returns the number of bytes written, or
+     * SIZE_MAX on failure: compare against the expected digest
+     * length, a bare boolean test can never catch the failure. */
+    if (jose_jwk_thp_buf(NULL, enc_key, "S256", hash_buf, dlen) != dlen) {
         status = HTTP_STATUS_INTERNAL_SERVER_ERROR;
         goto cleanup;
     }

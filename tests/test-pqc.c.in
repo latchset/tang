@@ -495,7 +495,7 @@ build_rec_kem_request(json_t *tang_priv, const char *ecmr_kid,
         return NULL;
     uint8_t hash_buf[dlen];
     char thp_buf[elen + 1];
-    if (!jose_jwk_thp_buf(NULL, enc_key, "S256", hash_buf, dlen))
+    if (jose_jwk_thp_buf(NULL, enc_key, "S256", hash_buf, dlen) != dlen)
         return NULL;
     if (jose_b64_enc_buf(hash_buf, dlen, thp_buf, elen) != elen)
         return NULL;
@@ -1384,7 +1384,7 @@ test_rec_kem_secure_success(void)
     ASSERT(elen != SIZE_MAX);
     uint8_t hash_buf[dlen];
     char thp_buf[elen + 1];
-    ASSERT(jose_jwk_thp_buf(NULL, enc_key, "S256", hash_buf, dlen));
+    ASSERT(jose_jwk_thp_buf(NULL, enc_key, "S256", hash_buf, dlen) == dlen);
     ASSERT(jose_b64_enc_buf(hash_buf, dlen, thp_buf, elen) == elen);
     thp_buf[elen] = '\0';
 

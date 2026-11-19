@@ -110,7 +110,10 @@ jwk_thumbprint(const json_t* jwk, const char* alg)
     uint8_t dec[dlen];
     char enc[elen];
 
-    if (!jose_jwk_thp_buf(NULL, jwk, alg, dec, sizeof(dec))) {
+    /* jose_jwk_thp_buf returns the number of bytes written, or
+     * SIZE_MAX on failure: compare against the expected digest
+     * length, a bare boolean test can never catch the failure. */
+    if (jose_jwk_thp_buf(NULL, jwk, alg, dec, dlen) != dlen) {
         fprintf(stderr, "Error making thumbprint\n");
         return NULL;
     }

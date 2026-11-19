@@ -241,15 +241,20 @@ validate_request_protected(const json_t *blob_jwe,
     if (dec_len > MAX_PROTECTED_HEADER_LEN)
         return 0;
 
-    uint8_t *dec_buf = malloc(dec_len + 1);
+    uint8_t *dec_buf = malloc(dec_len);
     if (!dec_buf)
         return 0;
 
     json_auto_t *header = NULL;
     if (jose_b64_dec_buf(protected_b64, strlen(protected_b64),
                          dec_buf, dec_len) == dec_len) {
-        dec_buf[dec_len] = '\0';
-        header = json_loads((char *)dec_buf, 0, NULL);
+        /* The protected header is base64-decoded plaintext, so feed
+         * json_loadb() the exact decoded length: json_loads() would
+         * stop at the first embedded NUL and silently accept trailing
+         * garbage. Reject duplicate members as required by
+         * RFC 8725 §3.12. */
+        header = json_loadb((const char *)dec_buf, dec_len,
+                            JSON_REJECT_DUPLICATES, NULL);
     }
     free(dec_buf);
 
@@ -362,7 +367,8 @@ rec_kem_secure(json_t *tang_kem_priv, struct tang_keys_info *tki,
     if (!plaintext)
         return HTTP_STATUS_BAD_REQUEST;
 
-    json_auto_t *payload = json_loadb(plaintext, plaintext_len, 0, NULL);
+    json_auto_t *payload = json_loadb(plaintext, plaintext_len,
+                                      JSON_REJECT_DUPLICATES, NULL);
     /* jose_jwe_dec() returns a libc-allocated buffer: cleanse it and
      * release it with free(), never with OPENSSL_clear_free(), whose
      * OPENSSL_free() is only valid on OPENSSL_malloc() memory. */
@@ -755,7 +761,8 @@ rec_kem(http_method_t method, const char *path, const char *body,
     const char *kty = NULL;
     int status;
 
-    req = json_loads(body, 0, NULL);
+    /* Reject duplicate members (RFC 8725 §3.12) in the request body. */
+    req = json_loadb(body, strlen(body), JSON_REJECT_DUPLICATES, NULL);
     if (!req)
         return http_reply(HTTP_STATUS_BAD_REQUEST, NULL);
 

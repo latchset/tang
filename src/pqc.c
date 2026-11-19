@@ -363,7 +363,11 @@ rec_kem_secure(json_t *tang_kem_priv, struct tang_keys_info *tki,
         return HTTP_STATUS_BAD_REQUEST;
 
     json_auto_t *payload = json_loadb(plaintext, plaintext_len, 0, NULL);
-    OPENSSL_clear_free(plaintext, plaintext_len);
+    /* jose_jwe_dec() returns a libc-allocated buffer: cleanse it and
+     * release it with free(), never with OPENSSL_clear_free(), whose
+     * OPENSSL_free() is only valid on OPENSSL_malloc() memory. */
+    OPENSSL_cleanse(plaintext, plaintext_len);
+    free(plaintext);
     if (!payload)
         return HTTP_STATUS_BAD_REQUEST;
 
@@ -510,8 +514,12 @@ cleanup:
     if (tang_transport_key)
         wipe_jwk_secret(tang_transport_key);
     wipe_and_release(&enc_key);
-    if (enc_key_json)
-        OPENSSL_clear_free(enc_key_json, strlen(enc_key_json) + 1);
+    if (enc_key_json) {
+        /* json_dumps() uses Jansson's allocator: cleanse and free(),
+         * not OPENSSL_clear_free(). */
+        OPENSSL_cleanse(enc_key_json, strlen(enc_key_json) + 1);
+        free(enc_key_json);
+    }
     free(tang_encrypted_key);
     json_decref(ret_encap);
     json_decref(resp_jwe);

@@ -1456,7 +1456,10 @@ test_rec_kem_secure_success(void)
     ASSERT(pt);
 
     json_auto_t *recovered = json_loadb(pt, ptl, 0, NULL);
-    OPENSSL_clear_free(pt, ptl);
+    /* jose_jwe_dec() returns a libc-allocated buffer: cleanse it and
+     * release it with free(), never with OPENSSL_clear_free(). */
+    OPENSSL_cleanse(pt, ptl);
+    free(pt);
     ASSERT(recovered);
 
     const char *orig_k = json_string_value(

@@ -352,10 +352,17 @@ struct key_spec {
     int optional;
 };
 
+/* Number of elements in a fixed-size array. */
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
+
 static int
 create_new_keys(const char* jwkdir)
 {
-    struct key_spec specs[6];
+    /* Capacity is derived from kem_algorithms so adding a variant
+     * there cannot overflow this stack array. ARRAY_SIZE counts the
+     * NULL terminator of kem_algorithms, which doubles as the
+     * terminator slot here. */
+    struct key_spec specs[2 + ARRAY_SIZE(kem_algorithms)];
     int n = 0;
     specs[n++] = (struct key_spec){"ES512", 0};
     specs[n++] = (struct key_spec){"ECMR",  0};

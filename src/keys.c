@@ -22,6 +22,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #include <jose/b64.h>
 #include <jose/jwk.h>
@@ -391,6 +392,14 @@ create_new_keys(const char* jwkdir)
     specs[n] = (struct key_spec){NULL, 0};
     char path[PATH_MAX];
 
+    /* Keys written so far, removed again when a later key fails: a
+     * partial auto-generated key set must not be left behind, or the
+     * non-empty keydir would never trigger a regeneration and the
+     * server would stay wedged until the partial keys are removed by
+     * hand. */
+    char written[ARRAY_SIZE(specs)][PATH_MAX];
+    size_t nwritten = 0;
+
     int result = 1;
     mode_t old_umask = umask(0337);
     for (int i = 0; specs[i].alg != NULL; i++) {
@@ -429,6 +438,13 @@ create_new_keys(const char* jwkdir)
             fprintf(stderr, "Unable to set permissions for JWK file (%s)\n", path);
             result = 0;
             break;
+        }
+        snprintf(written[nwritten], PATH_MAX, "%s", path);
+        nwritten++;
+    }
+    if (result == 0) {
+        for (size_t i = 0; i < nwritten; i++) {
+            unlink(written[i]);
         }
     }
     umask(old_umask);
@@ -496,6 +512,30 @@ load_keys(const char* jwkdir)
     return tki;
 }
 
+/* True when the key store holds no deriving key at all, active or
+ * rotated: a store left partially populated (e.g. by an interrupted
+ * auto-generation) can hold signing keys but no deriving key, so the
+ * advertisement it produces looks healthy while no client could ever
+ * recover with it. */
+static int
+store_lacks_deriving_keys(const struct tang_keys_info* tki)
+{
+    size_t idx;
+    json_t* jwk;
+
+    json_array_foreach(tki->m_keys, idx, jwk) {
+        if (jwk_valid_for_deriving_keys(jwk)) {
+            return 0;
+        }
+    }
+    json_array_foreach(tki->m_rotated_keys, idx, jwk) {
+        if (jwk_valid_for_deriving_keys(jwk)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 struct tang_keys_info*
 read_keys(const char* jwkdir)
 {
@@ -504,7 +544,7 @@ read_keys(const char* jwkdir)
         return NULL;
     }
 
-    if (tki->m_keys_count == 0) {
+    if (tki->m_keys_count == 0 || store_lacks_deriving_keys(tki)) {
         /* Let's attempt to create a new pair of keys. */
         free_tang_keys_info(tki);
         if (!create_new_keys(jwkdir)) {

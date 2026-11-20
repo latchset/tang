@@ -614,6 +614,57 @@ test_jwk_thumbprint_missing_members(void)
     umask(old_umask);
 }
 
+/* A partially-populated store -- what an interrupted auto-generation
+ * leaves behind -- must not wedge the server: with signing keys but
+ * no deriving key, the advertisement looks healthy yet no client
+ * could ever recover. read_keys treats it like an empty store and
+ * regenerates; a second run against the healed store must be stable,
+ * with no further regeneration. */
+static void
+test_read_keys_partial_store_regenerates(void)
+{
+    mode_t old_umask = umask(0022);
+    __attribute__((cleanup(cleanup_str))) char* newdir = create_tempdir();
+    ASSERT(newdir);
+
+    json_auto_t* sig = jwk_generate("ES512");
+    ASSERT(sig);
+    char sig_path[PATH_MAX];
+    snprintf(sig_path, PATH_MAX, "%s/sig.jwk", newdir);
+    ASSERT(json_dump_file(sig, sig_path, 0) == 0);
+
+    /* First run: the missing deriving key triggers a regeneration. */
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki =
+        read_keys(newdir);
+    ASSERT(tki);
+    ASSERT_WITH_MSG(tki->m_keys_count >= 2,
+                    "the deriving key must be regenerated, got %zu keys",
+                    tki->m_keys_count);
+
+    size_t idx;
+    json_t* jwk;
+    int has_deriving = 0;
+    json_array_foreach(tki->m_payload, idx, jwk) {
+        if (jwk_valid_for_deriving_keys(jwk)) {
+            has_deriving = 1;
+            break;
+        }
+    }
+    ASSERT_WITH_MSG(has_deriving,
+                    "no deriving key in the regenerated payload");
+
+    /* Second run: stable, no further regeneration. */
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki2 =
+        read_keys(newdir);
+    ASSERT(tki2);
+    ASSERT_WITH_MSG(tki2->m_keys_count == tki->m_keys_count,
+                    "second read_keys regenerated again: %zu vs %zu",
+                    tki2->m_keys_count, tki->m_keys_count);
+
+    remove_tempdir(newdir);
+    umask(old_umask);
+}
+
 static void
 test_prepare_payload_and_sign_null(void)
 {
@@ -879,6 +930,7 @@ run_tests(void)
     test_read_keys_with_rogue_akp();
     test_read_keys_with_advertised_akp();
     test_read_keys_with_public_only_akp();
+    test_read_keys_partial_store_regenerates();
     test_read_keys_no_signing_keys();
     test_is_valid_kem_alg();
     test_create_new_keys_save_failure();

@@ -25,8 +25,6 @@ TMP=$(mktemp -d)
 export TMP
 mkdir -p "${TMP}/db"
 
-KEM_ALGS="ML-KEM-512 ML-KEM-768 ML-KEM-1024"
-
 alg_keys () {
     # Whitespace-insensitive: the JWK may be pretty-printed.
     for _f in "${1}"/*.jwk; do
@@ -71,6 +69,22 @@ tmp=$(jose fmt -j "${TMP}/db/exc.jwk" -Od x -d y -d d -o-)
 jose jwk gen -i "$tmp" -o "${TMP}/exc.jwk"
 jose jwk pub -i "${TMP}/exc.jwk" -o "${TMP}/exc.pub.jwk"
 
+# The set of advertised ML-KEM variants, as the server reports it: the
+# rotation must reproduce it exactly, since a variant missing from the
+# rotation's list would be hidden by the generic hide loop and never
+# recreated -- the silent drop that is fatal for known variants.
+advertised_kem_algs () {
+    _out=""
+    for _alg in ${KEM_ALGS}; do
+        jose_supports_alg "${_alg}" || continue
+        if build_has_pqc && curl -sf -o /dev/null \
+                "http://127.0.0.1:${PORT}/adv-kem?alg=${_alg}"; then
+            _out="${_out} ${_alg}"
+        fi
+    done
+    printf '%s\n' "${_out}"
+}
+
 PORT=$(random_port)
 export PORT
 start_standalone_server "${PORT}"
@@ -85,6 +99,7 @@ if build_has_pqc; then
         fetch "/adv-kem?alg=${alg}" | ver "${TMP}/db/sig.jwk"
     done
 fi
+algs_before="$(advertised_kem_algs)"
 
 # Rotate the keys.
 tangd-rotate-keys -d "${TMP}/db" -v
@@ -132,6 +147,11 @@ if build_has_pqc; then
     done
 fi
 
+# No advertised variant may be silently dropped by the rotation.
+algs_after="$(advertised_kem_algs)"
+[ "${algs_after}" = "${algs_before}" ] \
+    || die "rotation changed the advertised ML-KEM set: '${algs_before}' -> '${algs_after}'"
+
 # Backward compatibility: a classical-only client bound to the old keys is
 # still served during the transition. The old (hidden) signing key still
 # signs the advertisement requested by its thumbprint ...
@@ -171,6 +191,11 @@ for f in "${TMP}/db"/*.jwk "${TMP}/db"/.*.jwk; do
     valid_key_perm "${f}"
 done
 fetch /adv | ver "$(alg_keys "${TMP}/db" ES512)"
+
+# The second rotation must reproduce the advertised set as well.
+algs_after="$(advertised_kem_algs)"
+[ "${algs_after}" = "${algs_before}" ] \
+    || die "second rotation changed the advertised ML-KEM set: '${algs_before}' -> '${algs_after}'"
 
 # No staging directories are left behind after a successful rotation.
 [ -z "$(find "${TMP}/db" -maxdepth 1 -name '.tang-rotate.*')" ]

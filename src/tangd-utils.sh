@@ -29,6 +29,14 @@ alg_supported() {
     printf '%s\n' "${SUPPORTED_ALGS}" | grep -Fqx -- "${1}"
 }
 
+# ML-KEM variants supported by the installed jose, derived from the
+# algorithm listing instead of a literal list: tang bootstraps and
+# advertises every variant jose can generate, so a variant missing
+# from a literal here would be bootstrapped and advertised, then
+# hidden by the first rotation and never recreated -- the silent drop
+# the rotation treats as fatal for known variants.
+KEM_ALGS="$(printf '%s\n' "${SUPPORTED_ALGS}" | grep '^ML-KEM-' || true)"
+
 # True when the given JWK file declares the given "alg" member. JWKs on
 # disk may be pretty-printed ("alg": "ES512"), so parse the JSON instead
 # of matching the compact serialization with grep.

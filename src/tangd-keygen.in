@@ -57,7 +57,7 @@ jwe=$(jose jwk gen -i '{"alg":"ECMR"}')
 echo "$jwe" > "$1/$exc.jwk"
 set_perms "$1/$exc.jwk"
 
-for alg in ML-KEM-512 ML-KEM-768 ML-KEM-1024; do
+for alg in ${KEM_ALGS}; do
     existing=""
     for f in "$1"/*.jwk; do
         [ -f "$f" ] || continue

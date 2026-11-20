@@ -26,9 +26,8 @@ export TMP
 mkdir -p "${TMP}/db"
 
 # Hybrid exchange keys handled by tangd-keygen. They pair with the
-# classical ECMR key to form the hybrid key set.
-KEM_ALGS="ML-KEM-512 ML-KEM-768 ML-KEM-1024"
-
+# classical ECMR key to form the hybrid key set. The variant list is
+# single-sourced from src/kem_alg.h (see tests/helpers).
 count_alg_keys () {
     _n=0
     for _f in "${1}"/*.jwk; do

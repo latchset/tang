@@ -144,8 +144,15 @@ expected_fail () {
 # variant once when this file is sourced and cache the runtime-usable
 # list so jose_supports_alg reflects runtime policy without repeated key
 # generation.
+#
+# The variant list is single-sourced from src/kem_alg.h -- the same
+# defines the C side and the build-configured scripts follow -- so a
+# variant added there is picked up here without updating a literal.
+KEM_H="$(dirname -- "$0")/../src/kem_alg.h"
+KEM_ALGS="$(sed -n 's/^#define[[:space:]]*KEM_ALG_[0-9]*[[:space:]]*"\([^"]*\)".*/\1/p' "${KEM_H}" | tr '\n' ' ')"
+
 JOSE_RUNTIME_KEM_ALGS=""
-for _alg in ML-KEM-512 ML-KEM-768 ML-KEM-1024; do
+for _alg in ${KEM_ALGS}; do
     jose alg 2>/dev/null | grep -Fqx -- "${_alg}" || continue
     if jose jwk gen -i "{\"alg\":\"${_alg}\"}" -o /dev/null >/dev/null 2>&1; then
         JOSE_RUNTIME_KEM_ALGS="${JOSE_RUNTIME_KEM_ALGS} ${_alg}"
@@ -166,6 +173,14 @@ jose_supports_alg () {
     jose alg 2>/dev/null | grep -Fqx -- "${1}"
 }
 
+# True when jose supports any ML-KEM variant at runtime.
+any_jose_kem_alg () {
+    for _alg in ${KEM_ALGS}; do
+        jose_supports_alg "${_alg}" && return 0
+    done
+    return 1
+}
+
 # True when the tangd build under test has PQC support. meson exports
 # TANG_HAS_PQC from the configure-time probe (see tests/meson.build);
 # without it (e.g. a manual run), fall back to the jose runtime probe,
@@ -175,8 +190,7 @@ build_has_pqc () {
         [ "${TANG_HAS_PQC}" = "1" ]
         return
     fi
-    jose_supports_alg ML-KEM-512 || jose_supports_alg ML-KEM-768 \
-        || jose_supports_alg ML-KEM-1024
+    any_jose_kem_alg
 }
 
 # Hybrid KEM protocol constants, single-sourced from src/pqc.h so the

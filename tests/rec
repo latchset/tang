@@ -147,9 +147,7 @@ rec_kem_test () {
         return 0
     fi
 
-    if ! jose_supports_alg ML-KEM-512 \
-        && ! jose_supports_alg ML-KEM-768 \
-        && ! jose_supports_alg ML-KEM-1024; then
+    if ! any_jose_kem_alg; then
         echo "jose does not support ML-KEM, skipping /rec-kem tests" >&2
         return 0
     fi

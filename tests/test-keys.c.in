@@ -563,6 +563,57 @@ test_jwk_thumbprint_edge_cases(void)
     }
 }
 
+/* A JWK missing its thumbprint members (here an EC key without x/y)
+ * parses fine, so load_keys accepts it and it reaches find_by_thp in
+ * production. jose_jwk_thp_buf signals failure with SIZE_MAX, which
+ * is truthy: the != dlen comparison is what catches it, and without
+ * it the uninitialized digest buffer would be base64-encoded into a
+ * garbage thumbprint. */
+static void
+test_jwk_thumbprint_missing_members(void)
+{
+    json_auto_t* ec = json_pack("{s:s, s:s}", "kty", "EC", "crv", "P-521");
+    ASSERT(ec);
+    ASSERT_WITH_MSG(jwk_thumbprint(ec, "S256") == NULL,
+                    "an EC key without x/y has no thumbprint");
+
+    /* The same JWK in the store must not break key lookups: the
+     * failing thumbprint is skipped and good keys are still found. */
+    mode_t old_umask = umask(0022);
+    __attribute__((cleanup(cleanup_str))) char* newdir = create_tempdir();
+    ASSERT(newdir);
+
+    json_auto_t* sig = jwk_generate("ES512");
+    ASSERT(sig);
+    char sig_path[PATH_MAX];
+    snprintf(sig_path, PATH_MAX, "%s/sig.jwk", newdir);
+    ASSERT(json_dump_file(sig, sig_path, 0) == 0);
+
+    json_auto_t* broken = json_pack("{s:s, s:s, s:[s]}",
+                                    "kty", "EC", "crv", "P-521",
+                                    "key_ops", "deriveKey");
+    ASSERT(broken);
+    char broken_path[PATH_MAX];
+    snprintf(broken_path, PATH_MAX, "%s/broken.jwk", newdir);
+    ASSERT(json_dump_file(broken, broken_path, 0) == 0);
+
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki =
+        read_keys(newdir);
+    ASSERT(tki);
+    ASSERT(tki->m_keys_count == 2);
+    ASSERT(find_jwk(tki, "nonexistent-thumbprint") == NULL);
+
+    __attribute__((cleanup(cleanup_str))) char* sig_thp =
+        jwk_thumbprint(sig, "S256");
+    ASSERT(sig_thp);
+    json_auto_t* found = find_jwk(tki, sig_thp);
+    ASSERT_WITH_MSG(found && json_equal(found, sig),
+                    "the good key must still be found");
+
+    remove_tempdir(newdir);
+    umask(old_umask);
+}
+
 static void
 test_prepare_payload_and_sign_null(void)
 {
@@ -822,6 +873,7 @@ run_tests(void)
     test_read_keys_with_kem();
     test_create_new_keys_kem_variants();
     test_jwk_thumbprint_edge_cases();
+    test_jwk_thumbprint_missing_members();
     test_prepare_payload_and_sign_null();
     test_find_by_thp_null();
     test_read_keys_with_rogue_akp();

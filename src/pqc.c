@@ -26,34 +26,69 @@
 
 #include "pqc.h"
 
-int
-pqc_is_available(void)
+/* Runtime ML-KEM availability: -1 = not probed yet, 0 = unavailable,
+ * 1 = available. Kept at file scope so the unit tests (which include
+ * this file) can reset the cache between injected probe results. */
+static int pqc_runtime_available = -1;
+
+/* The real runtime probe. Returns 1 when an ML-KEM key can actually be
+ * generated, 0 when ML-KEM is definitively unavailable, and -1 on a
+ * transient failure that must not be cached. */
+static int
+pqc_probe_ml_kem(void)
 {
     /* The build-time probe runs (or at least links) this same check,
      * but jose may export the KEM API unconditionally and register no
      * ML-KEM hook (e.g. built with -Dmlkem=disabled), and the runtime
      * crypto policy can change after the build. Verify once, at
      * runtime, that an ML-KEM key can actually be generated. */
-    static int available = -1;
-
-    if (available != -1)
-        return available;
-
     json_auto_t *jwk = json_pack("{s:s}", "alg", "ML-KEM-768");
-    if (jwk && jose_jwk_gen(NULL, jwk)) {
-        /* The generated key holds private material: wipe it before
-         * the JWK is released. */
-        json_t *priv = json_object_get(jwk, "priv");
-        if (priv) {
-            const char *str = json_string_value(priv);
-            if (str)
-                OPENSSL_cleanse((void *)str, json_string_length(priv) + 1);
-        }
-        available = 1;
-    } else {
-        available = 0;
+    if (!jwk)
+        return -1;
+
+    if (!jose_jwk_gen(NULL, jwk))
+        return 0;
+
+    /* The generated key holds private material: wipe it before
+     * the JWK is released. */
+    json_t *priv = json_object_get(jwk, "priv");
+    if (priv) {
+        const char *str = json_string_value(priv);
+        if (str)
+            OPENSSL_cleanse((void *)str, json_string_length(priv) + 1);
     }
-    return available;
+    return 1;
+}
+
+/* Injectable probe, so the unit tests can exercise the
+ * runtime-unavailable paths of a PQC build even on machines whose
+ * jose fully supports ML-KEM. */
+static int (*pqc_probe)(void) = pqc_probe_ml_kem;
+
+int
+pqc_is_available(void)
+{
+    if (pqc_runtime_available != -1)
+        return pqc_runtime_available;
+
+    int probed = pqc_probe();
+
+    /* A transient failure (e.g. an allocation error) must not disable
+     * the KEM endpoints for the whole process lifetime: report
+     * unavailable but keep the result uncached, so the next request
+     * probes again. */
+    if (probed < 0)
+        return 0;
+
+    pqc_runtime_available = probed;
+    if (pqc_runtime_available == 0)
+        /* tangd calls the probe once at startup, so a PQC build whose
+         * runtime is missing ML-KEM is distinguishable from a
+         * legitimate no-PQC build in the logs. */
+        fprintf(stderr, "PQC support was selected at build time, but "
+                "ML-KEM is unavailable at runtime (inert jose hooks or "
+                "crypto policy); KEM endpoints are hidden with 404\n");
+    return pqc_runtime_available;
 }
 
 static void

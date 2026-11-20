@@ -29,12 +29,21 @@ if has_pqc
   # A tangd built with the noop PQC handlers, so the hidden-endpoint
   # behavior can be exercised even when jose supports ML-KEM.
   tangd_noop = executable('tangd-noop',
-    '../src/http.c',
-    '../src/keys.c',
-    '../src/tangd.c',
-    '../src/socket.c',
-    '../src/pqc_noop.c',
+    tangd_core_sources,
+    pqc_noop_sources,
     dependencies: [jose, http_parser]
+  )
+
+  # A tangd whose runtime ML-KEM probe always fails (jose_jwk_gen is
+  # wrapped to fail), so the runtime-unavailable paths of a PQC build
+  # (uniform 404s, hybrid_recovery:false, the one-time startup log)
+  # are exercised even on machines whose jose fully supports ML-KEM.
+  tangd_unavailable = executable('tangd-unavailable',
+    tangd_core_sources,
+    pqc_sources,
+    'wrap-jose-jwk-gen.c',
+    dependencies: [jose, http_parser, libcrypto],
+    link_args: ['-Wl,--wrap=jose_jwk_gen']
   )
 endif
 
@@ -92,6 +101,7 @@ test('errors', find_program('errors'), env: env, timeout: 360)
 
 if has_pqc
   test('test-pqc', test_pqc, env: env, timeout: 360)
+  test('unavailable', find_program('unavailable'), env: env, timeout: 360)
 endif
 
 # vim:set ts=2 sw=2 et:

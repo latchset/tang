@@ -2076,6 +2076,104 @@ test_pqc_is_available(void)
     ASSERT(pqc_is_available() == 1);
 }
 
+/* Injectable probe result: 1, 0 (definitively unavailable) or -1
+ * (transient failure). */
+static int fake_probe_result = 1;
+
+static int
+fake_probe(void)
+{
+    return fake_probe_result;
+}
+
+/* Saves the real probe, installs the fake one and resets the cache,
+ * so the injected result takes effect on the next call. */
+static int (*real_probe_save)(void);
+
+static void
+inject_fake_probe(void)
+{
+    real_probe_save = pqc_probe;
+    pqc_probe = fake_probe;
+    pqc_runtime_available = -1;
+}
+
+static void
+restore_real_probe(void)
+{
+    pqc_probe = real_probe_save;
+    pqc_runtime_available = -1;
+    /* Leave the cache in the state the other tests expect. */
+    ASSERT(pqc_is_available() == 1);
+}
+
+/* Caching semantics of the runtime probe: definitive results are
+ * cached (and reported once), transient failures are not. */
+static void
+test_pqc_is_available_injection(void)
+{
+    inject_fake_probe();
+
+    /* A transient failure reports unavailable without caching, so a
+     * startup hiccup cannot disable the KEM endpoints for the whole
+     * process lifetime. */
+    fake_probe_result = -1;
+    ASSERT(pqc_is_available() == 0);
+    ASSERT(pqc_runtime_available == -1);
+
+    /* Definitive unavailability is cached: later probes do not run. */
+    fake_probe_result = 0;
+    ASSERT(pqc_is_available() == 0);
+    ASSERT(pqc_runtime_available == 0);
+    fake_probe_result = 1;
+    ASSERT(pqc_is_available() == 0);
+
+    /* Availability is cached as well. */
+    fake_probe_result = 1;
+    pqc_runtime_available = -1;
+    ASSERT(pqc_is_available() == 1);
+    ASSERT(pqc_runtime_available == 1);
+
+    restore_real_probe();
+}
+
+/* The runtime-unavailable gates: when the probe fails at runtime, the
+ * KEM endpoints must be hidden with a uniform 404 before the key
+ * store is touched. misc points at a nonexistent directory, so a
+ * deleted gate is observable: it would fail with 500 (adv_kem,
+ * adv_kem_thp) or parse the body first (rec_kem) instead of
+ * answering 404. */
+static void
+test_kem_handlers_runtime_unavailable(void)
+{
+    inject_fake_probe();
+    fake_probe_result = 0;
+
+    regmatch_t qm[2] = {};
+    const char *qpath = "/adv-kem?alg=ML-KEM-768";
+    qm[1].rm_so = strlen("/adv-kem");
+    qm[1].rm_eo = strlen(qpath);
+
+    regmatch_t tm[2] = {};
+    const char *tpath = "/adv-kem/some-thumbprint";
+    tm[1].rm_so = strlen("/adv-kem/");
+    tm[1].rm_eo = strlen(tpath);
+
+    const char *rpath = "/rec-kem/some-thumbprint";
+    regmatch_t rm[2] = {};
+    rm[1].rm_so = strlen("/rec-kem/");
+    rm[1].rm_eo = strlen(rpath);
+
+    ASSERT(adv_kem(HTTP_GET, qpath, NULL, qm, "no-such-jwkdir")
+           == HTTP_STATUS_NOT_FOUND);
+    ASSERT(adv_kem_thp(HTTP_GET, tpath, NULL, tm, "no-such-jwkdir")
+           == HTTP_STATUS_NOT_FOUND);
+    ASSERT(rec_kem(HTTP_POST, rpath, "not-json", rm, "no-such-jwkdir")
+           == HTTP_STATUS_NOT_FOUND);
+
+    restore_real_probe();
+}
+
 static void
 run_tests(void)
 {
@@ -2124,6 +2222,8 @@ run_tests(void)
     test_kem_handler_statuses();
 
     test_pqc_is_available();
+    test_pqc_is_available_injection();
+    test_kem_handlers_runtime_unavailable();
 }
 
 int main(int argc, char** argv)

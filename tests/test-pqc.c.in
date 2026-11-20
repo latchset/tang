@@ -21,6 +21,7 @@
 #undef http_reply
 
 #include <stdarg.h>
+#include <unistd.h>
 
 /* Stub http_reply: returns the status code without writing to stdout. */
 int
@@ -56,7 +57,13 @@ copy_fixture(void)
 }
 
 /* Writes @jwk into @dir as "<thumbprint>.jwk", mirroring the key
- * store layout. Returns the thumbprint, owned by the caller. */
+ * store layout. Returns the thumbprint, owned by the caller.
+ *
+ * Fails loudly on a thumbprint collision: JWK thumbprints hash only
+ * the public members ({alg, kty, pub} for AKP, {crv, kty, x, y} for
+ * EC), so JWKs differing only in key_ops or in private material
+ * share a filename, and a silent overwrite would quietly remove the
+ * earlier fixture from the store. */
 static char *
 dump_jwk_to_dir(json_t *jwk, const char *dir)
 {
@@ -67,6 +74,10 @@ dump_jwk_to_dir(json_t *jwk, const char *dir)
     char path[PATH_MAX];
     if (snprintf(path, PATH_MAX, "%s/%s.jwk", dir, thp) >= PATH_MAX)
         return NULL;
+    ASSERT_WITH_MSG(access(path, F_OK) != 0,
+                    "thumbprint collision: %s already exists; fixtures "
+                    "differing only in key_ops or private material "
+                    "share a thumbprint", path);
     if (json_dump_file(jwk, path, JSON_COMPACT) != 0)
         return NULL;
     return strdup(thp);
@@ -994,20 +1005,22 @@ test_validate_request_protected_ecmr_key_types(void)
     __attribute__((cleanup(cleanup_str))) char *tmpdir = copy_fixture();
     ASSERT(tmpdir);
 
-    json_auto_t *ecmr = json_pack("{s:s}", "alg", "ECMR");
-    ASSERT(ecmr && jose_jwk_gen(NULL, ecmr));
+    /* The three variants below are generated as independent keys: the
+     * EC thumbprint hashes {crv, kty, x, y}, so copies of one key
+     * differing only in d or key_ops share a filename and would
+     * overwrite each other in the store. */
 
     /* Public-only: no private key material. */
-    json_auto_t *pub_only = json_deep_copy(ecmr);
-    ASSERT(pub_only);
+    json_auto_t *pub_only = json_pack("{s:s}", "alg", "ECMR");
+    ASSERT(pub_only && jose_jwk_gen(NULL, pub_only));
     json_object_del(pub_only, "d");
     __attribute__((cleanup(str_cleanup))) char *pub_thp =
         dump_jwk_to_dir(pub_only, tmpdir);
     ASSERT(pub_thp);
 
     /* key_ops without deriveKey. */
-    json_auto_t *no_derive = json_deep_copy(ecmr);
-    ASSERT(no_derive);
+    json_auto_t *no_derive = json_pack("{s:s}", "alg", "ECMR");
+    ASSERT(no_derive && jose_jwk_gen(NULL, no_derive));
     ASSERT(json_object_set_new(no_derive, "key_ops",
                                json_pack("[s]", "sign")) == 0);
     __attribute__((cleanup(str_cleanup))) char *no_derive_thp =
@@ -1015,8 +1028,8 @@ test_validate_request_protected_ecmr_key_types(void)
     ASSERT(no_derive_thp);
 
     /* Unrestricted: no use and no key_ops at all. */
-    json_auto_t *unrestricted = json_deep_copy(ecmr);
-    ASSERT(unrestricted);
+    json_auto_t *unrestricted = json_pack("{s:s}", "alg", "ECMR");
+    ASSERT(unrestricted && jose_jwk_gen(NULL, unrestricted));
     json_object_del(unrestricted, "key_ops");
     __attribute__((cleanup(str_cleanup))) char *unrestricted_thp =
         dump_jwk_to_dir(unrestricted, tmpdir);
@@ -1398,9 +1411,12 @@ test_kem_handler_statuses(void)
     ASSERT(kem_thp);
 
     /* An unrestricted AKP key (no use/key_ops): stored, but not
-     * advertised and not usable for recovery. */
-    json_auto_t *unrestricted = json_deep_copy(kem);
-    ASSERT(unrestricted);
+     * advertised and not usable for recovery. Generated as an
+     * independent key: the AKP thumbprint hashes {alg, kty, pub}, so
+     * a copy of the advertised key differing only in key_ops would
+     * collide with it and overwrite it in the store. */
+    json_auto_t *unrestricted = json_pack("{s:s}", "alg", "ML-KEM-768");
+    ASSERT(unrestricted && jose_jwk_gen(NULL, unrestricted));
     json_object_del(unrestricted, "key_ops");
     __attribute__((cleanup(str_cleanup))) char *unrestricted_thp =
         dump_jwk_to_dir(unrestricted, tmpdir);
@@ -1421,6 +1437,23 @@ test_kem_handler_statuses(void)
     __attribute__((cleanup(cleanup_str))) char *ecmr_kid =
         find_key_thp_by_alg(tki, ECMR_ALG);
     ASSERT(ecmr_kid);
+
+    /* Positive controls: the advertised KEM key is served, both
+     * filtered by algorithm and looked up by thumbprint. */
+    regmatch_t qm768[2] = {};
+    const char *q768 = "/adv-kem?alg=ML-KEM-768";
+    qm768[1].rm_so = strlen("/adv-kem");
+    qm768[1].rm_eo = strlen(q768);
+    ASSERT(adv_kem(HTTP_GET, q768, NULL, qm768, tmpdir)
+           == HTTP_STATUS_OK);
+
+    char kpath[PATH_MAX];
+    snprintf(kpath, sizeof(kpath), "/adv-kem/%s", kem_thp);
+    regmatch_t km[2] = {};
+    km[1].rm_so = strlen("/adv-kem/");
+    km[1].rm_eo = strlen(kpath);
+    ASSERT(adv_kem_thp(HTTP_GET, kpath, NULL, km, tmpdir)
+           == HTTP_STATUS_OK);
 
     /* adv_kem: an algorithm that is not a supported ML-KEM variant is
      * rejected before the key store is touched. */

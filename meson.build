@@ -76,12 +76,35 @@ int main(void) {
     return enc ? 0 : 1;
 }
 '''
-if meson.can_run_host_binaries()
-    has_pqc = compiler.run(pqc_probe, dependencies: jose,
-                           name: 'ML-KEM KEM API support in jose').returncode() == 0
-else
-    has_pqc = compiler.links(pqc_probe, dependencies: jose,
-                             name: 'ML-KEM KEM API support in jose (link-only)')
+
+pqc_feature = get_option('pqc')
+has_pqc = false
+
+if not pqc_feature.disabled()
+    # The probe must run against the jose it was configured with: a
+    # prefix jose found through PKG_CONFIG_PATH only adds -L at link
+    # time, so without an rpath the probe binary would load the system
+    # libjose at run time and test the wrong library.
+    probe_args = []
+    jose_libdir = jose.get_variable(pkgconfig: 'libdir', default_value: '')
+    if jose_libdir != ''
+        probe_args += ['-Wl,-rpath,' + jose_libdir]
+    endif
+
+    if meson.can_run_host_binaries()
+        has_pqc = compiler.run(pqc_probe, args: probe_args,
+                               dependencies: jose,
+                               name: 'ML-KEM KEM API support in jose').returncode() == 0
+    else
+        has_pqc = compiler.links(pqc_probe, dependencies: jose,
+                                 name: 'ML-KEM KEM API support in jose (link-only)')
+    endif
+
+    # A quiet fallback to the noop build is only acceptable when PQC
+    # support was not explicitly requested.
+    if pqc_feature.enabled() and not has_pqc
+        error('PQC support was requested (pqc=enabled), but jose does not provide usable ML-KEM support: the configure-time probe failed. See the meson log for details.')
+    endif
 endif
 
 # libcrypto is only needed by the PQC (hybrid ML-KEM) code path: the

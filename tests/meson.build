@@ -84,6 +84,12 @@ if socat.found()
   env.set('SOCAT', socat.path())
 endif
 
+# Tell the e2e tests whether the tangd build has PQC support, so their
+# KEM sections follow the build instead of the jose CLI: the two
+# disagree when PQC is explicitly disabled (-Dpqc=disabled) on a
+# machine whose jose still supports ML-KEM.
+env.set('TANG_HAS_PQC', has_pqc ? '1' : '0')
+
 test('adv-standalone', find_program('adv-standalone'), env: env, timeout: 360)
 test('adv-standalone-endpoint', find_program('adv-standalone-endpoint'), env: env, timeout: 360)
 test('adv-socat', find_program('adv-socat'), env: env, timeout: 360)

@@ -142,6 +142,11 @@ rec_error_cases () {
 rec_kem_test () {
     prefix="${1}"
 
+    if ! build_has_pqc; then
+        echo "tangd was built without PQC support, skipping /rec-kem tests" >&2
+        return 0
+    fi
+
     if ! jose_supports_alg ML-KEM-512 \
         && ! jose_supports_alg ML-KEM-768 \
         && ! jose_supports_alg ML-KEM-1024; then

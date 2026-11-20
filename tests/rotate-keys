@@ -79,10 +79,12 @@ wait_for_port "${PORT}"
 
 # Advertisements work before rotation.
 fetch /adv | ver "${TMP}/db/sig.jwk"
-for alg in ${KEM_ALGS}; do
-    jose_supports_alg "${alg}" || continue
-    fetch "/adv-kem?alg=${alg}" | ver "${TMP}/db/sig.jwk"
-done
+if build_has_pqc; then
+    for alg in ${KEM_ALGS}; do
+        jose_supports_alg "${alg}" || continue
+        fetch "/adv-kem?alg=${alg}" | ver "${TMP}/db/sig.jwk"
+    done
+fi
 
 # Rotate the keys.
 tangd-rotate-keys -d "${TMP}/db" -v
@@ -123,10 +125,12 @@ done
 # advertisement is served with the new signing key only.
 fetch /adv | ver "${new_sig_jwk}"
 fetch /adv | ver "${TMP}/db/.sig.jwk" && expected_fail
-for alg in ${KEM_ALGS}; do
-    jose_supports_alg "${alg}" || continue
-    fetch "/adv-kem?alg=${alg}" | ver "${new_sig_jwk}"
-done
+if build_has_pqc; then
+    for alg in ${KEM_ALGS}; do
+        jose_supports_alg "${alg}" || continue
+        fetch "/adv-kem?alg=${alg}" | ver "${new_sig_jwk}"
+    done
+fi
 
 # Backward compatibility: a classical-only client bound to the old keys is
 # still served during the transition. The old (hidden) signing key still
@@ -145,10 +149,12 @@ test=$(printf '%s' "$full_resp" | jose fmt -j- -Od tang_pub -o-)
 
 # ... and the old (hidden) ML-KEM keys are still served by thumbprint, so
 # hybrid clients bound to them keep working too.
-for thp in $old_kem_thps; do
-    kem_by_thp=$(fetch "/adv-kem/${thp}")
-    printf '%s' "$kem_by_thp" | ver "${new_sig_jwk}"
-done
+if build_has_pqc; then
+    for thp in $old_kem_thps; do
+        kem_by_thp=$(fetch "/adv-kem/${thp}")
+        printf '%s' "$kem_by_thp" | ver "${new_sig_jwk}"
+    done
+fi
 
 # Rotation is repeatable: a second rotation hides the current set and
 # creates yet another complete set.

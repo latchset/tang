@@ -166,6 +166,19 @@ jose_supports_alg () {
     jose alg 2>/dev/null | grep -Fqx -- "${1}"
 }
 
+# True when the tangd build under test has PQC support. meson exports
+# TANG_HAS_PQC from the configure-time probe (see tests/meson.build);
+# without it (e.g. a manual run), fall back to the jose runtime probe,
+# which matches the build unless PQC was explicitly disabled.
+build_has_pqc () {
+    if [ -n "${TANG_HAS_PQC+x}" ]; then
+        [ "${TANG_HAS_PQC}" = "1" ]
+        return
+    fi
+    jose_supports_alg ML-KEM-512 || jose_supports_alg ML-KEM-768 \
+        || jose_supports_alg ML-KEM-1024
+}
+
 # Hybrid KEM protocol constants, single-sourced from src/pqc.h so the
 # shell tests cannot drift from the implementation.
 PQC_H="$(dirname -- "$0")/../src/pqc.h"

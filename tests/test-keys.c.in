@@ -656,10 +656,13 @@ test_read_keys_with_rogue_akp(void)
 }
 
 /* Counterpart of the rogue-key test: a hand-crafted AKP key with a
- * supported ML-KEM algorithm and the right key_ops must be advertised
- * in the KEM payload. Hand-crafting the JWK keeps the acceptance path
- * of prepare_payload_and_sign() covered even when jose itself cannot
- * generate ML-KEM keys (builds without PQC support). */
+ * supported ML-KEM algorithm, the right key_ops and complete key
+ * material must be advertised in the KEM payload. Hand-crafting the
+ * JWK keeps the acceptance path of prepare_payload_and_sign() covered
+ * even when jose itself cannot generate ML-KEM keys (builds without
+ * PQC support); the material is fabricated because read_keys() only
+ * classifies the key, and real generated keys are covered by
+ * test_read_keys_with_kem. */
 static void
 test_read_keys_with_advertised_akp(void)
 {
@@ -679,10 +682,13 @@ test_read_keys_with_advertised_akp(void)
     snprintf(exc_path, PATH_MAX, "%s/exc.jwk", newdir);
     ASSERT(json_dump_file(exc, exc_path, 0) == 0);
 
-    json_auto_t* kem = json_pack("{s:s,s:s,s:[s]}",
-                                 "kty", "AKP",
-                                 "alg", KEM_ALG_768,
-                                 "key_ops", "deriveKey");
+    json_auto_t* kem = json_pack(
+        "{s:s, s:s, s:s, s:s, s:[s]}",
+        "kty", "AKP",
+        "alg", KEM_ALG_768,
+        "pub", "ML-KEM-fabricated-public-material",
+        "priv", "ML-KEM-fabricated-private-material",
+        "key_ops", "deriveKey");
     ASSERT(kem);
     char kem_path[PATH_MAX];
     snprintf(kem_path, PATH_MAX, "%s/kem.jwk", newdir);
@@ -702,6 +708,59 @@ test_read_keys_with_advertised_akp(void)
     const char* alg = json_string_value(json_object_get(advertised, "alg"));
     ASSERT_WITH_MSG(alg && strcmp(alg, KEM_ALG_768) == 0,
                     "advertised alg = %s", alg);
+
+    remove_tempdir(newdir);
+    umask(old_umask);
+}
+
+/* A public-only AKP key (e.g. the output of "jose jwk pub" restored
+ * into the key directory) must not be advertised, whatever its
+ * key_ops are: clients could bind to it, since encapsulation only
+ * needs the public part, but decapsulation could only ever fail. */
+static void
+test_read_keys_with_public_only_akp(void)
+{
+    mode_t old_umask = umask(0022);
+    __attribute__((cleanup(cleanup_str))) char* newdir = create_tempdir();
+    ASSERT(newdir);
+
+    json_auto_t* sig = jwk_generate("ES512");
+    ASSERT(sig);
+    char sig_path[PATH_MAX];
+    snprintf(sig_path, PATH_MAX, "%s/sig.jwk", newdir);
+    ASSERT(json_dump_file(sig, sig_path, 0) == 0);
+
+    json_auto_t* exc = jwk_generate("ECMR");
+    ASSERT(exc);
+    char exc_path[PATH_MAX];
+    snprintf(exc_path, PATH_MAX, "%s/exc.jwk", newdir);
+    ASSERT(json_dump_file(exc, exc_path, 0) == 0);
+
+    json_auto_t* pubonly = json_pack(
+        "{s:s, s:s, s:s, s:[s]}",
+        "kty", "AKP",
+        "alg", KEM_ALG_768,
+        "pub", "ML-KEM-fabricated-public-material",
+        "key_ops", "deriveKey");
+    ASSERT(pubonly);
+    char pubonly_path[PATH_MAX];
+    snprintf(pubonly_path, PATH_MAX, "%s/pubonly.jwk", newdir);
+    ASSERT(json_dump_file(pubonly, pubonly_path, 0) == 0);
+
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info* tki =
+        read_keys(newdir);
+    ASSERT(tki);
+    ASSERT(tki->m_keys_count == 3);
+    ASSERT(json_array_size(tki->m_kem_payload) == 0);
+    ASSERT(tki->m_has_pqc == 0);
+
+    /* The predicate itself: NULL and public-only keys are rejected. */
+    ASSERT(jwk_valid_for_kem_exchange(NULL) == 0);
+    ASSERT(jwk_valid_for_kem_exchange(pubonly) == 0);
+
+    /* The classical advertisement must remain fully working. */
+    json_auto_t* jws = jwk_sign(tki->m_payload, tki->m_sign);
+    ASSERT_WITH_MSG(jws, "public-only AKP key broke advertisement signing");
 
     remove_tempdir(newdir);
     umask(old_umask);
@@ -767,6 +826,7 @@ run_tests(void)
     test_find_by_thp_null();
     test_read_keys_with_rogue_akp();
     test_read_keys_with_advertised_akp();
+    test_read_keys_with_public_only_akp();
     test_read_keys_no_signing_keys();
     test_is_valid_kem_alg();
     test_create_new_keys_save_failure();

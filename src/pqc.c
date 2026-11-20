@@ -717,14 +717,14 @@ find_jws_kem_by_thp(struct tang_keys_info *keys_info, const char *thumbprint)
 
     /* RFC 9864: "AKP" also covers post-quantum signature algorithms
      * (e.g. ML-DSA); only supported ML-KEM exchange keys are
-     * advertised, and only with the same deriveKey predicate /rec-kem
-     * enforces (req = true), so clients cannot bind to a key that
-     * /rec-kem would later reject. */
+     * advertised, and only with the same predicate /rec-kem enforces
+     * (req = true deriveKey plus complete key material), so clients
+     * cannot bind to a key that /rec-kem would later reject. */
     const char *key_alg = json_string_value(json_object_get(key, "alg"));
     if (!is_valid_kem_alg(key_alg))
         return NULL;
 
-    if (!jose_jwk_prm(NULL, key, true, "deriveKey"))
+    if (!jwk_valid_for_kem_exchange(key))
         return NULL;
 
     json_auto_t *payload = json_array();
@@ -851,7 +851,11 @@ rec_kem(http_method_t method, const char *path, const char *body,
     if (!is_valid_kem_alg(kalg))
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
-    if (!jose_jwk_prm(NULL, tang_kem_priv, true, "deriveKey"))
+    /* The same predicate that gates advertisement: a key without
+     * complete key material or without the deriveKey permission can
+     * never be decapsulated, so refuse it here (403) instead of
+     * failing the exchange later. */
+    if (!jwk_valid_for_kem_exchange(tang_kem_priv))
         return http_reply(HTTP_STATUS_FORBIDDEN, NULL);
 
     status = rec_kem_secure(tang_kem_priv, tki, thp, req, &enc);

@@ -50,3 +50,4 @@ struct tang_keys_info* read_keys(const char* /* jwkdir */);
 json_t* jwk_sign(const json_t* /* to_sign */, const json_t* /* sig_keys */);
 json_t* find_jws(struct tang_keys_info* /* tki */, const char* /* thp */);
 json_t* find_jwk(struct tang_keys_info* /* tki */, const char* /* thp */);
+int jwk_valid_for_kem_exchange(const json_t* /* jwk */);

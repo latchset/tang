@@ -217,18 +217,38 @@ jwk_valid_for_deriving_keys(const json_t* jwk)
     return jwk_valid_for(jwk, "deriveKey");
 }
 
-/* /rec-kem recovers with jose_jwk_prm(..., req = true), so a KEM key
- * must pass that same predicate to be advertised. An unrestricted JWK
- * (no use/key_ops) is permitted for every operation when req = false
- * but refused when req = true: advertising it would let clients bind
- * to a key whose recovery can only ever fail with 403. */
+/* A KEM exchange key is only usable for recovery when it carries
+ * complete key material: encapsulation needs the public part, and
+ * decapsulation needs the private part. jose_jwk_prm() only inspects
+ * use/key_ops, so without this check a public-only AKP key restored
+ * into the key directory (e.g. the output of "jose jwk pub") would be
+ * advertised: clients would bind to it, since encapsulation only
+ * needs the public part, and every later recovery could only fail. */
 static int
+jwk_has_complete_kem_material(const json_t* jwk)
+{
+    const json_t* pub = json_object_get(jwk, "pub");
+    const json_t* priv = json_object_get(jwk, "priv");
+    return json_is_string(pub) && json_string_length(pub) > 0
+        && json_is_string(priv) && json_string_length(priv) > 0;
+}
+
+/* /rec-kem recovers with jose_jwk_prm(..., req = true) and the private
+ * part of the key, so a KEM key must pass that same predicate and
+ * carry complete key material to be advertised. An unrestricted JWK
+ * (no use/key_ops) is permitted for every operation when req = false
+ * but refused when req = true, and a public-only key can be
+ * encapsulated against but never decapsulated: advertising either
+ * would let clients bind to a key whose recovery can only ever fail
+ * with 403. */
+int
 jwk_valid_for_kem_exchange(const json_t* jwk)
 {
     if (!jwk) {
         return 0;
     }
-    return jose_jwk_prm(NULL, jwk, true, "deriveKey");
+    return jwk_has_complete_kem_material(jwk)
+        && jose_jwk_prm(NULL, jwk, true, "deriveKey");
 }
 
 static void

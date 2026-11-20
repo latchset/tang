@@ -272,6 +272,16 @@ EOF
         "http://127.0.0.1:$PORT/${prefix}rec-kem/${exc_kid}")
     [ "$code" = "403" ]
 
+    # A public-only AKP key cannot decapsulate: /rec-kem must refuse it
+    # with 403 instead of attempting the exchange and failing with 400.
+    jose jwk gen -i '{"alg":"ML-KEM-768"}' | jose jwk pub -i- \
+        > $TMP/db/pubonly.jwk
+    pubonly_kid=$(jose jwk thp -i $TMP/db/pubonly.jwk)
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d "$req_body" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${pubonly_kid}")
+    [ "$code" = "403" ]
+
     # Wrong ek_digest must be rejected
     bad_fwd_encap=$(jose jwk encap -i "$TMP/kem.pub.jwk")
     bad_clevis_transport_ct=$(printf '%s' "$bad_fwd_encap" | jose fmt -j- -Og ct -u-)

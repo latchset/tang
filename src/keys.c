@@ -22,12 +22,14 @@
 #include <string.h>
 #include <dirent.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #include <jose/b64.h>
 #include <jose/jwk.h>
 #include <jose/jws.h>
 
 #include "keys.h"
+#include "kem_alg.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -90,7 +92,7 @@ jwk_thumbprint(const json_t* jwk, const char* alg)
     }
 
     if (!alg || !is_hash(alg)) {
-        fprintf(stderr, "Invalid hash algorithm (%s)\n", alg);
+        fprintf(stderr, "Invalid hash algorithm (%s)\n", alg ? alg : "NULL");
         return NULL;
     }
 
@@ -109,7 +111,10 @@ jwk_thumbprint(const json_t* jwk, const char* alg)
     uint8_t dec[dlen];
     char enc[elen];
 
-    if (!jose_jwk_thp_buf(NULL, jwk, alg, dec, sizeof(dec))) {
+    /* jose_jwk_thp_buf returns the number of bytes written, or
+     * SIZE_MAX on failure: compare against the expected digest
+     * length, a bare boolean test can never catch the failure. */
+    if (jose_jwk_thp_buf(NULL, jwk, alg, dec, dlen) != dlen) {
         fprintf(stderr, "Error making thumbprint\n");
         return NULL;
     }
@@ -130,7 +135,9 @@ free_tang_keys_info(struct tang_keys_info* tki)
     }
 
     json_t* to_free[] = {tki->m_keys, tki->m_rotated_keys,
-                         tki->m_payload, tki->m_sign
+                         tki->m_payload,
+                         tki->m_kem_payload,
+                         tki->m_sign
     };
     size_t len = sizeof(to_free) / sizeof(to_free[0]);
 
@@ -164,10 +171,11 @@ new_tang_keys_info(void)
     tki->m_keys = json_array();
     tki->m_rotated_keys = json_array();
     tki->m_payload = json_array();
+    tki->m_kem_payload = json_array();
     tki->m_sign = json_array();
 
     if (!tki->m_keys || !tki->m_rotated_keys ||
-        !tki->m_payload || !tki->m_sign) {
+        !tki->m_payload || !tki->m_kem_payload || !tki->m_sign) {
         free_tang_keys_info(tki);
         return NULL;
     }
@@ -210,6 +218,40 @@ jwk_valid_for_deriving_keys(const json_t* jwk)
     return jwk_valid_for(jwk, "deriveKey");
 }
 
+/* A KEM exchange key is only usable for recovery when it carries
+ * complete key material: encapsulation needs the public part, and
+ * decapsulation needs the private part. jose_jwk_prm() only inspects
+ * use/key_ops, so without this check a public-only AKP key restored
+ * into the key directory (e.g. the output of "jose jwk pub") would be
+ * advertised: clients would bind to it, since encapsulation only
+ * needs the public part, and every later recovery could only fail. */
+static int
+jwk_has_complete_kem_material(const json_t* jwk)
+{
+    const json_t* pub = json_object_get(jwk, "pub");
+    const json_t* priv = json_object_get(jwk, "priv");
+    return json_is_string(pub) && json_string_length(pub) > 0
+        && json_is_string(priv) && json_string_length(priv) > 0;
+}
+
+/* /rec-kem recovers with jose_jwk_prm(..., req = true) and the private
+ * part of the key, so a KEM key must pass that same predicate and
+ * carry complete key material to be advertised. An unrestricted JWK
+ * (no use/key_ops) is permitted for every operation when req = false
+ * but refused when req = true, and a public-only key can be
+ * encapsulated against but never decapsulated: advertising either
+ * would let clients bind to a key whose recovery can only ever fail
+ * with 403. */
+int
+jwk_valid_for_kem_exchange(const json_t* jwk)
+{
+    if (!jwk) {
+        return 0;
+    }
+    return jwk_has_complete_kem_material(jwk)
+        && jose_jwk_prm(NULL, jwk, true, "deriveKey");
+}
+
 static void
 cleanup_str(char** str)
 {
@@ -220,7 +262,7 @@ cleanup_str(char** str)
     *str = NULL;
 }
 
-static json_t*
+json_t*
 jwk_sign(const json_t* to_sign, const json_t* sig_keys)
 {
     if (!sig_keys || !json_is_array(sig_keys) || !json_is_array(to_sign)) {
@@ -283,6 +325,25 @@ prepare_payload_and_sign(struct tang_keys_info* tki)
     size_t idx;
     json_t* jwk;
     json_array_foreach(tki->m_keys, idx, jwk) {
+        const char* kty = json_string_value(
+            json_object_get(jwk, "kty"));
+        const char* alg = json_string_value(
+            json_object_get(jwk, "alg"));
+
+        /* RFC 9864: "AKP" covers post-quantum signature algorithms
+         * (e.g. ML-DSA) as well as ML-KEM, so an AKP key is only ever
+         * a hybrid exchange key here: it is advertised when its
+         * algorithm is a supported ML-KEM variant and ignored
+         * otherwise, never falling through to the classical payload
+         * or the signing set. */
+        if (kty && strcmp(kty, "AKP") == 0) {
+            if (jwk_valid_for_kem_exchange(jwk) && is_valid_kem_alg(alg)) {
+                if (json_array_append(tki->m_kem_payload, jwk) < 0)
+                    return 0;
+            }
+            continue;
+        }
+
         if (jwk_valid_for_signing_and_verifying(jwk)) {
             if (json_array_append(tki->m_sign, jwk) == -1) {
                 continue;
@@ -296,46 +357,98 @@ prepare_payload_and_sign(struct tang_keys_info* tki)
             }
         }
     }
+    tki->m_has_pqc = json_array_size(tki->m_kem_payload) > 0;
     if (json_array_size(tki->m_sign) == 0 || json_array_size(tki->m_payload) == 0) {
         return 0;
     }
     return 1;
 }
 
+static const char* const kem_algorithms[] = {
+    KEM_ALG_512, KEM_ALG_768, KEM_ALG_1024, NULL
+};
+
+struct key_spec {
+    const char* alg;
+    int optional;
+};
+
+/* Number of elements in a fixed-size array. */
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
+
 static int
 create_new_keys(const char* jwkdir)
 {
-    const char* alg[] = {"ES512", "ECMR", NULL};
+    /* Capacity is derived from kem_algorithms so adding a variant
+     * there cannot overflow this stack array. ARRAY_SIZE counts the
+     * NULL terminator of kem_algorithms, which doubles as the
+     * terminator slot here. */
+    struct key_spec specs[2 + ARRAY_SIZE(kem_algorithms)];
+    int n = 0;
+    specs[n++] = (struct key_spec){"ES512", 0};
+    specs[n++] = (struct key_spec){"ECMR",  0};
+    for (int i = 0; kem_algorithms[i]; i++)
+        specs[n++] = (struct key_spec){kem_algorithms[i], 1};
+    specs[n] = (struct key_spec){NULL, 0};
     char path[PATH_MAX];
 
-    /* Set default umask for file creation. */
-    umask(0337);
-    for (int i = 0; alg[i] != NULL; i++) {
-        json_auto_t* jwk = jwk_generate(alg[i]);
+    /* Keys written so far, removed again when a later key fails: a
+     * partial auto-generated key set must not be left behind, or the
+     * non-empty keydir would never trigger a regeneration and the
+     * server would stay wedged until the partial keys are removed by
+     * hand. */
+    char written[ARRAY_SIZE(specs)][PATH_MAX];
+    size_t nwritten = 0;
+
+    int result = 1;
+    mode_t old_umask = umask(0337);
+    for (int i = 0; specs[i].alg != NULL; i++) {
+        json_auto_t* jwk = jwk_generate(specs[i].alg);
         if (!jwk) {
-            return 0;
+            if (specs[i].optional) {
+                fprintf(stderr, "Skipping optional key %s (not supported)\n",
+                        specs[i].alg);
+                continue;
+            }
+            result = 0;
+            break;
         }
         __attribute__ ((__cleanup__(cleanup_str))) char* thp = jwk_thumbprint(jwk, DEFAULT_THP_HASH);
         if (!thp) {
-            return 0;
+            result = 0;
+            break;
         }
         if (snprintf(path, PATH_MAX, "%s/%s.jwk", jwkdir, thp) < 0) {
             fprintf(stderr, "Unable to prepare variable with file full path (%s)\n", thp);
-            return 0;
+            result = 0;
+            break;
         }
         path[sizeof(path) - 1] = '\0';
-        if (json_dump_file(jwk, path, 0) == -1) {
+        /* JSON_COMPACT matches the format the jose CLI writes, so the
+         * key files are byte-identical no matter which path created
+         * them (tangd auto-generation, tangd-keygen or an operator
+         * using jose jwk gen). */
+        if (json_dump_file(jwk, path, JSON_COMPACT) == -1) {
             fprintf(stderr, "Error saving JWK to file (%s)\n", path);
-            return 0;
+            result = 0;
+            break;
         }
-
         /* Set 0440 permission for the new key. */
         if (chmod(path, S_IRUSR | S_IRGRP) == -1) {
             fprintf(stderr, "Unable to set permissions for JWK file (%s)\n", path);
-            return 0;
+            result = 0;
+            break;
+        }
+        snprintf(written[nwritten], PATH_MAX, "%s", path);
+        nwritten++;
+    }
+    if (result == 0) {
+        for (size_t i = 0; i < nwritten; i++) {
+            unlink(written[i]);
         }
     }
-    return 1;
+    umask(old_umask);
+    return result;
 }
 
 static struct tang_keys_info*
@@ -399,6 +512,30 @@ load_keys(const char* jwkdir)
     return tki;
 }
 
+/* True when the key store holds no deriving key at all, active or
+ * rotated: a store left partially populated (e.g. by an interrupted
+ * auto-generation) can hold signing keys but no deriving key, so the
+ * advertisement it produces looks healthy while no client could ever
+ * recover with it. */
+static int
+store_lacks_deriving_keys(const struct tang_keys_info* tki)
+{
+    size_t idx;
+    json_t* jwk;
+
+    json_array_foreach(tki->m_keys, idx, jwk) {
+        if (jwk_valid_for_deriving_keys(jwk)) {
+            return 0;
+        }
+    }
+    json_array_foreach(tki->m_rotated_keys, idx, jwk) {
+        if (jwk_valid_for_deriving_keys(jwk)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 struct tang_keys_info*
 read_keys(const char* jwkdir)
 {
@@ -407,7 +544,7 @@ read_keys(const char* jwkdir)
         return NULL;
     }
 
-    if (tki->m_keys_count == 0) {
+    if (tki->m_keys_count == 0 || store_lacks_deriving_keys(tki)) {
         /* Let's attempt to create a new pair of keys. */
         free_tang_keys_info(tki);
         if (!create_new_keys(jwkdir)) {

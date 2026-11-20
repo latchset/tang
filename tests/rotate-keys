@@ -1,0 +1,347 @@
+#!/bin/sh -ex
+# vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:
+#
+# Copyright (c) 2026 Red Hat, Inc.
+# Author: Sergio Arroutbi <sarroutbi@redhat.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+. helpers
+
+trap 'on_exit' EXIT
+TMP=$(mktemp -d)
+export TMP
+mkdir -p "${TMP}/db"
+
+alg_keys () {
+    # Whitespace-insensitive: the JWK may be pretty-printed.
+    for _f in "${1}"/*.jwk; do
+        [ -f "${_f}" ] || continue
+        if jose fmt -j "${_f}" -Og alg -Sq "${2}" -E >/dev/null 2>&1; then
+            printf '%s\n' "${_f}"
+        fi
+    done
+}
+
+# Initial key set, including the hybrid ML-KEM exchange keys.
+tangd-keygen "${TMP}/db" sig exc
+valid_key_perm "${TMP}/db/sig.jwk"
+valid_key_perm "${TMP}/db/exc.jwk"
+for alg in ${KEM_ALGS}; do
+    if jose_supports_alg "${alg}"; then
+        [ "$(alg_keys "${TMP}/db" "${alg}" | wc -l)" -eq 1 ]
+    fi
+done
+
+old_sig_thp=$(jose jwk thp -i "${TMP}/db/sig.jwk")
+old_exc_thp=$(jose jwk thp -i "${TMP}/db/exc.jwk")
+
+# Pretty-print one ML-KEM key ("alg": "..." with spaces): tangd loads
+# and advertises it normally, so the rotation logic must still detect
+# its algorithm and treat the variant as previously advertised.
+if jose_supports_alg ML-KEM-768; then
+    sed -i 's/:/: /g' "$(alg_keys "${TMP}/db" ML-KEM-768)"
+fi
+
+# Thumbprints of the ML-KEM keys before rotation.
+old_kem_thps=""
+for f in "${TMP}/db"/*.jwk; do
+    kty=$(jose fmt -j "$f" -Og kty -u- 2>/dev/null) || continue
+    [ "$kty" = "AKP" ] || continue
+    old_kem_thps="$old_kem_thps $(jose jwk thp -i "$f")"
+done
+
+# Client keys bound to the pre-rotation classical exchange key, simulating
+# a classical-only client that must keep working during the transition.
+tmp=$(jose fmt -j "${TMP}/db/exc.jwk" -Od x -d y -d d -o-)
+jose jwk gen -i "$tmp" -o "${TMP}/exc.jwk"
+jose jwk pub -i "${TMP}/exc.jwk" -o "${TMP}/exc.pub.jwk"
+
+# The set of advertised ML-KEM variants, as the server reports it: the
+# rotation must reproduce it exactly, since a variant missing from the
+# rotation's list would be hidden by the generic hide loop and never
+# recreated -- the silent drop that is fatal for known variants.
+advertised_kem_algs () {
+    _out=""
+    for _alg in ${KEM_ALGS}; do
+        jose_supports_alg "${_alg}" || continue
+        if build_has_pqc && curl -sf -o /dev/null \
+                "http://127.0.0.1:${PORT}/adv-kem?alg=${_alg}"; then
+            _out="${_out} ${_alg}"
+        fi
+    done
+    printf '%s\n' "${_out}"
+}
+
+PORT=$(random_port)
+export PORT
+start_standalone_server "${PORT}"
+export PID=$!
+wait_for_port "${PORT}"
+
+# Advertisements work before rotation.
+fetch /adv | ver "${TMP}/db/sig.jwk"
+if build_has_pqc; then
+    for alg in ${KEM_ALGS}; do
+        jose_supports_alg "${alg}" || continue
+        fetch "/adv-kem?alg=${alg}" | ver "${TMP}/db/sig.jwk"
+    done
+fi
+algs_before="$(advertised_kem_algs)"
+
+# Rotate the keys.
+tangd-rotate-keys -d "${TMP}/db" -v
+
+# Old keys are hidden, but still present with proper permissions.
+[ -f "${TMP}/db/.sig.jwk" ]
+[ -f "${TMP}/db/.exc.jwk" ]
+valid_key_perm "${TMP}/db/.sig.jwk"
+valid_key_perm "${TMP}/db/.exc.jwk"
+[ "$(jose jwk thp -i "${TMP}/db/.sig.jwk")" = "$old_sig_thp" ]
+for thp in $old_kem_thps; do
+    [ -f "${TMP}/db/.${thp}.jwk" ]
+    valid_key_perm "${TMP}/db/.${thp}.jwk"
+done
+
+# A complete new key set is created: one ES512, one ECMR and one key per
+# supported ML-KEM algorithm, all with proper permissions.
+new_sig_jwk=$(alg_keys "${TMP}/db" ES512)
+new_exc_jwk=$(alg_keys "${TMP}/db" ECMR)
+[ -n "${new_sig_jwk}" ]
+[ -n "${new_exc_jwk}" ]
+[ "$(jose jwk thp -i "${new_sig_jwk}")" != "${old_sig_thp}" ]
+for alg in ${KEM_ALGS}; do
+    if jose_supports_alg "${alg}"; then
+        [ "$(alg_keys "${TMP}/db" "${alg}" | wc -l)" -eq 1 ]
+        new_kem_thp=$(jose jwk thp -i "$(alg_keys "${TMP}/db" "${alg}")")
+        # The new ML-KEM keys are different from the rotated ones.
+        case " $old_kem_thps " in
+            *" ${new_kem_thp} "*) exit 1;;
+        esac
+    fi
+done
+for f in "${TMP}/db"/*.jwk; do
+    valid_key_perm "${f}"
+done
+
+# Tang picks up the rotation immediately, without a restart: the default
+# advertisement is served with the new signing key only.
+fetch /adv | ver "${new_sig_jwk}"
+fetch /adv | ver "${TMP}/db/.sig.jwk" && expected_fail
+if build_has_pqc; then
+    for alg in ${KEM_ALGS}; do
+        jose_supports_alg "${alg}" || continue
+        fetch "/adv-kem?alg=${alg}" | ver "${new_sig_jwk}"
+    done
+fi
+
+# No advertised variant may be silently dropped by the rotation.
+algs_after="$(advertised_kem_algs)"
+[ "${algs_after}" = "${algs_before}" ] \
+    || die "rotation changed the advertised ML-KEM set: '${algs_before}' -> '${algs_after}'"
+
+# Backward compatibility: a classical-only client bound to the old keys is
+# still served during the transition. The old (hidden) signing key still
+# signs the advertisement requested by its thumbprint ...
+fetch "/adv/${old_sig_thp}" | ver "${TMP}/db/.sig.jwk"
+fetch "/adv/${old_sig_thp}" | ver "${new_sig_jwk}"
+
+# ... the old (hidden) exchange key still performs classical recovery ...
+good=$(jose jwk exc -i '{"alg":"ECMR","key_ops":["deriveKey"]}' -l "${TMP}/exc.jwk" -r "${TMP}/db/.exc.jwk")
+full_resp=$(curl -sf -X POST \
+       -H "Content-Type: application/jwk+json" \
+       --data-binary @- \
+       "http://127.0.0.1:${PORT}/rec/${old_exc_thp}" < "${TMP}/exc.pub.jwk")
+test=$(printf '%s' "$full_resp" | jose fmt -j- -Od tang_pub -o-)
+[ "$good" = "$test" ]
+
+# ... and the old (hidden) ML-KEM keys are still served by thumbprint, so
+# hybrid clients bound to them keep working too.
+if build_has_pqc; then
+    for thp in $old_kem_thps; do
+        kem_by_thp=$(fetch "/adv-kem/${thp}")
+        printf '%s' "$kem_by_thp" | ver "${new_sig_jwk}"
+    done
+fi
+
+# Rotation is repeatable: a second rotation hides the current set and
+# creates yet another complete set.
+tangd-rotate-keys -d "${TMP}/db" -v
+[ "$(jose jwk thp -i "$(alg_keys "${TMP}/db" ES512)")" != \
+  "$(jose jwk thp -i "${new_sig_jwk}")" ]
+for alg in ${KEM_ALGS}; do
+    if jose_supports_alg "${alg}"; then
+        [ "$(alg_keys "${TMP}/db" "${alg}" | wc -l)" -eq 1 ]
+    fi
+done
+for f in "${TMP}/db"/*.jwk "${TMP}/db"/.*.jwk; do
+    [ -f "${f}" ] || continue
+    valid_key_perm "${f}"
+done
+fetch /adv | ver "$(alg_keys "${TMP}/db" ES512)"
+
+# The second rotation must reproduce the advertised set as well.
+algs_after="$(advertised_kem_algs)"
+[ "${algs_after}" = "${algs_before}" ] \
+    || die "second rotation changed the advertised ML-KEM set: '${algs_before}' -> '${algs_after}'"
+
+# No staging directories are left behind after a successful rotation.
+[ -z "$(find "${TMP}/db" -maxdepth 1 -name '.tang-rotate.*')" ]
+
+# A generation failure aborts the rotation loudly: the visible and hidden
+# key sets are left untouched and the daemon keeps serving advertisements
+# (no half-rotated state). Inject the failure with a fake jose that fails
+# ECMR key generation.
+visible_before="$(find "${TMP}/db" -maxdepth 1 -name '*.jwk' ! -name '.*' | sort)"
+hidden_before="$(find "${TMP}/db" -maxdepth 1 -name '.*.jwk' | sort)"
+current_sig_jwk="$(alg_keys "${TMP}/db" ES512)"
+REAL_JOSE="$(command -v jose)"
+mkdir -p "${TMP}/fake-bin"
+cat > "${TMP}/fake-bin/jose" <<EOF
+#!/bin/sh
+case "\$*" in
+*ECMR*) exit 1 ;;
+*) exec "${REAL_JOSE}" "\$@" ;;
+esac
+EOF
+chmod +x "${TMP}/fake-bin/jose"
+if PATH="${TMP}/fake-bin:${PATH}" tangd-rotate-keys -d "${TMP}/db" -v; then
+    echo "Expected rotation to fail on ECMR generation error" >&2
+    exit 1
+fi
+[ "$(find "${TMP}/db" -maxdepth 1 -name '*.jwk' ! -name '.*' | sort)" = \
+  "${visible_before}" ]
+[ "$(find "${TMP}/db" -maxdepth 1 -name '.*.jwk' | sort)" = \
+  "${hidden_before}" ]
+[ -z "$(find "${TMP}/db" -maxdepth 1 -name '.tang-rotate.*')" ]
+fetch /adv | ver "${current_sig_jwk}"
+
+# A relative -d path must work: the staging directory is anchored to
+# the absolute keys directory, not to the (changing) current directory.
+mkdir -p "${TMP}/reldir"
+(cd "${TMP}" && tangd-rotate-keys -d reldir -v)
+[ -n "$(alg_keys "${TMP}/reldir" ES512)" ]
+[ -n "$(alg_keys "${TMP}/reldir" ECMR)" ]
+for alg in ${KEM_ALGS}; do
+    if jose_supports_alg "${alg}"; then
+        [ "$(alg_keys "${TMP}/reldir" "${alg}" | wc -l)" -eq 1 ]
+    fi
+done
+for f in "${TMP}/reldir"/*.jwk; do
+    valid_key_perm "${f}"
+done
+[ -z "$(find "${TMP}/reldir" -maxdepth 1 -name '.tang-rotate.*')" ]
+
+# Keys created by tangd itself (create_new_keys, on the first request
+# to an empty key store) must be detected as advertised by the
+# rotation, so a previously active ML-KEM variant is recreated instead
+# of being silently dropped. Seed a fresh keydir through that path
+# (tangd in one-shot stdin mode) instead of through tangd-keygen.
+mkdir -p "${TMP}/db-auto"
+printf 'GET /adv HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' \
+    | tangd "${TMP}/db-auto" >/dev/null 2>&1
+[ -n "$(alg_keys "${TMP}/db-auto" ES512)" ]
+[ -n "$(alg_keys "${TMP}/db-auto" ECMR)" ]
+for alg in ${KEM_ALGS}; do
+    jose_supports_alg "${alg}" || continue
+    [ "$(alg_keys "${TMP}/db-auto" "${alg}" | wc -l)" -eq 1 ]
+done
+tangd-rotate-keys -d "${TMP}/db-auto" -v
+for alg in ${KEM_ALGS}; do
+    jose_supports_alg "${alg}" || continue
+    [ "$(alg_keys "${TMP}/db-auto" "${alg}" | wc -l)" -eq 1 ]
+done
+[ -z "$(find "${TMP}/db-auto" -maxdepth 1 -name '.tang-rotate.*')" ]
+
+# jose registers algorithms even when the runtime crypto policy (e.g.
+# FIPS) blocks generating keys for them. A variant that was NOT
+# advertised before the rotation is optional in that case: the
+# rotation completes with a warning and the variant is simply absent.
+if jose_supports_alg ML-KEM-512; then
+    # A package downgrade must also be fatal, not a silent skip: if
+    # jose no longer lists an algorithm whose key was advertised, the
+    # old key would be hidden with no replacement written and the
+    # variant would disappear from /adv-kem.
+    mkdir -p "${TMP}/fake-bin-downgrade"
+    cat > "${TMP}/fake-bin-downgrade/jose" <<EOF
+#!/bin/sh
+# Simulate a jose package downgrade: ML-KEM-512 disappears from the
+# algorithm listing, everything else (including jose fmt, used by the
+# advertised-algorithm detection) keeps working.
+if [ "\$1" = "alg" ]; then
+    "${REAL_JOSE}" "\$@" | grep -v '^ML-KEM-512\$'
+    exit \$?
+fi
+exec "${REAL_JOSE}" "\$@"
+EOF
+    chmod +x "${TMP}/fake-bin-downgrade/jose"
+
+    mkdir -p "${TMP}/db-downgrade"
+    tangd-keygen "${TMP}/db-downgrade" sig exc
+    downgrade_visible="$(find "${TMP}/db-downgrade" -maxdepth 1 \
+        -name '*.jwk' ! -name '.*' | sort)"
+    if PATH="${TMP}/fake-bin-downgrade:${PATH}" tangd-rotate-keys -d "${TMP}/db-downgrade" -v; then
+        echo "Expected rotation to fail for a downgraded jose" >&2
+        exit 1
+    fi
+    [ "$(find "${TMP}/db-downgrade" -maxdepth 1 -name '*.jwk' ! -name '.*' | sort)" = \
+      "${downgrade_visible}" ]
+    [ -z "$(find "${TMP}/db-downgrade" -maxdepth 1 -name '.*.jwk')" ]
+    [ -z "$(find "${TMP}/db-downgrade" -maxdepth 1 -name '.tang-rotate.*')" ]
+
+    mkdir -p "${TMP}/fake-bin-512"
+    cat > "${TMP}/fake-bin-512/jose" <<EOF
+#!/bin/sh
+# Simulate a runtime crypto policy blocking ML-KEM-512 key generation
+# only: parsing existing keys (jose fmt) keeps working, as the
+# algorithm detection in the scripts relies on it.
+case "\$1 \$2" in
+"jwk gen"*)
+    case "\$*" in
+    *ML-KEM-512*) exit 1 ;;
+    esac
+    ;;
+esac
+exec "${REAL_JOSE}" "\$@"
+EOF
+    chmod +x "${TMP}/fake-bin-512/jose"
+
+    mkdir -p "${TMP}/db-opt"
+    tangd-keygen "${TMP}/db-opt" sig exc
+    # Drop the ML-KEM-512 key so the variant is not previously active.
+    rm -f "$(alg_keys "${TMP}/db-opt" ML-KEM-512)"
+    PATH="${TMP}/fake-bin-512:${PATH}" tangd-rotate-keys -d "${TMP}/db-opt" -v
+    [ "$(alg_keys "${TMP}/db-opt" ML-KEM-512 | wc -l)" -eq 0 ]
+    if jose_supports_alg ML-KEM-768; then
+        [ "$(alg_keys "${TMP}/db-opt" ML-KEM-768 | wc -l)" -eq 1 ]
+    fi
+    [ -z "$(find "${TMP}/db-opt" -maxdepth 1 -name '.tang-rotate.*')" ]
+
+    # A variant that WAS advertised before the rotation must be
+    # recreated: a runtime generation failure is fatal, not a warning.
+    visible_opt="$(find "${TMP}/db" -maxdepth 1 -name '*.jwk' ! -name '.*' | sort)"
+    hidden_opt="$(find "${TMP}/db" -maxdepth 1 -name '.*.jwk' | sort)"
+    if PATH="${TMP}/fake-bin-512:${PATH}" tangd-rotate-keys -d "${TMP}/db" -v; then
+        echo "Expected rotation to fail for a previously active variant" >&2
+        exit 1
+    fi
+    [ "$(find "${TMP}/db" -maxdepth 1 -name '*.jwk' ! -name '.*' | sort)" = \
+      "${visible_opt}" ]
+    [ "$(find "${TMP}/db" -maxdepth 1 -name '.*.jwk' | sort)" = \
+      "${hidden_opt}" ]
+    [ -z "$(find "${TMP}/db" -maxdepth 1 -name '.tang-rotate.*')" ]
+fi
+
+echo "tangd-rotate-keys hybrid key rotation test passed" >&2

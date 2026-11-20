@@ -55,6 +55,10 @@ set_perms() {
     fi
 }
 
+# Shared helpers (e.g. algorithm support detection) live next to this
+# script, both in the build tree and when installed.
+. "$(dirname -- "$0")/tangd-utils.sh"
+
 JWKDIR=
 VERBOSE=
 while getopts "hvd:" o; do
@@ -70,28 +74,138 @@ done
 [ -r "${JWKDIR}" ] || error "Error trying to access JWK directory '${JWKDIR}'"
 
 cd "${JWKDIR}" || error "Unable to change to keys directory '${JWKDIR}'"
-    # Disable advertisement of current keys.
-    for key in *.jwk; do
-        [ -r "${key}" ] || continue
-        mv -f -- "${key}" ."${key}"
-        log "Disabled advertisement of key ${key} -> .${key}" "${VERBOSE}"
-    done
+    # Stage the new key set in a temporary directory inside the keys
+    # directory: the final moves are same-filesystem renames, and any
+    # failure below leaves the current, still-advertised keys untouched,
+    # so tangd keeps serving /adv throughout.
+    #
+    # The staging directory must be anchored to the absolute location of
+    # the keys directory: JWKDIR may be relative, and the working
+    # directory changes again (cd -) before the EXIT trap fires, so a
+    # relative path would both duplicate the directory at creation and
+    # point somewhere else at cleanup. mktemp also avoids the
+    # predictable PID-based name.
+    STAGE="$(mktemp -d "$(pwd)/.tang-rotate.XXXXXX")" \
+        || error "Unable to create staging directory"
+    trap 'rm -rf -- "${STAGE}"' EXIT
+    chmod 0700 "${STAGE}"
 
-    # Create a new set of keys.
+    # Remember which keys are currently advertised: only these will be
+    # hidden once the new set is in place.
+    old_list="${STAGE}/old"
+    find . -maxdepth 1 -type f -name '*.jwk' ! -name '.*' | sort > "${old_list}"
+
     DEFAULT_THP_HASH="S256"
 
     # Set default umask for file creation.
     umask 0337
 
-    for alg in "ES512" "ECMR"; do
-        json="$(printf '{"alg": "%s"}' "${alg}")"
-        jwe="$(jose jwk gen --input "${json}")"
-        thp="$(printf '%s' "${jwe}" | jose jwk thp --input=- \
+    # Generate a key for the given algorithm into the staging directory.
+    # A generation failure is fatal for the mandatory classical keys and
+    # for ML-KEM variants that were advertised before the rotation; for
+    # optional variants (second argument non-empty) it only warns and
+    # continues, since jose registers algorithms even when the runtime
+    # crypto policy (e.g. FIPS) blocks generating keys for them.
+    new_key() {
+        _alg="${1}"
+        _optional="${2:-}"
+        _json="$(printf '{"alg": "%s"}' "${_alg}")"
+        if ! _jwe="$(jose jwk gen --input "${_json}")"; then
+            if [ -n "${_optional}" ]; then
+                echo "Skipping ${_alg} key generation (key generation failed at runtime; crypto policy?)" >&2
+                return 0
+            fi
+            echo "Error generating ${_alg} key" >&2
+            exit 1
+        fi
+        _thp="$(printf '%s' "${_jwe}" | jose jwk thp --input=- \
                                            -a "${DEFAULT_THP_HASH}")"
-        echo "${jwe}" > "${thp}.jwk"
-        set_perms "${thp}.jwk"
-        log "Created new key ${thp}.jwk" "${VERBOSE}"
+        echo "${_jwe}" > "${STAGE}/${_thp}.jwk"
+        set_perms "${STAGE}/${_thp}.jwk"
+        log "Created new key ${_thp}.jwk (${_alg})" "${VERBOSE}"
+    }
+
+    # True when a key with the given algorithm was advertised before
+    # the rotation, i.e. is among the recorded old keys.
+    alg_was_advertised() {
+        while read -r _old; do
+            [ -n "${_old}" ] || continue
+            if jwk_has_alg "${_old}" "${1}"; then
+                return 0
+            fi
+        done < "${old_list}"
+        return 1
+    }
+
+    # Create a new set of keys.
+    for alg in "ES512" "ECMR"; do
+        new_key "${alg}"
     done
+
+    # Hybrid exchange keys: post-quantum ML-KEM keys pairing with the
+    # classical ECMR key.
+    #
+    # A key that was advertised before the rotation must be recreated:
+    # anything that prevents its replacement (a generation failure, or
+    # jose no longer listing the algorithm, e.g. after a package
+    # downgrade) is fatal, since silently dropping it would degrade the
+    # active key set. The old keys themselves are iterated rather than
+    # a variant list, so a variant that vanished from the jose listing
+    # is still caught here: the generic hide loop below would
+    # otherwise drop it silently. Nothing has been hidden yet at this
+    # point, so exiting leaves the advertised keys untouched.
+    while read -r old_kem; do
+        [ -n "${old_kem}" ] || continue
+        kem_alg="$(jose fmt -j "${old_kem}" -Og alg -u- 2>/dev/null)" \
+            || continue
+        case "${kem_alg}" in
+            ML-KEM-*) ;;
+            *) continue ;;
+        esac
+        case " ${old_kem_algs} " in
+            *" ${kem_alg} "*) continue ;;
+        esac
+        old_kem_algs="${old_kem_algs} ${kem_alg}"
+        if ! alg_supported "${kem_alg}"; then
+            echo "Error: the ${kem_alg} key is currently advertised but jose does not support the algorithm anymore; refusing to rotate" >&2
+            exit 1
+        fi
+        new_key "${kem_alg}"
+    done < "${old_list}"
+
+    # A variant that was never active is optional: unsupported
+    # algorithms are skipped, and a runtime generation failure
+    # (crypto policy) only warns.
+    for alg in ${KEM_ALGS}; do
+        if alg_was_advertised "${alg}"; then
+            continue
+        fi
+        if ! alg_supported "${alg}"; then
+            echo "Skipping ${alg} key generation (not supported by jose)" >&2
+        else
+            new_key "${alg}" 1
+        fi
+    done
+
+    # Introduce the new keys before hiding the old ones, so that at no
+    # point is the daemon left without an advertised, usable key set;
+    # while both sets are visible, the advertisement merely lists more
+    # keys, which is harmless.
+    for staged in "${STAGE}"/*.jwk; do
+        [ -f "${staged}" ] || continue
+        mv -f -- "${staged}" .
+    done
+
+    # Disable advertisement of the old keys. They remain on disk,
+    # dot-prefixed, so clients bound to them keep working. Hidden keys
+    # are never pruned automatically: they accumulate with every
+    # rotation and must be removed manually once no client depends on
+    # them anymore.
+    while read -r old; do
+        [ -n "${old}" ] || continue
+        mv -f -- "${old}" "./.${old#./}"
+        log "Disabled advertisement of key ${old#./} -> .${old#./}" "${VERBOSE}"
+    done < "${old_list}"
 cd - >/dev/null
 
 log "Keys rotated successfully" "${VERBOSE}"

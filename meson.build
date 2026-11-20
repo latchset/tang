@@ -60,6 +60,59 @@ if meson.is_cross_build()
     compiler = meson.get_compiler('c', native : false)
 endif
 
+# The has_pqc probe must EXECUTE the check, not just link it: jose
+# exports jose_jwk_gen and the KEM API unconditionally (lib/jwk.c) and
+# registers the ML-KEM hooks only when built with them (mlkem.c), so a
+# jose built with -Dmlkem=disabled links fine while the check inside
+# would fail. compiler.run() executes the probe; compiler.links() is
+# only a best-effort fallback for cross builds without an exe wrapper.
+pqc_probe = '''
+#include <jose/jose.h>
+int main(void) {
+    json_auto_t *j = json_pack("{s:s}", "alg", "ML-KEM-768");
+    if (!jose_jwk_gen(NULL, j))
+        return 1;
+    json_auto_t *enc = jose_jwk_kem_enc(NULL, j);
+    return enc ? 0 : 1;
+}
+'''
+
+pqc_feature = get_option('pqc')
+has_pqc = false
+
+if not pqc_feature.disabled()
+    # The probe must run against the jose it was configured with: a
+    # prefix jose found through PKG_CONFIG_PATH only adds -L at link
+    # time, so without an rpath the probe binary would load the system
+    # libjose at run time and test the wrong library.
+    probe_args = []
+    jose_libdir = jose.get_variable(pkgconfig: 'libdir', default_value: '')
+    if jose_libdir != ''
+        probe_args += ['-Wl,-rpath,' + jose_libdir]
+    endif
+
+    if meson.can_run_host_binaries()
+        has_pqc = compiler.run(pqc_probe, args: probe_args,
+                               dependencies: jose,
+                               name: 'ML-KEM KEM API support in jose').returncode() == 0
+    else
+        has_pqc = compiler.links(pqc_probe, dependencies: jose,
+                                 name: 'ML-KEM KEM API support in jose (link-only)')
+    endif
+
+    # A quiet fallback to the noop build is only acceptable when PQC
+    # support was not explicitly requested.
+    if pqc_feature.enabled() and not has_pqc
+        error('PQC support was requested (pqc=enabled), but jose does not provide usable ML-KEM support: the configure-time probe failed. See the meson log for details.')
+    endif
+endif
+
+# libcrypto is only needed by the PQC (hybrid ML-KEM) code path: the
+# noop implementation used when jose lacks ML-KEM support does not use
+# OpenSSL, so the dependency is optional and only linked into tangd
+# (and test-pqc) when has_pqc is true.
+libcrypto = dependency('libcrypto', required: has_pqc)
+
 message(compiler.version())
 message(compiler.get_id())
 

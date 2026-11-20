@@ -20,12 +20,21 @@ key sizes and institutional policy. For some common recommendations, see: https:
 This is typically */var/db/tang*. It also rename the old keys to have a leading . in order to
 hide them from advertisement.
 
+In addition to the classical signing (ES512) and exchange (ECMR) keys, a new set of hybrid
+exchange keys (ML-KEM) is created when supported by *jose*, pairing with the classical ECMR
+key. Algorithms not supported by the installed *jose* are skipped, and so are algorithms whose
+key generation fails at runtime (for example when the system crypto policy blocks them),
+unless a key of that algorithm was advertised before the rotation, in which case the rotation
+fails loudly instead of silently degrading the active key set.
+
 Tang will immediately pick up all changes. No restart is required.
 
 At this point, new client bindings will pick up the new keys and old clients can continue to
-utilize the old keys. Once you are sure that all the old clients have been migrated to use the
-new keys, you can remove the old keys. Be aware that removing the old keys while clients are
-still using them can result in data loss. You have been warned.
+utilize the old keys, including the rotated (hidden) ML-KEM keys. Hidden keys are never pruned
+automatically: they accumulate with every rotation. Once you are sure that all
+the old clients have been migrated to use the new keys, you can remove the old keys. Be aware
+that removing the old keys while clients are still using them can result in data loss. You
+have been warned.
 
 == OPTIONS
 *  *-d* <KEYDIR>:

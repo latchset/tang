@@ -37,6 +37,10 @@ set_perms() {
 
 [ $# -eq 3 ] && sig=$2 && exc=$3
 
+# Shared helpers (e.g. algorithm support detection) live next to this
+# script, both in the build tree and when installed.
+. "$(dirname -- "$0")/tangd-utils.sh"
+
 THP_DEFAULT_HASH=S256     # SHA-256.
 
 # Set default umask for file creation.
@@ -52,3 +56,33 @@ jwe=$(jose jwk gen -i '{"alg":"ECMR"}')
 [ -z "$exc" ] && exc=$(echo "$jwe" | jose jwk thp -i- -a "${THP_DEFAULT_HASH}")
 echo "$jwe" > "$1/$exc.jwk"
 set_perms "$1/$exc.jwk"
+
+for alg in ${KEM_ALGS}; do
+    existing=""
+    for f in "$1"/*.jwk; do
+        [ -f "$f" ] || continue
+        if jwk_has_alg "$f" "$alg"; then
+            existing="$f"
+            break
+        fi
+    done
+    if [ -n "$existing" ]; then
+        echo "Skipping $alg key generation (already exists)" >&2
+        continue
+    fi
+    if ! alg_supported "$alg"; then
+        echo "Skipping $alg key generation (not supported by jose)" >&2
+        continue
+    fi
+    if ! pqc=$(jose jwk gen -i "{\"alg\":\"$alg\"}"); then
+        # jose registers algorithms even when the runtime crypto
+        # policy (e.g. FIPS) blocks generating keys for them, so a
+        # registered-but-failing variant is optional: warn and skip,
+        # like create_new_keys() in keys.c.
+        echo "Skipping $alg key generation (key generation failed at runtime; crypto policy?)" >&2
+        continue
+    fi
+    pqc_thp=$(echo "$pqc" | jose jwk thp -i- -a "${THP_DEFAULT_HASH}")
+    echo "$pqc" > "$1/$pqc_thp.jwk"
+    set_perms "$1/$pqc_thp.jwk"
+done

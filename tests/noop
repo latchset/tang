@@ -1,0 +1,86 @@
+#!/bin/sh -ex
+# vim: set tabstop=8 shiftwidth=4 softtabstop=4 expandtab smarttab colorcolumn=80:
+#
+# Copyright (c) 2026 Red Hat, Inc.
+# Author: Sergio Arroutbi <sarroutbi@redhat.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+. helpers
+
+trap 'on_exit' EXIT
+export TMP=$(mktemp -d)
+mkdir -p "${TMP}/db"
+
+# Server binary under test: the dedicated no-PQC build (tangd-noop)
+# when the full build has PQC support, or the regular tangd when the
+# build itself already lacks it.
+TANGD_BIN=tangd-noop
+command -v "${TANGD_BIN}" >/dev/null 2>&1 || TANGD_BIN=tangd
+
+tangd-keygen "${TMP}/db" sig exc
+valid_key_perm "${TMP}/db/sig.jwk"
+
+PORT=$(random_port)
+export PORT
+"${TANGD_BIN}" -p "${PORT}" -l "${TMP}/db" &
+export PID=$!
+wait_for_port "${PORT}"
+
+# Classical advertisement is unaffected by the missing PQC support.
+fetch /adv | ver "${TMP}/db/sig.jwk"
+
+# /version must not advertise hybrid recovery, even though AKP keys
+# exist in the key store: the build itself has no PQC support.
+ver_resp=$(fetch /version)
+hybrid=$(printf '%s' "${ver_resp}" \
+    | jose fmt -j- -Og features -Og hybrid_recovery -o-)
+[ "${hybrid}" = "false" ]
+
+# The hybrid KEM endpoints are hidden (404) without PQC support,
+# whether or not ML-KEM keys exist in the key store.
+kem_jwk=$(find "${TMP}/db" -maxdepth 1 -name '*.jwk' ! -name '.*' \
+    -exec grep -l '"kty":"AKP"' {} + 2>/dev/null | head -n 1 || true)
+if [ -n "${kem_jwk}" ]; then
+    kem_thp=$(jose jwk thp -i "${kem_jwk}")
+else
+    kem_thp="dummythp0123456789"
+fi
+
+code=$(curl -s -o /dev/null -w "%{http_code}" \
+    "http://127.0.0.1:${PORT}/adv-kem?alg=ML-KEM-768")
+[ "${code}" = "404" ]
+
+code=$(curl -s -o /dev/null -w "%{http_code}" \
+    "http://127.0.0.1:${PORT}/adv-kem/${kem_thp}")
+[ "${code}" = "404" ]
+
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+    -H "Content-Type: application/json" \
+    -d '{"clevis_encrypted_blob":"a","clevis_transport_ct":"b"}' \
+    "http://127.0.0.1:${PORT}/rec-kem/${kem_thp}")
+[ "${code}" = "404" ]
+
+# A wrong HTTP method must also answer 404, not 405, so the existence
+# of the hidden endpoints is not leaked.
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+    "http://127.0.0.1:${PORT}/adv-kem?alg=ML-KEM-768")
+[ "${code}" = "404" ]
+
+code=$(curl -s -o /dev/null -w "%{http_code}" \
+    "http://127.0.0.1:${PORT}/rec-kem/${kem_thp}")
+[ "${code}" = "404" ]
+
+echo "Noop PQC server test passed" >&2

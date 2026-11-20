@@ -30,6 +30,7 @@
 
 #include <jose/jose.h>
 #include "keys.h"
+#include "pqc.h"
 #include "socket.h"
 
 #define MAX_URL 256
@@ -200,9 +201,19 @@ tang_version(http_method_t method, const char *path, const char *body,
              regmatch_t matches[], void *misc)
 {
     __attribute__((cleanup(str_cleanup))) char *out = NULL;
-    json_auto_t *ver = json_pack("{s:s, s:{s:b}}",
+    __attribute__((cleanup(cleanup_tang_keys_info))) struct tang_keys_info *tki = NULL;
+    const char *jwkdir = misc;
+    int has_pqc = 0;
+
+    tki = read_keys(jwkdir);
+    if (tki)
+        has_pqc = tki->m_has_pqc && pqc_is_available();
+
+    json_auto_t *ver = json_pack("{s:s, s:{s:b, s:b}}",
                                  "tang_version", VERSION,
-                                 "features", "tang_pub", 1);
+                                 "features",
+                                 "tang_pub", 1,
+                                 "hybrid_recovery", has_pqc);
     if (!ver)
         return http_reply(HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 
@@ -216,10 +227,24 @@ tang_version(http_method_t method, const char *path, const char *body,
                       "\r\n%s", strlen(out), out);
 }
 
+enum dispatch_idx {
+    DISPATCH_ADV_THP,
+    DISPATCH_ADV,
+    DISPATCH_ADV_KEM_THP,
+    DISPATCH_ADV_KEM,
+    DISPATCH_REC,
+    DISPATCH_REC_KEM,
+    DISPATCH_VER,
+    DISPATCH_COUNT
+};
+
 static struct http_dispatch s_dispatch[] = {
     { adv,          1 << HTTP_GET,  2, "^/+adv/+([0-9A-Za-z_-]+)$" },
     { adv,          1 << HTTP_GET,  2, "^/+adv/*$" },
+    { adv_kem_thp,  1 << HTTP_GET,  2, "^/+adv-kem/+([0-9A-Za-z_-]+)$" },
+    { adv_kem,      1 << HTTP_GET,  2, "^/+adv-kem/*([?][^[:space:]]*)?$" },
     { rec,          1 << HTTP_POST, 2, "^/+rec/+([0-9A-Za-z_-]+)$" },
+    { rec_kem,      1 << HTTP_POST, 2, "^/+rec-kem/+([0-9A-Za-z_-]+)$" },
     { tang_version, 1 << HTTP_GET,  1, "^/+version/*$" },
     {}
 };
@@ -355,21 +380,44 @@ main(int argc, char *argv[])
 
     char adv_thp_endpoint[MAX_URL] = {};
     char adv_endpoint[MAX_URL] = {};
+    char adv_kem_thp_endpoint[MAX_URL] = {};
+    char adv_kem_endpoint[MAX_URL] = {};
     char rec_endpoint[MAX_URL] = {};
+    char rec_kem_endpoint[MAX_URL] = {};
     char ver_endpoint[MAX_URL] = {};
     if (endpoint != NULL) {
         char *endpoint_ptr = (char*)endpoint;
         while (*endpoint_ptr == '/') {
             endpoint_ptr++;
         }
-        snprintf(adv_thp_endpoint, MAX_URL, "^/%s/+adv/+([0-9A-Za-z_-]+)$", endpoint_ptr);
-        snprintf(adv_endpoint, MAX_URL, "^/%s/+adv/*$", endpoint_ptr);
-        snprintf(rec_endpoint, MAX_URL, "^/%s/+rec/+([0-9A-Za-z_-]+)$", endpoint_ptr);
-        snprintf(ver_endpoint, MAX_URL, "^/%s/+version/*$", endpoint_ptr);
-        s_dispatch[0].re = adv_thp_endpoint;
-        s_dispatch[1].re = adv_endpoint;
-        s_dispatch[2].re = rec_endpoint;
-        s_dispatch[3].re = ver_endpoint;
+        /* A truncated regex would silently break routing, so refuse to
+         * start when the endpoint prefix does not fit the buffers. */
+        if (snprintf(adv_thp_endpoint, MAX_URL, "^/%s/+adv/+([0-9A-Za-z_-]+)$", endpoint_ptr) >= MAX_URL ||
+            snprintf(adv_endpoint, MAX_URL, "^/%s/+adv/*$", endpoint_ptr) >= MAX_URL ||
+            snprintf(adv_kem_thp_endpoint, MAX_URL, "^/%s/+adv-kem/+([0-9A-Za-z_-]+)$", endpoint_ptr) >= MAX_URL ||
+            snprintf(adv_kem_endpoint, MAX_URL, "^/%s/+adv-kem/*([?][^[:space:]]*)?$", endpoint_ptr) >= MAX_URL ||
+            snprintf(rec_endpoint, MAX_URL, "^/%s/+rec/+([0-9A-Za-z_-]+)$", endpoint_ptr) >= MAX_URL ||
+            snprintf(rec_kem_endpoint, MAX_URL, "^/%s/+rec-kem/+([0-9A-Za-z_-]+)$", endpoint_ptr) >= MAX_URL ||
+            snprintf(ver_endpoint, MAX_URL, "^/%s/+version/*$", endpoint_ptr) >= MAX_URL) {
+            fprintf(stderr, "Endpoint prefix '%s' is too long\n", endpoint_ptr);
+            return EXIT_FAILURE;
+        }
+        s_dispatch[DISPATCH_ADV_THP].re = adv_thp_endpoint;
+        s_dispatch[DISPATCH_ADV].re = adv_endpoint;
+        s_dispatch[DISPATCH_ADV_KEM_THP].re = adv_kem_thp_endpoint;
+        s_dispatch[DISPATCH_ADV_KEM].re = adv_kem_endpoint;
+        s_dispatch[DISPATCH_REC].re = rec_endpoint;
+        s_dispatch[DISPATCH_REC_KEM].re = rec_kem_endpoint;
+        s_dispatch[DISPATCH_VER].re = ver_endpoint;
+    }
+    if (!pqc_is_available()) {
+        /* The KEM routes are registered unconditionally so the stub
+         * handlers hide the endpoints with 404. Allow every method on
+         * them in that case: answering 405 Method Not Allowed to a
+         * wrong-method request would leak the endpoints' existence. */
+        s_dispatch[DISPATCH_ADV_KEM_THP].methods = ~0ULL;
+        s_dispatch[DISPATCH_ADV_KEM].methods = ~0ULL;
+        s_dispatch[DISPATCH_REC_KEM].methods = ~0ULL;
     }
     if (listen == 0) { /* process one-shot query from stdin */
         return process_request(jwkdir, STDIN_FILENO);

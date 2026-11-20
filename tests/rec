@@ -60,6 +60,9 @@ rec_second_phase () {
 
     # Verify tang_pub thumbprint matches the requested key identifier
     [ "$(jose jwk thp -i $TMP/tang_pub.jwk)" = "$exc_kid" ]
+
+    rec_kem_test ""
+    rec_error_cases ""
 }
 
 rec_second_phase_endpoint () {
@@ -84,4 +87,294 @@ rec_second_phase_endpoint () {
 
     # Verify tang_pub thumbprint matches the requested key identifier
     [ "$(jose jwk thp -i $TMP/tang_pub.jwk)" = "$exc_kid" ]
+
+    rec_kem_test "${ENDPOINT}/"
+    rec_error_cases "${ENDPOINT}/"
+}
+
+rec_error_cases () {
+    # A body that is not JSON must be rejected with 400
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d "not-json" \
+        "http://127.0.0.1:$PORT/${1}rec/${exc_kid}")
+    [ "$code" = "400" ]
+
+    # A JWK that is not allowed to derive keys must be rejected with 403
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d '{"kty":"EC","key_ops":["sign"]}' \
+        "http://127.0.0.1:$PORT/${1}rec/${exc_kid}")
+    [ "$code" = "403" ]
+
+    # A JWK without a kty must be rejected with 400
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d '{"alg":"ECMR","key_ops":["deriveKey"]}' \
+        "http://127.0.0.1:$PORT/${1}rec/${exc_kid}")
+    [ "$code" = "400" ]
+
+    # A non-EC JWK must be rejected with 400
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d '{"kty":"oct","key_ops":["deriveKey"]}' \
+        "http://127.0.0.1:$PORT/${1}rec/${exc_kid}")
+    [ "$code" = "400" ]
+
+    # An EC JWK with a non-ECMR algorithm must be rejected with 400
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d '{"kty":"EC","alg":"ECDH-ES","key_ops":["deriveKey"]}' \
+        "http://127.0.0.1:$PORT/${1}rec/${exc_kid}")
+    [ "$code" = "400" ]
+
+    # An unknown thumbprint must be rejected with 404
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Content-Type: application/jwk+json" \
+        --data-binary @$TMP/exc.pub.jwk \
+        "http://127.0.0.1:$PORT/${1}rec/nonexistent")
+    [ "$code" = "404" ]
+
+    # The thumbprint of a signing key must be rejected with 403
+    sig_kid=`jose jwk thp -i $TMP/db/sig.jwk`
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Content-Type: application/jwk+json" \
+        --data-binary @$TMP/exc.pub.jwk \
+        "http://127.0.0.1:$PORT/${1}rec/${sig_kid}")
+    [ "$code" = "403" ]
+}
+
+rec_kem_test () {
+    prefix="${1}"
+
+    if ! build_has_pqc; then
+        echo "tangd was built without PQC support, skipping /rec-kem tests" >&2
+        return 0
+    fi
+
+    if ! any_jose_kem_alg; then
+        echo "jose does not support ML-KEM, skipping /rec-kem tests" >&2
+        return 0
+    fi
+
+    # Test recovery for each AKP key variant in the server db
+    kem_jwk=""
+    kem_kid=""
+    req_body=""
+    tested_count=0
+    for f in "$TMP"/db/*.jwk; do
+        kty=$(jose fmt -j "$f" -Og kty -u- 2>/dev/null) || continue
+        [ "$kty" = "AKP" ] || continue
+
+        kem_jwk="$f"
+        kem_alg=$(jose fmt -j "$f" -Og alg -u- 2>/dev/null)
+        echo "Testing /rec-kem recovery with $kem_alg" >&2
+
+        kem_kid=$(jose jwk thp -i "$kem_jwk" -a S256)
+        jose jwk pub -i "$kem_jwk" -o "$TMP/kem.pub.jwk"
+
+        # Step 1: Simulate the stored KEM binding
+        stored_encap=$(jose jwk encap -i "$TMP/kem.pub.jwk")
+        enc_key=$(printf '%s' "$stored_encap" | jose fmt -j- -Og ss -o-)
+        clevis_kem_ct=$(printf '%s' "$stored_encap" | jose fmt -j- -Og ct -u-)
+
+        printf '%s' "$enc_key" > "$TMP/enc_key.jwk"
+        ek_digest=$(jose jwk thp -i "$TMP/enc_key.jwk" -a S256)
+
+        # Step 2: Generate client ephemeral KEM keypair using same alg
+        jose jwk gen -i "{\"alg\":\"$kem_alg\"}" -o "$TMP/clevis_kem_priv.jwk"
+        jose jwk pub -i "$TMP/clevis_kem_priv.jwk" -o "$TMP/clevis_kem_pub.jwk"
+
+        # Step 3: Forward channel
+        fwd_encap=$(jose jwk encap -i "$TMP/kem.pub.jwk")
+        clevis_transport_ct=$(printf '%s' "$fwd_encap" | jose fmt -j- -Og ct -u-)
+        printf '%s' "$fwd_encap" | jose fmt -j- -Og ss -o- > "$TMP/clevis_transport_key.jwk"
+
+        # Step 4: Build inner payload
+        clevis_kem_pub=$(cat "$TMP/clevis_kem_pub.jwk")
+        printf '{"clevis_kem_ct":"%s","clevis_kem_pub":%s,"ek_digest":"%s"}' \
+            "$clevis_kem_ct" "$clevis_kem_pub" "$ek_digest" \
+            > "$TMP/inner_payload.json"
+
+        # Step 5: Encrypt inner payload with enriched header
+        enriched_hdr=$(printf '{"protected":{"alg":"dir","enc":"A256GCM","crit":["kem_ver","suite","kem_kid","msg_dir"],"kem_ver":"%s","suite":"%s+%s","kid":"%s","kem_kid":"%s","msg_dir":"%s"}}' \
+            "$KEM_VERSION" "$ECMR_ALG" "$kem_alg" "$exc_kid" "$kem_kid" "$DIR_REQUEST")
+        clevis_encrypted_blob=$(jose jwe enc \
+            -i "$enriched_hdr" \
+            -I "$TMP/inner_payload.json" \
+            -k "$TMP/clevis_transport_key.jwk" -c)
+
+        # Step 6: POST to /rec-kem
+        req_body=$(printf '{"clevis_encrypted_blob":"%s","clevis_transport_ct":"%s"}' \
+            "$clevis_encrypted_blob" "$clevis_transport_ct")
+        server_resp=$(curl -sf -X POST \
+            -H "Content-Type: application/json" \
+            -d "$req_body" \
+            "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+
+        # Step 7: Parse response
+        tang_transport_ct=$(printf '%s' "$server_resp" | jose fmt -j- -Og tang_transport_ct -u-)
+        tang_encrypted_key=$(printf '%s' "$server_resp" | jose fmt -j- -Og tang_encrypted_key -u-)
+
+        # Step 8: Decapsulate return channel
+        tang_transport_key=$(jose jwk decap -i "$TMP/clevis_kem_priv.jwk" -c "$tang_transport_ct")
+        printf '%s' "$tang_transport_key" > "$TMP/tang_transport_key.jwk"
+
+        # Step 9: Decrypt enc_key
+        IFS='.' read -r prot ekey iv ct tag <<EOF
+$tang_encrypted_key
+EOF
+        printf '{"protected":"%s","encrypted_key":"%s","iv":"%s","ciphertext":"%s","tag":"%s"}' \
+            "$prot" "$ekey" "$iv" "$ct" "$tag" > "$TMP/resp_jwe.json"
+        recovered_enc_key=$(jose jwe dec -i "$TMP/resp_jwe.json" -k "$TMP/tang_transport_key.jwk")
+
+        # Step 9b: Validate response enriched protected header
+        resp_hdr=$(printf '%s' "$prot" | jose b64 dec -i-)
+        printf '%s' "$resp_hdr" | jose fmt -j- -Og kem_ver -Sq "$KEM_VERSION" -E
+        printf '%s' "$resp_hdr" | jose fmt -j- -Og suite -Sq "$ECMR_ALG+$kem_alg" -E
+        printf '%s' "$resp_hdr" | jose fmt -j- -Og kem_kid -Sq "$kem_kid" -E
+        printf '%s' "$resp_hdr" | jose fmt -j- -Og msg_dir -Sq "$DIR_RESPONSE" -E
+        printf '%s' "$resp_hdr" | jose fmt -j- -Og kid -Sq "$exc_kid" -E
+        # req_digest must not be present in the response header
+        ! printf '%s' "$resp_hdr" | jose fmt -j- -Og req_digest 2>/dev/null
+        # crit must list exactly the extension parameters (kid is a
+        # standard JOSE header and is never crit'd)
+        resp_crit=$(printf '%s' "$resp_hdr" | jose fmt -j- -Og crit -o-)
+        [ "$resp_crit" = '["kem_ver","suite","kem_kid","msg_dir"]' ]
+
+        # Step 10: Verify recovered enc_key matches the original
+        enc_key_k=$(printf '%s' "$enc_key" | jose fmt -j- -Og k -u-)
+        recovered_enc_key_k=$(printf '%s' "$recovered_enc_key" | jose fmt -j- -Og k -u-)
+        [ "$enc_key_k" = "$recovered_enc_key_k" ]
+
+        tested_count=$((tested_count + 1))
+    done
+
+    if [ "$tested_count" -eq 0 ]; then
+        echo "No ML-KEM key found in server db, skipping /rec-kem tests" >&2
+        return 0
+    fi
+
+    echo "Successfully tested /rec-kem recovery with $tested_count AKP key(s)" >&2
+
+    # Error cases (using last tested key)
+    curl -sf "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}" && expected_fail
+
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d "not-json" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+    [ "$code" = "400" ]
+
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d '{"foo":"bar"}' \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+    [ "$code" = "400" ]
+
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d "$req_body" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/nonexistent")
+    [ "$code" = "404" ]
+
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d "$req_body" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${exc_kid}")
+    [ "$code" = "403" ]
+
+    # A public-only AKP key cannot decapsulate: /rec-kem must refuse it
+    # with 403 instead of attempting the exchange and failing with 400.
+    jose jwk gen -i '{"alg":"ML-KEM-768"}' | jose jwk pub -i- \
+        > $TMP/db/pubonly.jwk
+    pubonly_kid=$(jose jwk thp -i $TMP/db/pubonly.jwk)
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -d "$req_body" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${pubonly_kid}")
+    [ "$code" = "403" ]
+
+    # Wrong ek_digest must be rejected
+    bad_fwd_encap=$(jose jwk encap -i "$TMP/kem.pub.jwk")
+    bad_clevis_transport_ct=$(printf '%s' "$bad_fwd_encap" | jose fmt -j- -Og ct -u-)
+    printf '%s' "$bad_fwd_encap" | jose fmt -j- -Og ss -o- > "$TMP/bad_clevis_transport_key.jwk"
+    printf '{"clevis_kem_ct":"%s","clevis_kem_pub":%s,"ek_digest":"%s"}' \
+        "$clevis_kem_ct" "$clevis_kem_pub" "INVALID_DIGEST_VALUE" \
+        > "$TMP/bad_payload.json"
+    bad_blob=$(jose jwe enc \
+        -i "$enriched_hdr" \
+        -I "$TMP/bad_payload.json" \
+        -k "$TMP/bad_clevis_transport_key.jwk" -c)
+    bad_req=$(printf '{"clevis_encrypted_blob":"%s","clevis_transport_ct":"%s"}' \
+        "$bad_blob" "$bad_clevis_transport_ct")
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Content-Type: application/json" \
+        -d "$bad_req" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+    [ "$code" = "400" ]
+
+    # Suite not matching the algorithm of the KEM key must be rejected
+    # (anti-downgrade): declare a different ML-KEM variant in the suite.
+    other_alg="ML-KEM-1024"
+    if [ "$other_alg" = "$kem_alg" ]; then
+        other_alg="ML-KEM-768"
+    fi
+    if jose jwk gen -i "{\"alg\":\"$other_alg\"}" \
+            -o "$TMP/other_alg_priv.jwk" 2>/dev/null; then
+        jose jwk pub -i "$TMP/other_alg_priv.jwk" -o "$TMP/other_alg_pub.jwk"
+        other_alg_pub=$(cat "$TMP/other_alg_pub.jwk")
+
+        bad_suite_hdr=$(printf '{"protected":{"alg":"dir","enc":"A256GCM","crit":["kem_ver","suite","kem_kid","msg_dir"],"kem_ver":"%s","suite":"%s+%s","kid":"%s","kem_kid":"%s","msg_dir":"%s"}}' \
+            "$KEM_VERSION" "$ECMR_ALG" "$other_alg" "$exc_kid" "$kem_kid" "$DIR_REQUEST")
+        bad_suite_blob=$(jose jwe enc \
+            -i "$bad_suite_hdr" \
+            -I "$TMP/inner_payload.json" \
+            -k "$TMP/clevis_transport_key.jwk" -c)
+        bad_suite_req=$(printf '{"clevis_encrypted_blob":"%s","clevis_transport_ct":"%s"}' \
+            "$bad_suite_blob" "$clevis_transport_ct")
+        code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -d "$bad_suite_req" \
+            "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+        [ "$code" = "400" ]
+
+        # A clevis KEM key using a different ML-KEM variant than the tang
+        # KEM key must also be rejected.
+        printf '{"clevis_kem_ct":"%s","clevis_kem_pub":%s,"ek_digest":"%s"}' \
+            "$clevis_kem_ct" "$other_alg_pub" "$ek_digest" \
+            > "$TMP/alg_mismatch_payload.json"
+        alg_mismatch_blob=$(jose jwe enc \
+            -i "$enriched_hdr" \
+            -I "$TMP/alg_mismatch_payload.json" \
+            -k "$TMP/clevis_transport_key.jwk" -c)
+        alg_mismatch_req=$(printf '{"clevis_encrypted_blob":"%s","clevis_transport_ct":"%s"}' \
+            "$alg_mismatch_blob" "$clevis_transport_ct")
+        code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -d "$alg_mismatch_req" \
+            "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+        [ "$code" = "400" ]
+    fi
+
+    # An ECMR key identifier not held by the server must be rejected
+    bad_kid_hdr=$(printf '{"protected":{"alg":"dir","enc":"A256GCM","crit":["kem_ver","suite","kem_kid","msg_dir"],"kem_ver":"%s","suite":"%s+%s","kid":"%s","kem_kid":"%s","msg_dir":"%s"}}' \
+        "$KEM_VERSION" "$ECMR_ALG" "$kem_alg" "unknown-ecmr-kid" "$kem_kid" "$DIR_REQUEST")
+    bad_kid_blob=$(jose jwe enc \
+        -i "$bad_kid_hdr" \
+        -I "$TMP/inner_payload.json" \
+        -k "$TMP/clevis_transport_key.jwk" -c)
+    bad_kid_req=$(printf '{"clevis_encrypted_blob":"%s","clevis_transport_ct":"%s"}' \
+        "$bad_kid_blob" "$clevis_transport_ct")
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Content-Type: application/json" \
+        -d "$bad_kid_req" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+    [ "$code" = "400" ]
+
+    # An oversized protected header must be rejected
+    big_pad=$(head -c 8192 /dev/zero | tr '\0' 'A')
+    big_hdr=$(printf '{"protected":{"alg":"dir","enc":"A256GCM","crit":["kem_ver","suite","kem_kid","msg_dir"],"kem_ver":"%s","suite":"%s+%s","kid":"%s","kem_kid":"%s","msg_dir":"%s","pad":"%s"}}' \
+        "$KEM_VERSION" "$ECMR_ALG" "$kem_alg" "$exc_kid" "$kem_kid" "$DIR_REQUEST" "$big_pad")
+    big_blob=$(jose jwe enc \
+        -i "$big_hdr" \
+        -I "$TMP/inner_payload.json" \
+        -k "$TMP/clevis_transport_key.jwk" -c)
+    big_req=$(printf '{"clevis_encrypted_blob":"%s","clevis_transport_ct":"%s"}' \
+        "$big_blob" "$clevis_transport_ct")
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Content-Type: application/json" \
+        -d "$big_req" \
+        "http://127.0.0.1:$PORT/${prefix}rec-kem/${kem_kid}")
+    [ "$code" = "400" ]
 }
